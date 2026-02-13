@@ -6,6 +6,7 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 
 from pathlib import Path
 from typing import ClassVar
+from urllib.request import urlopen
 
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.utils.components import (
@@ -85,6 +86,25 @@ class Kubeadm(ComponentBase):
         """
         info("  Disabling swap...")
         run(["sudo", "swapoff", "-a"], check=True)
+
+        # Download kubeadm.service from Kubernetes release repository
+        info("  Installing kubelet configs")
+        service_url = "https://raw.githubusercontent.com/kubernetes/release/${RELEASE_VERSION}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
+        with urlopen(service_url) as response:
+            service_content = response.read().decode("utf-8")
+
+        # Create systemd directories
+        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
+
+        # Write kubelet.service file
+        temp_service = Path("/tmp/kubelet.service")
+        temp_service.write_text(service_content)
+        run(
+            ["sudo", "tee", "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"],
+            input=service_content,
+            text=True,
+            check=True,
+        )
 
     def bootstrap_hook(self) -> None:
         """

@@ -37,6 +37,8 @@ class Containerd(ComponentBase):
     BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
     CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
 
+    INSTALL_PATH = "/usr/local/bin/containerd"
+
     def _get_pause_image(self) -> str:
         """
         Get pause image from pause component or use default.
@@ -105,7 +107,7 @@ class Containerd(ComponentBase):
         if not binary_path.exists():
             raise ComponentError(f"containerd binary not found in archive at {binary_path}")
 
-        install_binary(binary_path, "containerd")
+        install_binary(binary_path, self.INSTALL_PATH)
 
     def configure_hook(self) -> None:
         """
@@ -142,13 +144,13 @@ class Containerd(ComponentBase):
         temp_config.unlink()
 
         # Create systemd service unit
-        systemd_unit = """[Unit]
+        systemd_unit = f"""[Unit]
 Description=containerd container runtime
 Documentation=https://containerd.io
 After=network.target local-fs.target
 
 [Service]
-ExecStart=/usr/local/bin/containerd
+ExecStart={self.INSTALL_PATH}
 ExecStop=/bin/kill -s TERM $MAINPID
 Restart=on-failure
 RestartSec=5

@@ -6,10 +6,15 @@ Kubelet is the primary node agent running on each node.
 
 from pathlib import Path
 from typing import ClassVar
+from urllib.request import urlopen
 
 from kube_galaxy.pkg.components._base import ComponentBase
-from kube_galaxy.pkg.utils.components import download_file
+from kube_galaxy.pkg.utils.components import (
+    download_file,
+    install_binary,
+)
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.shell import run
 
 
 class Kubelet(ComponentBase):
@@ -30,16 +35,12 @@ class Kubelet(ComponentBase):
     INSTALL_TIMEOUT = 120  # 2 minutes
     CONFIGURE_TIMEOUT = 120  # 2 minutes
     VERIFY_TIMEOUT = 120  # 2 minutes
+    INSTALL_PATH = "/usr/bin/kubelet"
 
     def download_hook(self, arch: str) -> None:
         """
-        Download kubelet binary.
-
         Downloads the kubelet release binary.
         """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
         repo = self.config.repo
         release = self.config.release
         source_format = self.config.installation.source_format
@@ -56,3 +57,48 @@ class Kubelet(ComponentBase):
 
         # Store download location as instance attribute
         self.binary_path = binary_path
+
+    def install_hook(self, arch: str) -> None:
+        """
+        Installs kubelet binary to /usr/bin/kubelet.
+        """
+        if not hasattr(self, "binary_path"):
+            raise ComponentError("Binary path not set. Download must be completed before install.")
+
+        install_binary(self.binary_path, self.INSTALL_PATH)
+
+    def configure_hook(self) -> None:
+        """
+        Configures kubelet systemd service to be ready to start by kubeadm.
+
+        Downloads the kubelet.service template from the Kubernetes release repository,
+        replaces /usr/bin with the actual kubelet installation path, and creates
+        the systemd service file and service.d directory.
+        """
+        if not self.config:
+            raise ComponentError("Config required for configuration")
+
+        # Download kubelet.service from Kubernetes release repository
+        service_url = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2/cmd/krel/templates/latest/kubelet/kubelet.service"
+        with urlopen(service_url) as response:
+            service_content = response.read().decode("utf-8")
+
+        # Create systemd directories
+        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
+
+        # Write kubelet.service file
+        temp_service = Path("/tmp/kubelet.service")
+        temp_service.write_text(service_content)
+        run(
+            ["sudo", "tee", "/usr/lib/systemd/system/kubelet.service"],
+            input=service_content,
+            text=True,
+            check=True,
+        )
+
+    def bootstrap_hook(self) -> None:
+        """
+        Starts kubelet service and enables it to start on boot.
+        """
+        run(["sudo", "systemctl", "daemon-reload"], check=True)
+        run(["sudo", "systemctl", "enable", "--now", "kubelet"], check=True)

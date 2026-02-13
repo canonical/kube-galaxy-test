@@ -32,15 +32,6 @@ components:
     use-spread: false
 
   # Kubernetes core binaries
-  - name: kubeadm
-    category: kubernetes/kubernetes
-    release: "1.35.0"
-    repo: "https://github.com/kubernetes/kubernetes"
-    installation:
-      method: "binary-archive"
-      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubeadm"
-    use-spread: false
-
   - name: kubelet
     category: kubernetes/kubernetes
     release: "1.35.0"
@@ -48,6 +39,15 @@ components:
     installation:
       method: "binary-archive"
       source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubelet"
+    use-spread: false
+
+  - name: kubeadm
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    installation:
+      method: "binary-archive"
+      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubeadm"
     use-spread: false
 
   - name: kubectl
