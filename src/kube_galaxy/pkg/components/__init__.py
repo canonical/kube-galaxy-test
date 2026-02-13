@@ -12,7 +12,6 @@ Component Lifecycle Hooks:
 - configure: Final configuration and verification
 """
 
-import importlib
 from enum import Enum
 
 
@@ -89,30 +88,6 @@ def get_all_component_classes() -> dict[str, type]:
     return _COMPONENT_CLASSES.copy()
 
 
-def get_component_module(component_name: str):
-    """
-    Dynamically import and return the component module.
-
-    Args:
-        component_name: Component identifier (e.g., 'containerd', 'etcd')
-
-    Returns:
-        The component module
-
-    Raises:
-        ImportError: If component module doesn't exist
-    """
-    # Normalize component name: replace hyphens with underscores
-    module_name = component_name.replace("-", "_")
-    try:
-        return importlib.import_module(f"kube_galaxy.pkg.components.{module_name}")
-    except ImportError as e:
-        raise ImportError(
-            f"Component '{component_name}' not found. "
-            f"Expected module: kube_galaxy.pkg.components.{module_name}"
-        ) from e
-
-
 def install_component(
     component_name: str,
     repo: str,
@@ -133,33 +108,28 @@ def install_component(
         arch: Architecture (amd64, arm64, etc.)
         manifest: Optional manifest object for context
         component_config: Optional component configuration
+    
+    Raises:
+        AttributeError: If component class not found
     """
-    # First, ensure the module is imported (this triggers @register_component_class decorator)
-    module = get_component_module(component_name)
-    
-    # Now try to get class-based component (should be registered after import)
+    # Get class-based component (already registered via imports at top of module)
     component_class = get_component_class(component_name)
-    if component_class:
-        # Create instance with manifest context
-        instance = create_component_instance(component_class, manifest, component_config)
-        
-        # Execute hooks in order
-        if hasattr(instance, 'download_hook'):
-            instance.download_hook(repo, release, format, arch)
-        if hasattr(instance, 'pre_install_hook'):
-            instance.pre_install_hook()
-        if hasattr(instance, 'install_hook'):
-            instance.install_hook(repo, release, format, arch)
-        return
-    
-    # Fallback: try legacy module function
-    if hasattr(module, "install"):
-        module.install(repo=repo, release=release, format=format, arch=arch)
-    else:
+    if not component_class:
         raise AttributeError(
-            f"Component '{component_name}' has no install function or class. "
-            f"Please implement a ComponentBase subclass with install_hook()."
+            f"Component '{component_name}' not found. "
+            f"Please ensure it has a ComponentBase subclass with @register_component_class decorator."
         )
+    
+    # Create instance with manifest context
+    instance = create_component_instance(component_class, manifest, component_config)
+    
+    # Execute hooks in order
+    if hasattr(instance, 'download_hook'):
+        instance.download_hook(repo, release, format, arch)
+    if hasattr(instance, 'pre_install_hook'):
+        instance.pre_install_hook()
+    if hasattr(instance, 'install_hook'):
+        instance.install_hook(repo, release, format, arch)
 
 
 def configure_component(component_name: str, manifest=None, component_config=None) -> None:
@@ -170,28 +140,28 @@ def configure_component(component_name: str, manifest=None, component_config=Non
         component_name: Component identifier
         manifest: Optional manifest object for context
         component_config: Optional component configuration
+    
+    Raises:
+        AttributeError: If component class not found
     """
-    # First, ensure the module is imported (this triggers @register_component_class decorator)
-    module = get_component_module(component_name)
-    
-    # Now try to get class-based component (should be registered after import)
+    # Get class-based component (already registered via imports at top of module)
     component_class = get_component_class(component_name)
-    if component_class:
-        # Create instance with manifest context
-        instance = create_component_instance(component_class, manifest, component_config)
-        
-        # Execute configuration hooks
-        if hasattr(instance, 'bootstrap_hook'):
-            instance.bootstrap_hook()
-        if hasattr(instance, 'post_bootstrap_hook'):
-            instance.post_bootstrap_hook()
-        if hasattr(instance, 'configure_hook'):
-            instance.configure_hook()
-        return
+    if not component_class:
+        raise AttributeError(
+            f"Component '{component_name}' not found. "
+            f"Please ensure it has a ComponentBase subclass with @register_component_class decorator."
+        )
     
-    # Fallback: try legacy module function
-    if hasattr(module, "configure"):
-        module.configure()
+    # Create instance with manifest context
+    instance = create_component_instance(component_class, manifest, component_config)
+    
+    # Execute configuration hooks
+    if hasattr(instance, 'bootstrap_hook'):
+        instance.bootstrap_hook()
+    if hasattr(instance, 'post_bootstrap_hook'):
+        instance.post_bootstrap_hook()
+    if hasattr(instance, 'configure_hook'):
+        instance.configure_hook()
 
 
 def remove_component(component_name: str) -> None:
@@ -200,7 +170,43 @@ def remove_component(component_name: str) -> None:
 
     Args:
         component_name: Component identifier
+    
+    Raises:
+        AttributeError: If component class not found
     """
-    module = get_component_module(component_name)
-    if hasattr(module, "remove"):
-        module.remove()
+    # Get class-based component (already registered via imports at top of module)
+    component_class = get_component_class(component_name)
+    if not component_class:
+        raise AttributeError(
+            f"Component '{component_name}' not found. "
+            f"Please ensure it has a ComponentBase subclass with @register_component_class decorator."
+        )
+    
+    # Create instance and call remove hook if it exists
+    instance = create_component_instance(component_class, None, None)
+    if hasattr(instance, 'remove_hook'):
+        instance.remove_hook()
+
+
+# Import all component modules to trigger @register_component_class decorators.
+# These imports MUST be at the end to avoid circular imports:
+# - Component modules import register_component_class from this file
+# - This file needs to define register_component_class first
+# - Then we can import the component modules
+# The noqa: F401 tells linters these imports are intentional (side-effect imports for decorator execution)
+from kube_galaxy.pkg.components import cluster_autoscaler  # noqa: F401
+from kube_galaxy.pkg.components import cni_plugins  # noqa: F401
+from kube_galaxy.pkg.components import containerd  # noqa: F401
+from kube_galaxy.pkg.components import coredns  # noqa: F401
+from kube_galaxy.pkg.components import etcd  # noqa: F401
+from kube_galaxy.pkg.components import etcdctl  # noqa: F401
+from kube_galaxy.pkg.components import kube_apiserver  # noqa: F401
+from kube_galaxy.pkg.components import kube_controller_manager  # noqa: F401
+from kube_galaxy.pkg.components import kube_proxy  # noqa: F401
+from kube_galaxy.pkg.components import kube_scheduler  # noqa: F401
+from kube_galaxy.pkg.components import kubeadm  # noqa: F401
+from kube_galaxy.pkg.components import kubectl  # noqa: F401
+from kube_galaxy.pkg.components import kubelet  # noqa: F401
+from kube_galaxy.pkg.components import node_problem_detector  # noqa: F401
+from kube_galaxy.pkg.components import pause  # noqa: F401
+from kube_galaxy.pkg.components import runc  # noqa: F401
