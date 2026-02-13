@@ -24,7 +24,6 @@ __all__ = [
     "ComponentBase",
     "HookStage",
     "configure_component",
-    "get_component_class",
     "install_component",
     "remove_component",
 ]
@@ -46,19 +45,6 @@ COMPONENTS: dict[str, type[ComponentBase]] = {
     "containerd": Containerd,
     "kubeadm": Kubeadm,
 }
-
-
-def get_component_class(component_name: str) -> type[ComponentBase] | None:
-    """
-    Get component class by name.
-
-    Args:
-        component_name: Component identifier
-
-    Returns:
-        Component class if found, None otherwise
-    """
-    return COMPONENTS.get(component_name)
 
 
 def install_component(
@@ -83,13 +69,9 @@ def install_component(
         component_config: Optional component configuration
 
     Raises:
-        AttributeError: If component class not found
+        KeyError: If component not found in COMPONENTS
     """
-    component_class = get_component_class(component_name)
-    if not component_class:
-        raise AttributeError(f"Component '{component_name}' not found in COMPONENTS registry.")
-
-    # Create instance with manifest context
+    component_class = COMPONENTS[component_name]
     instance = component_class(manifest, component_config)
 
     # Execute hooks in order (ComponentBase provides empty defaults for all hooks)
@@ -110,13 +92,9 @@ def configure_component(
         component_config: Optional component configuration
 
     Raises:
-        AttributeError: If component class not found
+        KeyError: If component not found in COMPONENTS
     """
-    component_class = get_component_class(component_name)
-    if not component_class:
-        raise AttributeError(f"Component '{component_name}' not found in COMPONENTS registry.")
-
-    # Create instance with manifest context
+    component_class = COMPONENTS[component_name]
     instance = component_class(manifest, component_config)
 
     # Execute configuration hooks (ComponentBase provides empty defaults for all hooks)
@@ -133,12 +111,8 @@ def remove_component(component_name: str) -> None:
         component_name: Component identifier
 
     Raises:
-        AttributeError: If component class not found
+        KeyError: If component not found in COMPONENTS
     """
-    component_class = get_component_class(component_name)
-    if not component_class:
-        raise AttributeError(f"Component '{component_name}' not found in COMPONENTS registry.")
-
-    # Create instance and call remove hook (ComponentBase provides empty default)
+    component_class = COMPONENTS[component_name]
     instance = component_class(None, None)
     instance.remove_hook()
