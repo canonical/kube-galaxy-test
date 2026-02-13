@@ -37,30 +37,23 @@ class Containerd(ComponentBase):
     BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
     CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
 
-    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def download_hook(self, arch: str) -> None:
         """
         Download containerd binary archive.
 
-        Checks for custom_binary_url first, otherwise constructs from repo/release.
+        Constructs download URL from self.config (repo, release, installation).
         Extracts archive for install hook.
         """
-        # Check for custom URL using property
-        url = self.custom_binary_url
+        if not self.config:
+            raise ComponentError("Component config required for download")
 
-        if url:
-            # Extract filename from URL for archive format detection
-            filename = url.split("/")[-1]
-        else:
-            # Ensure version has 'v' prefix
-            if not release.startswith("v"):
-                release = f"v{release}"
+        repo = self.config.repo
+        release = self.config.release
+        source_format = self.config.installation.source_format
 
-            # Get archive format from component config using property
-            archive_fmt = self.archive_format or "tar.gz"
-
-            # Construct download URL
-            filename = f"containerd-{release}.linux-{arch}.{archive_fmt}"
-            url = f"{repo}/releases/download/{release}/{filename}"
+        # Construct download URL from source_format template
+        url = source_format.format(repo=repo, release=release, arch=arch)
+        filename = url.split("/")[-1]
 
         # Download to temporary directory
         temp_dir = Path("/tmp/containerd-install")
@@ -77,7 +70,7 @@ class Containerd(ComponentBase):
         # Store paths as instance attribute
         self.extract_dir = extract_dir
 
-    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def install_hook(self, arch: str) -> None:
         """
         Install containerd binary from extracted archive.
 

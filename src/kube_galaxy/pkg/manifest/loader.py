@@ -5,7 +5,14 @@ from typing import Any
 
 import yaml
 
-from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NetworkConfig, NodeConfig
+from kube_galaxy.pkg.manifest.models import (
+    ComponentConfig,
+    InstallConfig,
+    InstallMethod,
+    Manifest,
+    NetworkConfig,
+    NodeConfig,
+)
 
 
 def load_manifest(path: str | Path) -> Manifest:
@@ -46,12 +53,17 @@ def _deserialize_manifest(data: dict[str, Any]) -> Manifest:
     # Parse components
     components: list[ComponentConfig] = []
     for comp_data in data.get("components", []):
+        install_data = comp_data.get("installation", {})
+        installation = InstallConfig(
+            method=InstallMethod(install_data.get("method", "binary-archive")),
+            source_format=install_data.get("source_format", ""),
+        )
         component = ComponentConfig(
             name=comp_data["name"],
             category=comp_data.get("category", ""),
             release=comp_data["release"],
             repo=comp_data["repo"],
-            format=comp_data.get("format", "Binary"),
+            installation=installation,
             use_spread=comp_data.get("use-spread", False),
         )
         components.append(component)

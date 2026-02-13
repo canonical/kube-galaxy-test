@@ -38,23 +38,21 @@ class Kubeadm(ComponentBase):
     VERIFY_TIMEOUT = 300  # 5 minutes (cluster health checks)
     CONFIGURE_TIMEOUT = 60  # 1 minute (configuration)
 
-    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def download_hook(self, arch: str) -> None:
         """
         Download kubeadm binary.
 
-        Checks for custom_binary_url first, otherwise constructs from repo/release.
+        Constructs download URL from self.config (repo, release, installation).
         """
-        # Check for custom URL using property
-        url = self.custom_binary_url
+        if not self.config:
+            raise RuntimeError("Component config required for download")
 
-        if not url:
-            # Ensure version has 'v' prefix
-            if not release.startswith("v"):
-                release = f"v{release}"
+        repo = self.config.repo
+        release = self.config.release
+        source_format = self.config.installation.source_format
 
-            # Construct download URL
-            filename = "kubeadm"
-            url = f"{repo}/releases/download/{release}/bin/linux/{arch}/{filename}"
+        # Construct download URL from source_format template
+        url = source_format.format(repo=repo, release=release, arch=arch)
 
         # Download to temporary directory
         temp_dir = Path("/tmp/kubeadm-install")
@@ -66,7 +64,7 @@ class Kubeadm(ComponentBase):
         # Store download location as instance attribute
         self.binary_path = binary_path
 
-    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def install_hook(self, arch: str) -> None:
         """
         Install kubeadm binary to system.
 
@@ -84,6 +82,9 @@ class Kubeadm(ComponentBase):
 
         This is where the cluster is actually created.
         """
+        if not self.manifest:
+            raise ComponentError("Manifest required for kubeadm bootstrap")
+
         # Get networking configuration from manifest
         networking = self.manifest.get_networking()
         if not networking:

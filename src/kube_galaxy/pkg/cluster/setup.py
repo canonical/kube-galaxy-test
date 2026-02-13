@@ -89,7 +89,7 @@ def _download_components(
     for config, instance in zip(configs, instances, strict=True):
         info(f"  {config.name}: downloading...")
         try:
-            instance.download_hook(config.repo, config.release, config.format, arch_info.k8s)
+            instance.download_hook(arch_info.k8s)
         except Exception as exc:
             exception(f"  ✗ Download failed for {config.name}", exc)
             raise
@@ -117,7 +117,7 @@ def _install_components(
     for config, instance in zip(configs, instances, strict=True):
         info(f"  {config.name}: installing...")
         try:
-            instance.install_hook(config.repo, config.release, config.format, arch_info.k8s)
+            instance.install_hook(arch_info.k8s)
         except Exception as exc:
             exception(f"  ✗ Install failed for {config.name}", exc)
             raise

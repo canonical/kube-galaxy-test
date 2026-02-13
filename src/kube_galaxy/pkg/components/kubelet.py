@@ -4,9 +4,12 @@ Kubelet component installation and management.
 Kubelet is the primary node agent running on each node.
 """
 
+from pathlib import Path
 from typing import ClassVar
 
 from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.utils.components import download_file
+from kube_galaxy.pkg.utils.errors import ComponentError
 
 
 class Kubelet(ComponentBase):
@@ -28,42 +31,28 @@ class Kubelet(ComponentBase):
     CONFIGURE_TIMEOUT = 120  # 2 minutes
     VERIFY_TIMEOUT = 120  # 2 minutes
 
-    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def download_hook(self, arch: str) -> None:
         """
         Download kubelet binary.
 
         Downloads the kubelet release binary.
         """
-        pass
+        if not self.config:
+            raise ComponentError("Component config required for download")
 
-    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
-        """
-        Install kubelet binary.
+        repo = self.config.repo
+        release = self.config.release
+        source_format = self.config.installation.source_format
 
-        Installs kubelet to system.
-        """
-        pass
+        # Construct download URL from source_format template
+        url = source_format.format(repo=repo, release=release, arch=arch)
 
-    def configure_hook(self) -> None:
-        """
-        Configure kubelet.
+        # Download to temporary directory
+        temp_dir = Path("/tmp/kubelet-install")
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
-        Creates systemd service unit for kubelet.
-        """
-        pass
+        binary_path = temp_dir / "kubelet"
+        download_file(url, binary_path)
 
-    def remove_hook(self) -> None:
-        """
-        Remove kubelet.
-
-        Stops service and removes binary.
-        """
-        pass
-
-    def verify_hook(self) -> None:
-        """
-        Verify kubelet is running.
-
-        Checks that kubelet service is accessible.
-        """
-        pass
+        # Store download location as instance attribute
+        self.binary_path = binary_path

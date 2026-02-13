@@ -5,7 +5,7 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from kube_galaxy.pkg.components._constants import (
     DEFAULT_BOOTSTRAP_TIMEOUT,
@@ -17,6 +17,7 @@ from kube_galaxy.pkg.components._constants import (
     DEFAULT_TEST_TIMEOUT,
     DEFAULT_VERIFY_TIMEOUT,
 )
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 
 
 class ComponentBase:
@@ -30,9 +31,9 @@ class ComponentBase:
     - Architecture information (passed to hooks)
 
     Lifecycle hooks (all have default empty implementations):
-    1. download_hook(repo, release, format, arch) - Download artifacts
+    1. download_hook(repo, release, method, source_format, arch) - Download artifacts
     2. pre_install_hook() - Prepare machine for installation
-    3. install_hook(repo, release, format, arch) - Install the component
+    3. install_hook(repo, release, method, source_format, arch) - Install the component
     4. configure_hook() - Configure component (config files, settings)
     5. bootstrap_hook() - Initialize/start the component
     6. post_bootstrap_hook() - Post-initialization tasks
@@ -61,78 +62,30 @@ class ComponentBase:
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY: int = 50
 
-    def __init__(self, manifest: Any, config: Any) -> None:
+    def __init__(self, manifest: Manifest, config: ComponentConfig) -> None:
         """
         Initialize component with manifest context.
 
         Args:
-            manifest: The full Manifest object
-            config: The ComponentConfig object for this specific component
+            manifest: The full Manifest object (optional)
+            config: The ComponentConfig object for this specific component (optional)
         """
         self.manifest = manifest
         self.config = config
 
-    # Properties for easy access to component configuration
-
-    @property
-    def custom_binary_url(self) -> str | None:
-        """Get custom binary URL from component config."""
-        return self.config.custom_binary_url  # type: ignore[no-any-return]
-
-    @property
-    def custom_image_url(self) -> str | None:
-        """Get custom image URL from component config."""
-        return self.config.custom_image_url  # type: ignore[no-any-return]
-
-    @property
-    def install_method(self) -> str | None:
-        """Get installation method from component config."""
-        return self.config.install_method  # type: ignore[no-any-return]
-
-    @property
-    def archive_format(self) -> str | None:
-        """Get archive format from component config."""
-        return self.config.archive_format  # type: ignore[no-any-return]
-
-    @property
-    def helm_chart_url(self) -> str | None:
-        """Get Helm chart URL from component config."""
-        return self.config.helm_chart_url  # type: ignore[no-any-return]
-
-    @property
-    def helm_values(self) -> dict[str, Any]:
-        """Get Helm values from component config."""
-        return self.config.helm_values  # type: ignore[no-any-return]
-
-    @property
-    def manifest_url(self) -> str | None:
-        """Get manifest URL from component config."""
-        return self.config.manifest_url  # type: ignore[no-any-return]
-
-    @property
-    def manifest_type(self) -> str | None:
-        """Get manifest type from component config."""
-        return self.config.manifest_type  # type: ignore[no-any-return]
-
-    @property
-    def hook_config(self) -> dict[str, Any]:
-        """Get hook-specific configuration from component config."""
-        return self.config.hook_config  # type: ignore[no-any-return]
-
     # Lifecycle hooks - all have default empty implementations
     # Override in subclass as needed
 
-    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def download_hook(self, arch: str) -> None:
         """
         Download component artifacts.
 
         This hook runs in the DOWNLOAD stage (can be parallelized).
         Override to implement download logic.
 
+        Access component config via self.config (repo, release, installation).
+
         Args:
-            repo: Repository URL
-            release: Release tag/version
-            format: Installation format (Binary, Container, Binary+Container)
             arch: Architecture (amd64, arm64, etc.)
         """
         pass
@@ -146,17 +99,16 @@ class ComponentBase:
         """
         pass
 
-    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def install_hook(self, arch: str) -> None:
         """
         Install the component.
 
-        This hook runs in the INSTALL stage (sequential, dependency-ordered).
-        Override to implement installation logic.
+        This hook runs in the INSTALL stage (sequential,
+        dependency-ordered). Override to implement installation logic.
+
+        Access component config via self.config (repo, release, installation).
 
         Args:
-            repo: Repository URL
-            release: Release tag/version
-            format: Installation format (Binary, Container, Binary+Container)
             arch: Architecture (amd64, arm64, etc.)
         """
         pass

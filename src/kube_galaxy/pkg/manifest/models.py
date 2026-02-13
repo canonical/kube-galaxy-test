@@ -1,7 +1,25 @@
 """Manifest data models for kube-galaxy."""
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
+
+
+class InstallMethod(StrEnum):
+    """Installation method for components."""
+
+    BINARY_ARCHIVE = "binary-archive"  # Binary in tar/zip/xz archive from releases
+    CONTAINER_IMAGE = "container-image"  # Container image from registry
+    HELM_CHART = "helm-chart"  # Helm chart installation
+    POD_MANIFEST = "pod-manifest"  # Kubernetes manifest deployment
+
+
+@dataclass
+class InstallConfig:
+    """Kubernetes component installation configuration."""
+
+    method: InstallMethod  # Installation method
+    source_format: str  # e.g., format string URL or path to binary, chart, or manifest
 
 
 @dataclass
@@ -12,30 +30,12 @@ class ComponentConfig:
     category: str
     release: str
     repo: str
-    format: str  # Binary, Container, or Binary+Container (legacy, kept for compatibility)
+    installation: InstallConfig
     use_spread: bool = False
 
     # Component lifecycle configuration
     dependencies: list[str] = field(default_factory=list)  # Must install after these components
     priority: int = 50  # Lower = earlier (for components without dependencies)
-
-    # Installation method configuration
-    install_method: str | None = (
-        None  # e.g., "binary-archive", "binary-direct", "helm-chart", "pod-manifest"
-    )
-    archive_format: str | None = None  # e.g., "tar.gz", "tar.xz" (for binary-archive method)
-
-    # Custom binary/image URLs (optional, overrides default repo/release)
-    custom_binary_url: str | None = None
-    custom_image_url: str | None = None
-
-    # Helm chart specific configuration
-    helm_chart_url: str | None = None
-    helm_values: dict[str, Any] = field(default_factory=dict)
-
-    # Manifest specific configuration
-    manifest_url: str | None = None
-    manifest_type: str | None = None  # "pod", "deployment", "daemonset", etc.
 
     # Hook configuration overrides
     skip_hooks: list[str] = field(default_factory=list)  # Hooks to skip (e.g., ["bootstrap"])

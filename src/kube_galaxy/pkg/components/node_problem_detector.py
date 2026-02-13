@@ -28,7 +28,7 @@ class NodeProblemDetector(ComponentBase):
     CONFIGURE_TIMEOUT = 60  # 1 minute
     VERIFY_TIMEOUT = 120  # 2 minutes
 
-    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def download_hook(self, arch: str) -> None:
         """
         Download Node Problem Detector container image.
 
@@ -37,7 +37,7 @@ class NodeProblemDetector(ComponentBase):
         """
         pass
 
-    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def install_hook(self, arch: str) -> None:
         """
         Install Node Problem Detector.
 

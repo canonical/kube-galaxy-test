@@ -111,9 +111,9 @@ def install_component(
     instance = component_class(manifest, component_config)
 
     # Execute hooks in order (ComponentBase provides empty defaults for all hooks)
-    instance.download_hook(repo, release, format, arch)
+    instance.download_hook(arch)
     instance.pre_install_hook()
-    instance.install_hook(repo, release, format, arch)
+    instance.install_hook(arch)
 
 
 def configure_component(
@@ -150,5 +150,5 @@ def remove_component(component_name: str) -> None:
         KeyError: If component not found in COMPONENTS
     """
     component_class = COMPONENTS[component_name]
-    instance = component_class(None, None)
+    instance = component_class(None, None)  # type: ignore[arg-type]
     instance.remove_hook()
