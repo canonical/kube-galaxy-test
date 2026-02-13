@@ -37,6 +37,28 @@ class Containerd(ComponentBase):
     BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
     CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
 
+    def _get_pause_image(self) -> str:
+        """
+        Get pause image from pause component or use default.
+
+        Checks if pause component is loaded in the instances dict
+        and uses its configuration for the sandbox_image.
+
+        Returns:
+            Pause image URL to use in containerd config
+        """
+        pause = self.instances.get("pause")
+        if pause:
+            # Use source_format if it's a container image
+            if pause.config.installation.source_format:
+                return pause.config.installation.source_format
+            # Otherwise construct from release version
+            if pause.config.release:
+                return f"registry.k8s.io/pause:{pause.config.release}"
+
+        # Fallback to default if no pause component
+        return "registry.k8s.io/pause:3.9"
+
     def download_hook(self, arch: str) -> None:
         """
         Download containerd binary archive.
@@ -105,8 +127,8 @@ class Containerd(ComponentBase):
         # Set SystemdCgroup = true (required for Kubernetes)
         config_content = config_content.replace("SystemdCgroup = false", "SystemdCgroup = true")
 
-        # Configure pause image (sandbox_image)
-        pause_image = "registry.k8s.io/pause:3.9"
+        # Configure pause image (sandbox_image) from pause component or default
+        pause_image = self._get_pause_image()
         config_content = config_content.replace(
             'sandbox_image = "registry.k8s.io/pause:3.8"',
             f'sandbox_image = "{pause_image}"',

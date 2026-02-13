@@ -54,21 +54,22 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         configs = manifest.get_components_by_priority()
 
         # Create all component instances
-        instances: list[ComponentBase] = []
+        instances: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = COMPONENTS[config.name]
-            instance = component_class(manifest, config)
-            instances.append(instance)
+            instance = component_class(instances, manifest, config)
+            instances[config.name] = instance
 
         # Execute 8-stage lifecycle
-        _download_components(instances, configs, arch_info)
-        _pre_install_components(instances, configs)
-        _install_components(instances, configs, arch_info)
-        _configure_components(instances, configs)
-        _bootstrap_components(instances, configs)
-        _post_bootstrap_components(instances, configs)
-        _verify_components(instances, configs)
-        _test_components(instances, configs)
+        instances_list = list(instances.values())
+        _download_components(instances_list, configs, arch_info)
+        _pre_install_components(instances_list, configs)
+        _install_components(instances_list, configs, arch_info)
+        _configure_components(instances_list, configs)
+        _bootstrap_components(instances_list, configs)
+        _post_bootstrap_components(instances_list, configs)
+        _verify_components(instances_list, configs)
+        _test_components(instances_list, configs)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")

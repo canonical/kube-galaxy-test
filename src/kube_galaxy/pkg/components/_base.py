@@ -62,14 +62,21 @@ class ComponentBase:
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY: int = 50
 
-    def __init__(self, manifest: Manifest, config: ComponentConfig) -> None:
+    def __init__(
+        self,
+        instances: dict[str, "ComponentBase"],
+        manifest: Manifest,
+        config: ComponentConfig,
+    ) -> None:
         """
-        Initialize component with manifest context.
+        Initialize component with instances, manifest, and config.
 
         Args:
-            manifest: The full Manifest object (optional)
-            config: The ComponentConfig object for this specific component (optional)
+            instances: Dict of all component instances (growing as components are created)
+            manifest: The full Manifest object
+            config: The ComponentConfig object for this specific component
         """
+        self.instances = instances
         self.manifest = manifest
         self.config = config
 
