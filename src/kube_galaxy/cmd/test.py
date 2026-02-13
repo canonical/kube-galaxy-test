@@ -87,16 +87,24 @@ def spread() -> None:
         raise typer.Exit(code=1) from e
 
 
-def setup() -> None:
+def setup(manifest_path: str | None = None) -> None:
     """Set up cluster from manifest."""
     section("Setting Up Cluster")
 
-    # Find baseline manifest
-    manifests = list(Path("manifests").glob("*.yaml"))
-    if not manifests:
-        error("No manifest files found")
-        raise typer.Exit(code=1)
-    manifest_file = str(manifests[0])
+    # Use provided manifest or find baseline manifest
+    if manifest_path:
+        manifest_file = manifest_path
+        if not Path(manifest_file).exists():
+            error(f"Manifest file does not exist: {manifest_file}")
+            raise typer.Exit(code=1)
+    else:
+        manifests = list(Path("manifests").glob("*.yaml"))
+        if not manifests:
+            error("No manifest files found")
+            raise typer.Exit(code=1)
+        manifest_file = str(manifests[0])
+
+    info(f"Using manifest: {manifest_file}")
 
     try:
         setup_cluster(manifest_file, work_dir=".", debug=False)

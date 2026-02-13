@@ -108,6 +108,9 @@ jobs:
           CLUSTER_NAME=$(python3 -c "from kube_galaxy.pkg.manifest.loader import load_manifest; m = load_manifest('${{ matrix.manifest-file }}'); print(m.name)")
           echo "cluster-name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
           echo "kubeconfig=$HOME/.kube/config" >> $GITHUB_OUTPUT
+          # Create sanitized artifact name (replace / with -)
+          ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
 
       - name: Verify Cluster Health
         shell: bash
@@ -160,7 +163,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.manifest-file }}
+          name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
           path: test-results/
           retention-days: 30
           if-no-files-found: warn
@@ -202,7 +205,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-logs-${{ matrix.manifest-file }}
+          name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || 'unknown' }}
           path: debug-logs/
           retention-days: 30
 
@@ -212,7 +215,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Create a simple issue on failure
+          # Create a simple issue on failure (without labels to avoid errors if labels don't exist)
           gh issue create \
             --title "[TEST FAILURE] Manifest ${{ matrix.manifest-file }} - Test #${{ github.run_number }}" \
             --body "Cluster test failed for manifest: \`${{ matrix.manifest-file }}\`
@@ -220,8 +223,7 @@ jobs:
           Test Suite: ${{ inputs.test-suite || 'functional-basic' }}
           Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          Check test results and debug logs in the action artifacts." \
-            --label "test-failure,automated"
+          Check test results and debug logs in the action artifacts." || echo "Failed to create issue, continuing..."
 
       - name: Cleanup Cluster
         if: always()

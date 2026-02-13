@@ -50,13 +50,14 @@ def validate_cmd(
 @app.command(name="test")
 def test_cmd(
     target: str = typer.Argument("local", help="What to test: local, spread, or setup"),
+    manifest: str = typer.Option(None, "--manifest", "-m", help="Path to manifest file"),
 ) -> None:
     """Run tests or manage test clusters.
 
     Examples:
         kube-galaxy test local
         kube-galaxy test spread
-        kube-galaxy test setup
+        kube-galaxy test setup --manifest manifests/baseline-k8s-1.35.yaml
     """
     match target:
         case "local":
@@ -64,7 +65,7 @@ def test_cmd(
         case "spread":
             test.spread()
         case "setup":
-            test.setup()
+            test.setup(manifest)
         case _:
             typer.echo(f"Unknown test target: {target}")
             raise typer.Exit(code=1)
