@@ -77,7 +77,7 @@ Stage 6: CONFIGURE (sequential, dependency-ordered)
 Components register using a class-based decorator pattern:
 
 ```python
-from kube_galaxy.pkg.components.base import ComponentBase
+from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.components import register_component_class
 
 @register_component_class

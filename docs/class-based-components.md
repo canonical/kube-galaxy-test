@@ -36,7 +36,7 @@ The class-based approach provides several advantages:
 ### Basic Structure
 
 ```python
-from kube_galaxy.pkg.components.base import ComponentBase
+from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.components import register_component_class
 
 @register_component_class
@@ -141,7 +141,7 @@ def bootstrap_hook(self):
 
 ```python
 from pathlib import Path
-from kube_galaxy.pkg.components.base import ComponentBase
+from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.components import register_component_class
 from kube_galaxy.pkg.utils.components import download_file, install_binary
 from kube_galaxy.pkg.utils.shell import run

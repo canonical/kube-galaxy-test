@@ -7,7 +7,7 @@ override the lifecycle hooks they need.
 
 from typing import ClassVar
 
-from kube_galaxy.pkg.components.constants import (
+from kube_galaxy.pkg.components._constants import (
     DEFAULT_BOOTSTRAP_TIMEOUT,
     DEFAULT_CONFIGURE_TIMEOUT,
     DEFAULT_DOWNLOAD_TIMEOUT,
