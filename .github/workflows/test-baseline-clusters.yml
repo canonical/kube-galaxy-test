@@ -46,13 +46,23 @@ jobs:
         shell: bash
         run: |
           # Filter manifests based on event type and ci-skip-on-pr label
-          # On PRs: skip manifests with ci-skip-on-pr: "true"
+          # On PRs (pull_request event OR push to PR branch): skip manifests with ci-skip-on-pr: "true"
           # On other events: include all manifests
           
           manifests="[]"
           
+          # Check if this is a PR-related event
+          IS_PR=false
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "PR event: Including only manifests without ci-skip-on-pr: true"
+            IS_PR=true
+            echo "Detected pull_request event"
+          elif [ "${{ github.head_ref }}" != "" ]; then
+            IS_PR=true
+            echo "Detected push to PR branch: ${{ github.head_ref }}"
+          fi
+          
+          if [ "$IS_PR" = "true" ]; then
+            echo "PR context: Including only manifests without ci-skip-on-pr: true"
             # Find manifests that don't have ci-skip-on-pr: "true"
             manifests=$(find manifests/ -name "*.yaml" -type f | while read -r file; do
               if ! grep -q 'ci-skip-on-pr.*:.*"true"' "$file" && ! grep -q "ci-skip-on-pr.*:.*'true'" "$file"; then
@@ -60,7 +70,7 @@ jobs:
               fi
             done | sort | jq -R -s -c 'split("\n")[:-1] | map(select(length > 0)) | map({"manifest-file": .})')
           else
-            echo "Non-PR event: Including all manifests"
+            echo "Non-PR context: Including all manifests"
             manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
           fi
           
@@ -104,13 +114,14 @@ jobs:
         id: setup-cluster
         shell: bash
         run: |
+          # Create sanitized artifact name (replace / with -) before setup
+          ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          
           kube-galaxy test setup --manifest ${{ matrix.manifest-file }}
           CLUSTER_NAME=$(python3 -c "from kube_galaxy.pkg.manifest.loader import load_manifest; m = load_manifest('${{ matrix.manifest-file }}'); print(m.name)")
           echo "cluster-name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
           echo "kubeconfig=$HOME/.kube/config" >> $GITHUB_OUTPUT
-          # Create sanitized artifact name (replace / with -)
-          ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
-          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
 
       - name: Verify Cluster Health
         shell: bash
@@ -205,7 +216,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || 'unknown' }}
+          name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || hashFiles(matrix.manifest-file) }}
           path: debug-logs/
           retention-days: 30
 
