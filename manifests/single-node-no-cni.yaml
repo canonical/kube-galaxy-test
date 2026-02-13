@@ -137,9 +137,7 @@ components:
 networking:
   - name: "default"
     service-cidr: "10.96.0.0/12"
-    region: "us-east-1"
-
-networking: []
+    pod-cidr: "192.168.0.0/16"
   # No CNI - cluster will not have pod networking configured
   # Pods on different nodes will not be able to communicate
   # Only host network pods and single-node workloads will function
