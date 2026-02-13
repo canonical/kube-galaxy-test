@@ -4,36 +4,26 @@ Kube-controller-manager component installation and management.
 Kube-controller-manager runs Kubernetes controllers.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components._base import ComponentBase
+
+
+class KubeControllerManager(ComponentBase):
     """
-    Install kube-controller-manager container.
+    Kube-ControllerManager component for Kubernetes control loops.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.33.4')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: Container-based components are pulled by kubelet during cluster bootstrap.
-    This install function serves as a placeholder for consistency.
+    This component handles the controller manager deployment.
     """
-    pass
 
+    # Component metadata
+    COMPONENT_NAME = "kube-controller-manager"
+    CATEGORY = "kubernetes/kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = []
+    PRIORITY = 100
 
-def configure() -> None:
-    """
-    Configure kube-controller-manager.
-
-    Configuration happens through kubeadm and cluster manifests.
-    """
-    pass
-
-
-def remove() -> None:
-    """
-    Remove kube-controller-manager.
-
-    Container cleanup is handled by kubeadm reset.
-    """
-    pass
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes

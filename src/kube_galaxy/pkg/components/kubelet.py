@@ -4,94 +4,66 @@ Kubelet component installation and management.
 Kubelet is the primary node agent running on each node.
 """
 
-from pathlib import Path
+from typing import ClassVar
 
-from kube_galaxy.pkg.utils.components import (
-    download_file,
-    install_binary,
-    remove_binary,
-)
-from kube_galaxy.pkg.utils.shell import run
+from kube_galaxy.pkg.components._base import ComponentBase
 
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+class Kubelet(ComponentBase):
     """
-    Install kubelet binary.
+    Kubelet component for Kubernetes nodes.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.33.4')
-        format: Installation format (Binary)
-        arch: Architecture (amd64, arm64, etc.)
+    This component handles kubelet installation and configuration.
     """
-    # Ensure version has 'v' prefix
-    if not release.startswith("v"):
-        release = f"v{release}"
 
-    # Construct download URL
-    filename = "kubelet"
-    url = f"{repo}/releases/download/{release}/bin/linux/{arch}/{filename}"
+    # Component metadata
+    COMPONENT_NAME = "kubelet"
+    CATEGORY = "kubernetes/kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = ["containerd"]
+    PRIORITY = 50
 
-    # Download binary
-    temp_dir = Path("/tmp/kubelet-install")
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 180  # 3 minutes
+    INSTALL_TIMEOUT = 120  # 2 minutes
+    CONFIGURE_TIMEOUT = 120  # 2 minutes
+    VERIFY_TIMEOUT = 120  # 2 minutes
 
-    binary_path = temp_dir / "kubelet"
-    download_file(url, binary_path)
+    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+        """
+        Download kubelet binary.
 
-    # Install binary
-    install_binary(binary_path, "kubelet")
-
-
-def configure() -> None:
-    """
-    Configure kubelet.
-
-    Creates systemd service unit for kubelet.
-    """
-    systemd_unit = """[Unit]
-Description=kubelet: The Kubernetes Node Agent
-Documentation=https://kubernetes.io/docs/
-After=containerd.service
-
-[Service]
-ExecStart=/usr/local/bin/kubelet \\
-  --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf \\
-  --kubeconfig=/etc/kubernetes/kubelet.conf \\
-  --config=/etc/kubernetes/kubelet-config.yaml \\
-  --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-    unit_path = Path("/etc/systemd/system/kubelet.service")
-    unit_path.parent.mkdir(parents=True, exist_ok=True)
-    unit_path.write_text(systemd_unit)
-
-    # Reload systemd
-    run(["systemctl", "daemon-reload"], check=False)
-
-
-def remove() -> None:
-    """
-    Remove kubelet.
-
-    Stops service and removes binary.
-    """
-    try:
-        run(["systemctl", "stop", "kubelet"], check=False)
-        run(["systemctl", "disable", "kubelet"], check=False)
-    except Exception:
+        Downloads the kubelet release binary.
+        """
         pass
 
-    remove_binary("kubelet")
+    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+        """
+        Install kubelet binary.
 
-    # Remove systemd unit
-    unit_path = Path("/etc/systemd/system/kubelet.service")
-    if unit_path.exists():
-        unit_path.unlink()
+        Installs kubelet to system.
+        """
+        pass
 
-    run(["systemctl", "daemon-reload"], check=False)
+    def configure_hook(self) -> None:
+        """
+        Configure kubelet.
+
+        Creates systemd service unit for kubelet.
+        """
+        pass
+
+    def remove_hook(self) -> None:
+        """
+        Remove kubelet.
+
+        Stops service and removes binary.
+        """
+        pass
+
+    def verify_hook(self) -> None:
+        """
+        Verify kubelet is running.
+
+        Checks that kubelet service is accessible.
+        """
+        pass

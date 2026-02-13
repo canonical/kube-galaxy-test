@@ -4,36 +4,26 @@ Kube-apiserver component installation and management.
 Kube-apiserver is the core API server for Kubernetes.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components._base import ComponentBase
+
+
+class KubeAPIServer(ComponentBase):
     """
-    Install kube-apiserver container.
+    Kube-APIServer component for Kubernetes control plane.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.33.4')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: Container-based components are pulled by kubelet during cluster bootstrap.
-    This install function serves as a placeholder for consistency.
+    This component handles the main API server deployment.
     """
-    pass
 
+    # Component metadata
+    COMPONENT_NAME = "kube-apiserver"
+    CATEGORY = "kubernetes/kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = []
+    PRIORITY = 100
 
-def configure() -> None:
-    """
-    Configure kube-apiserver.
-
-    Configuration happens through kubeadm and cluster manifests.
-    """
-    pass
-
-
-def remove() -> None:
-    """
-    Remove kube-apiserver.
-
-    Container cleanup is handled by kubeadm reset.
-    """
-    pass
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes

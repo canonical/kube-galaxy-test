@@ -4,36 +4,26 @@ CoreDNS component installation and management.
 CoreDNS is the DNS server used by Kubernetes.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components._base import ComponentBase
+
+
+class CoreDNS(ComponentBase):
     """
-    Install CoreDNS.
+    CoreDNS component for cluster DNS services.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.12.1')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: CoreDNS is deployed as a Kubernetes addon through cluster manifests.
-    This install function serves as a placeholder for consistency.
+    This component handles the CoreDNS deployment for Kubernetes DNS.
     """
-    pass
 
+    # Component metadata
+    COMPONENT_NAME = "coredns"
+    CATEGORY = "coredns"
+    DEPENDENCIES: ClassVar[list[str]] = []
+    PRIORITY = 100
 
-def configure() -> None:
-    """
-    Configure CoreDNS.
-
-    Configuration happens through Kubernetes manifests after cluster bootstrap.
-    """
-    pass
-
-
-def remove() -> None:
-    """
-    Remove CoreDNS.
-
-    Cleanup is handled through kubeadm reset or manual kubectl deletion.
-    """
-    pass
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes

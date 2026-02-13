@@ -4,36 +4,26 @@ Cluster Autoscaler component installation and management.
 Cluster Autoscaler automatically adjusts cluster size.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components._base import ComponentBase
+
+
+class ClusterAutoscaler(ComponentBase):
     """
-    Install Cluster Autoscaler.
+    Cluster Autoscaler component for automatic cluster scaling.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.33.0')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: Cluster Autoscaler is deployed as a Kubernetes addon through manifests.
-    This install function serves as a placeholder for consistency.
+    This component handles the Cluster Autoscaler deployment.
     """
-    pass
 
+    # Component metadata
+    COMPONENT_NAME = "cluster-autoscaler"
+    CATEGORY = "kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = []
+    PRIORITY = 100
 
-def configure() -> None:
-    """
-    Configure Cluster Autoscaler.
-
-    Configuration happens through Kubernetes manifests after cluster bootstrap.
-    """
-    pass
-
-
-def remove() -> None:
-    """
-    Remove Cluster Autoscaler.
-
-    Cleanup is handled through kubectl deletion or kubeadm reset.
-    """
-    pass
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes

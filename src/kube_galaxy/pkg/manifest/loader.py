@@ -26,8 +26,7 @@ def load_manifest(path: str | Path) -> Manifest:
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest file not found: {path}")
 
-    with open(manifest_path) as f:
-        data: dict[str, Any] = yaml.safe_load(f)
+    data: dict[str, Any] = yaml.safe_load(manifest_path.open())
 
     if not isinstance(data, dict):
         raise ValueError("Manifest must be a YAML dictionary")

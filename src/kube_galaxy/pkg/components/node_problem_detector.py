@@ -4,36 +4,68 @@ Node Problem Detector component installation and management.
 Node Problem Detector detects abnormal node conditions.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components._base import ComponentBase
+
+
+class NodeProblemDetector(ComponentBase):
     """
-    Install Node Problem Detector.
+    Node Problem Detector component for node issue detection.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v0.8.21')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: Node Problem Detector is deployed as a Kubernetes addon through manifests.
-    This install function serves as a placeholder for consistency.
+    This component handles detection of node-level issues.
     """
-    pass
 
+    # Component metadata
+    COMPONENT_NAME = "node-problem-detector"
+    CATEGORY = "kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = []
+    PRIORITY = 100
 
-def configure() -> None:
-    """
-    Configure Node Problem Detector.
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes
 
-    Configuration happens through Kubernetes manifests after cluster bootstrap.
-    """
-    pass
+    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+        """
+        Download Node Problem Detector container image.
 
+        Container images are pulled by the DaemonSet, this serves as
+        a placeholder for consistency with other components.
+        """
+        pass
 
-def remove() -> None:
-    """
-    Remove Node Problem Detector.
+    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+        """
+        Install Node Problem Detector.
 
-    Cleanup is handled through kubectl deletion or kubeadm reset.
-    """
-    pass
+        Installation happens through Kubernetes DaemonSet deployment.
+        This hook serves as a placeholder for consistency.
+        """
+        pass
+
+    def configure_hook(self) -> None:
+        """
+        Configure Node Problem Detector.
+
+        Configuration happens through manifests after cluster bootstrap.
+        """
+        pass
+
+    def remove_hook(self) -> None:
+        """
+        Remove Node Problem Detector.
+
+        Cleanup is handled through kubectl deletion or kubeadm reset.
+        """
+        pass
+
+    def verify_hook(self) -> None:
+        """
+        Verify Node Problem Detector is running.
+
+        Checks for the DaemonSet in the kube-system namespace.
+        """
+        pass

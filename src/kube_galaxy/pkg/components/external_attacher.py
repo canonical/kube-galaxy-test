@@ -1,7 +1,7 @@
 """
-Kubectl component installation and management.
+External attacher component installation and management.
 
-Kubectl is the command-line tool for communicating with Kubernetes clusters.
+External attacher is a CSI helper sidecar for volume attachment operations.
 """
 
 from typing import ClassVar
@@ -9,16 +9,16 @@ from typing import ClassVar
 from kube_galaxy.pkg.components._base import ComponentBase
 
 
-class Kubectl(ComponentBase):
+class ExternalAttacher(ComponentBase):
     """
-    Kubectl component for cluster interaction.
+    External attacher component for CSI volume attachment.
 
-    This component handles kubectl installation for cluster management.
+    This component handles the CSI external-attacher sidecar deployment.
     """
 
     # Component metadata
-    COMPONENT_NAME = "kubectl"
-    CATEGORY = "kubernetes/kubernetes"
+    COMPONENT_NAME = "external-attacher"
+    CATEGORY = "kubernetes-csi"
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY = 100
 
