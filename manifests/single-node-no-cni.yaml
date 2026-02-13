@@ -1,0 +1,138 @@
+name: single-node-no-cni
+description: "Single-node Kubernetes cluster without CNI - core components only"
+kubernetes-version: "1.35.0"
+labels:
+  environment: testing
+  cluster-type: minimal
+  k8s-version: "1.35"
+  cni: "none"
+
+nodes:
+  control-plane: 1
+  worker: 0
+
+components:
+  # Container runtime (required for kubeadm)
+  - name: containerd
+    category: containerd
+    release: "2.2.1"
+    repo: "https://github.com/containerd/containerd"
+    format: Binary
+    use-spread: false
+
+  - name: runc
+    category: containerd
+    release: "1.3.4"
+    repo: "https://github.com/opencontainers/runc"
+    format: Binary
+    use-spread: false
+
+  # Kubernetes core binaries
+  - name: kubeadm
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Binary
+    use-spread: false
+
+  - name: kubelet
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Binary
+    use-spread: false
+
+  - name: kubectl
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Binary+Container
+    use-spread: false
+
+  # Kubernetes control plane components
+  - name: kube-apiserver
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: kube-controller-manager
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: kube-scheduler
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: kube-proxy
+    category: kubernetes/kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: pause
+    category: kubernetes/kubernetes
+    release: "3.10.1"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  # etcd - required for cluster state
+  - name: etcd
+    category: etcd
+    release: "3.5.26"
+    repo: "https://github.com/etcd-io/etcd"
+    format: Container
+    use-spread: false
+
+  - name: etcdctl
+    category: etcd
+    release: "3.5.26"
+    repo: "https://github.com/etcd-io/etcd"
+    format: Binary+Container
+    use-spread: false
+
+  # CoreDNS - required for cluster DNS
+  - name: coredns
+    category: coredns
+    release: "1.13.1"
+    repo: "https://github.com/coredns/coredns"
+    format: Container
+    use-spread: false
+
+testing:
+  suite: "functional-basic"
+  timeout: "30m"
+  parallel: false
+  retry-count: 1
+
+infrastructure:
+  provider: "github-actions"
+  runner-size: "ubuntu-latest-4-cores"
+  region: "us-east-1"
+
+networking: []
+  # No CNI - cluster will not have pod networking configured
+  # Pods on different nodes will not be able to communicate
+  # Only host network pods and single-node workloads will function
+
+storage:
+  - name: "local-path"
+    provisioner: "local-path"
+    storage-classes:
+      - name: "local-path"
+        parameters:
+          type: "default"
+
+security:
+  rbac: true
+  network-policies: false
+  pod-security-standards: "baseline"
