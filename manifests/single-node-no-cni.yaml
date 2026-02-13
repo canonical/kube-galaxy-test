@@ -6,7 +6,6 @@ labels:
   cluster-type: minimal
   k8s-version: "1.35"
   cni: "none"
-  ci-skip: "true"  # Skip automated CI - requires manual testing due to no CNI
 
 nodes:
   control-plane: 1

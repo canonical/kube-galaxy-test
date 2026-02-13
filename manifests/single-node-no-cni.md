@@ -1,6 +1,6 @@
 # Single-Node Kubeadm Cluster Without CNI
 
-> ⚠️ **Note**: This manifest is designed for **manual testing only** and is excluded from automated CI/CD workflows because the cluster nodes will remain in `NotReady` state without a CNI plugin.
+> ⚠️ **Note**: This manifest runs on **PR CI** for fast validation of core tooling. The baseline manifests with full networking run on `workflow_dispatch` for comprehensive testing.
 
 ## Overview
 

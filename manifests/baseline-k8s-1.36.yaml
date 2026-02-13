@@ -5,6 +5,7 @@ labels:
   environment: testing
   cluster-type: baseline
   k8s-version: "1.36"
+  ci-skip-on-pr: "true"  # Skip on PRs - run on main branch (slower, comprehensive test)
 
 nodes:
   control-plane: 1

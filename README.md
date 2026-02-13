@@ -73,19 +73,27 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
 
 The `manifests/` directory contains several pre-configured cluster definitions:
 
-### Baseline Clusters
+### Baseline Clusters (Run on `workflow_dispatch`)
 - `baseline-k8s-1.33.yaml` - Full K8s 1.33.0 cluster with Calico CNI
 - `baseline-k8s-1.34.yaml` - Full K8s 1.34.0 cluster with Calico CNI
 - `baseline-k8s-1.35.yaml` - Full K8s 1.35.0 cluster with Calico CNI
 - `baseline-k8s-1.36.yaml` - Full K8s 1.36.0 cluster with Calico CNI
 
-### Minimal Clusters
+These comprehensive manifests include full networking and are marked with `ci-skip-on-pr: "true"` to run only on manual workflow dispatch.
+
+### Minimal Clusters (Run on PRs)
 - `single-node-no-cni.yaml` - **Single-node cluster without CNI** (core components only)
+  - **Runs automatically on all PRs** for fast validation
   - Perfect for testing core Kubernetes components in isolation
   - Single control-plane node (no workers)
-  - No CNI plugin (cluster will not have pod networking)
+  - No CNI plugin (nodes will be NotReady, control plane components validated)
   - Useful for CNI development, debugging, or learning
   - See [single-node-no-cni.md](manifests/single-node-no-cni.md) for detailed documentation
+
+### CI Strategy
+- **Pull Requests**: Fast validation with `single-node-no-cni.yaml` only (~5-10 minutes)
+- **Workflow Dispatch**: Comprehensive testing with all manifests (~45-90 minutes per manifest)
+- **Push to main**: Disabled (empty branches list) to avoid redundant runs after PR merge
 
 **Example**: Testing the minimal cluster
 ```bash
