@@ -88,10 +88,38 @@ class Containerd(ComponentBase):
 
     def configure_hook(self) -> None:
         """
-        Configure containerd with systemd service.
+        Configure containerd with proper Kubernetes-compatible settings.
 
-        Creates systemd service unit and enables it.
+        Generates default config, sets SystemdCgroup=true (required for K8s),
+        configures pause image, and creates systemd service file.
         """
+        # Generate default containerd config
+        result = run(
+            ["containerd", "config", "default"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        config_content = result.stdout
+
+        # Set SystemdCgroup = true (required for Kubernetes)
+        config_content = config_content.replace("SystemdCgroup = false", "SystemdCgroup = true")
+
+        # Configure pause image (sandbox_image)
+        pause_image = "registry.k8s.io/pause:3.9"
+        config_content = config_content.replace(
+            'sandbox_image = "registry.k8s.io/pause:3.8"',
+            f'sandbox_image = "{pause_image}"',
+        )
+
+        # Write containerd config to /etc/containerd/config.toml
+        run(["sudo", "mkdir", "-p", "/etc/containerd"], check=True)
+        temp_config = Path("/tmp/containerd-config.toml")
+        temp_config.write_text(config_content)
+        run(["sudo", "cp", str(temp_config), "/etc/containerd/config.toml"], check=True)
+        run(["sudo", "chmod", "644", "/etc/containerd/config.toml"], check=True)
+        temp_config.unlink()
+
         # Create systemd service unit
         systemd_unit = """[Unit]
 Description=containerd container runtime
