@@ -134,27 +134,25 @@ def install_component(
         manifest: Optional manifest object for context
         component_config: Optional component configuration
     """
-    # Try to get class-based component
-    try:
-        component_class = get_component_class(component_name)
-        if component_class:
-            # Create instance with manifest context
-            instance = create_component_instance(component_class, manifest, component_config)
-            
-            # Execute hooks in order
-            if hasattr(instance, 'download_hook'):
-                instance.download_hook(repo, release, format, arch)
-            if hasattr(instance, 'pre_install_hook'):
-                instance.pre_install_hook()
-            if hasattr(instance, 'install_hook'):
-                instance.install_hook(repo, release, format, arch)
-            return
-    except Exception:
-        # Component not registered as class, try legacy approach
-        pass
-    
-    # Fallback: try to find module with install function
+    # First, ensure the module is imported (this triggers @register_component_class decorator)
     module = get_component_module(component_name)
+    
+    # Now try to get class-based component (should be registered after import)
+    component_class = get_component_class(component_name)
+    if component_class:
+        # Create instance with manifest context
+        instance = create_component_instance(component_class, manifest, component_config)
+        
+        # Execute hooks in order
+        if hasattr(instance, 'download_hook'):
+            instance.download_hook(repo, release, format, arch)
+        if hasattr(instance, 'pre_install_hook'):
+            instance.pre_install_hook()
+        if hasattr(instance, 'install_hook'):
+            instance.install_hook(repo, release, format, arch)
+        return
+    
+    # Fallback: try legacy module function
     if hasattr(module, "install"):
         module.install(repo=repo, release=release, format=format, arch=arch)
     else:
@@ -173,27 +171,25 @@ def configure_component(component_name: str, manifest=None, component_config=Non
         manifest: Optional manifest object for context
         component_config: Optional component configuration
     """
-    # Try to get class-based component
-    try:
-        component_class = get_component_class(component_name)
-        if component_class:
-            # Create instance with manifest context
-            instance = create_component_instance(component_class, manifest, component_config)
-            
-            # Execute configuration hooks
-            if hasattr(instance, 'bootstrap_hook'):
-                instance.bootstrap_hook()
-            if hasattr(instance, 'post_bootstrap_hook'):
-                instance.post_bootstrap_hook()
-            if hasattr(instance, 'configure_hook'):
-                instance.configure_hook()
-            return
-    except Exception:
-        # Component not registered as class, try legacy approach
-        pass
-    
-    # Fallback: try to find module with configure function
+    # First, ensure the module is imported (this triggers @register_component_class decorator)
     module = get_component_module(component_name)
+    
+    # Now try to get class-based component (should be registered after import)
+    component_class = get_component_class(component_name)
+    if component_class:
+        # Create instance with manifest context
+        instance = create_component_instance(component_class, manifest, component_config)
+        
+        # Execute configuration hooks
+        if hasattr(instance, 'bootstrap_hook'):
+            instance.bootstrap_hook()
+        if hasattr(instance, 'post_bootstrap_hook'):
+            instance.post_bootstrap_hook()
+        if hasattr(instance, 'configure_hook'):
+            instance.configure_hook()
+        return
+    
+    # Fallback: try legacy module function
     if hasattr(module, "configure"):
         module.configure()
 
@@ -208,20 +204,3 @@ def remove_component(component_name: str) -> None:
     module = get_component_module(component_name)
     if hasattr(module, "remove"):
         module.remove()
-
-
-# Auto-import all component modules to register their classes
-# This ensures @register_component_class decorators run on import
-from pathlib import Path
-
-_component_dir = Path(__file__).parent
-for _file in _component_dir.glob("*.py"):
-    if _file.stem not in ["__init__", "base", "constants"]:
-        try:
-            importlib.import_module(f"kube_galaxy.pkg.components.{_file.stem}")
-        except Exception:
-            # Silently ignore import errors for incomplete components
-            pass
-
-# Clean up temporary variables
-del _component_dir, _file, Path
