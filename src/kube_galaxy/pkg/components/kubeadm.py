@@ -89,7 +89,7 @@ class Kubeadm(ComponentBase):
 
         # Download kubeadm.service from Kubernetes release repository
         info("  Installing kubelet configs")
-        service_url = "https://raw.githubusercontent.com/kubernetes/release/${RELEASE_VERSION}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
+        service_url = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
         with urlopen(service_url) as response:
             service_content = response.read().decode("utf-8")
 
