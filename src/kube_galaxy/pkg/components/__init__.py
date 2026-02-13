@@ -13,24 +13,24 @@ Component Lifecycle Hooks:
 """
 
 from enum import Enum
+from typing import Any
+
+from kube_galaxy.pkg.components._base import ComponentBase
 
 __all__ = [
     # Public API
     "HookStage",
-    "register_component_class",
-    "get_component_class",
-    "create_component_instance",
-    "get_all_component_classes",
-    "install_component",
-    "configure_component",
-    "remove_component",
-    # Component modules (imported for @register_component_class decorator side-effects)
     "cluster_autoscaler",
     "cni_plugins",
+    "configure_component",
     "containerd",
     "coredns",
+    "create_component_instance",
     "etcd",
     "etcdctl",
+    "get_all_component_classes",
+    "get_component_class",
+    "install_component",
     "kube_apiserver",
     "kube_controller_manager",
     "kube_proxy",
@@ -40,6 +40,8 @@ __all__ = [
     "kubelet",
     "node_problem_detector",
     "pause",
+    "register_component_class",
+    "remove_component",
     "runc",
 ]
 
@@ -59,7 +61,7 @@ class HookStage(Enum):
 _COMPONENT_CLASSES: dict[str, type] = {}
 
 
-def register_component_class(component_class: type) -> type:
+def register_component_class(component_class: type[ComponentBase]) -> type[ComponentBase]:
     """
     Register a component class.
 
@@ -94,7 +96,9 @@ def get_component_class(component_name: str) -> type | None:
     return _COMPONENT_CLASSES.get(component_name)
 
 
-def create_component_instance(component_name: str, manifest, component):
+def create_component_instance(
+    component_name: str, manifest: Any, component: Any
+) -> ComponentBase:
     """
     Create an instance of a component with manifest context.
 
@@ -104,12 +108,15 @@ def create_component_instance(component_name: str, manifest, component):
         component: Component configuration object
 
     Returns:
-        Component instance or None if not found
+        Component instance
+
+    Raises:
+        AttributeError: If component not found
     """
     component_class = get_component_class(component_name)
-    if component_class:
-        return component_class(manifest, component)
-    return None
+    if not component_class:
+        raise AttributeError(f"Component '{component_name}' not found.")
+    return component_class(manifest, component)  # type: ignore[no-any-return]
 
 
 def get_all_component_classes() -> dict[str, type]:
@@ -123,8 +130,8 @@ def install_component(
     release: str,
     format: str,
     arch: str,
-    manifest=None,
-    component_config=None,
+    manifest: Any = None,
+    component_config: Any = None,
 ) -> None:
     """
     Install a component using the class-based interface.
@@ -137,7 +144,7 @@ def install_component(
         arch: Architecture (amd64, arm64, etc.)
         manifest: Optional manifest object for context
         component_config: Optional component configuration
-    
+
     Raises:
         AttributeError: If component class not found
     """
@@ -145,19 +152,22 @@ def install_component(
     if not component_class:
         raise AttributeError(
             f"Component '{component_name}' not found. "
-            f"Please ensure it has a ComponentBase subclass with @register_component_class decorator."
+            f"Please ensure it has a ComponentBase subclass with "
+            f"@register_component_class decorator."
         )
-    
+
     # Create instance with manifest context
     instance = create_component_instance(component_name, manifest, component_config)
-    
+
     # Execute hooks in order (ComponentBase provides empty defaults for all hooks)
     instance.download_hook(repo, release, format, arch)
     instance.pre_install_hook()
     instance.install_hook(repo, release, format, arch)
 
 
-def configure_component(component_name: str, manifest=None, component_config=None) -> None:
+def configure_component(
+    component_name: str, manifest: Any = None, component_config: Any = None
+) -> None:
     """
     Configure a component after installation using the class-based interface.
 
@@ -165,7 +175,7 @@ def configure_component(component_name: str, manifest=None, component_config=Non
         component_name: Component identifier
         manifest: Optional manifest object for context
         component_config: Optional component configuration
-    
+
     Raises:
         AttributeError: If component class not found
     """
@@ -173,12 +183,13 @@ def configure_component(component_name: str, manifest=None, component_config=Non
     if not component_class:
         raise AttributeError(
             f"Component '{component_name}' not found. "
-            f"Please ensure it has a ComponentBase subclass with @register_component_class decorator."
+            f"Please ensure it has a ComponentBase subclass with "
+            f"@register_component_class decorator."
         )
-    
+
     # Create instance with manifest context
     instance = create_component_instance(component_name, manifest, component_config)
-    
+
     # Execute configuration hooks (ComponentBase provides empty defaults for all hooks)
     instance.bootstrap_hook()
     instance.post_bootstrap_hook()
@@ -191,7 +202,7 @@ def remove_component(component_name: str) -> None:
 
     Args:
         component_name: Component identifier
-    
+
     Raises:
         AttributeError: If component class not found
     """
@@ -199,9 +210,10 @@ def remove_component(component_name: str) -> None:
     if not component_class:
         raise AttributeError(
             f"Component '{component_name}' not found. "
-            f"Please ensure it has a ComponentBase subclass with @register_component_class decorator."
+            f"Please ensure it has a ComponentBase subclass with "
+            f"@register_component_class decorator."
         )
-    
+
     # Create instance and call remove hook (ComponentBase provides empty default)
     instance = create_component_instance(component_name, None, None)
     instance.remove_hook()
@@ -209,19 +221,22 @@ def remove_component(component_name: str) -> None:
 
 # Import all component modules to trigger @register_component_class decorators.
 # These imports MUST be at the end to avoid circular imports.
-from kube_galaxy.pkg.components import cluster_autoscaler
-from kube_galaxy.pkg.components import cni_plugins
-from kube_galaxy.pkg.components import containerd
-from kube_galaxy.pkg.components import coredns
-from kube_galaxy.pkg.components import etcd
-from kube_galaxy.pkg.components import etcdctl
-from kube_galaxy.pkg.components import kube_apiserver
-from kube_galaxy.pkg.components import kube_controller_manager
-from kube_galaxy.pkg.components import kube_proxy
-from kube_galaxy.pkg.components import kube_scheduler
-from kube_galaxy.pkg.components import kubeadm
-from kube_galaxy.pkg.components import kubectl
-from kube_galaxy.pkg.components import kubelet
-from kube_galaxy.pkg.components import node_problem_detector
-from kube_galaxy.pkg.components import pause
-from kube_galaxy.pkg.components import runc
+# ruff: noqa: E402
+from kube_galaxy.pkg.components import (
+    cluster_autoscaler,
+    cni_plugins,
+    containerd,
+    coredns,
+    etcd,
+    etcdctl,
+    kube_apiserver,
+    kube_controller_manager,
+    kube_proxy,
+    kube_scheduler,
+    kubeadm,
+    kubectl,
+    kubelet,
+    node_problem_detector,
+    pause,
+    runc,
+)

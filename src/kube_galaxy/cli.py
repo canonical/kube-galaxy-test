@@ -2,7 +2,7 @@
 
 import sys
 
-import typer
+import typer  # type: ignore[import-not-found]
 
 from kube_galaxy import __version__
 from kube_galaxy.cmd import cleanup, setup, status, test, validate

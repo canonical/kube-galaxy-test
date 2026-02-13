@@ -95,7 +95,7 @@ class Manifest:
             List of components in execution order
         """
         # Simple topological sort based on dependencies and priority
-        sorted_components = []
+        sorted_components: list[Component] = []
         remaining = self.components.copy()
 
         while remaining:

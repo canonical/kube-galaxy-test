@@ -1,10 +1,9 @@
 """CLI output formatting and logging."""
 
-import sys
 import traceback
 from typing import Any
 
-import typer
+import typer  # type: ignore[import-not-found]
 
 
 def info(message: str) -> None:
@@ -32,7 +31,7 @@ def error(message: str, exc: Exception | None = None, show_traceback: bool = Tru
     if exc and show_traceback:
         typer.echo(typer.style("\nError Details:", fg=typer.colors.RED, bold=True), err=True)
         typer.echo(typer.style(f"  Type: {type(exc).__name__}", fg=typer.colors.RED), err=True)
-        typer.echo(typer.style(f"  Message: {str(exc)}", fg=typer.colors.RED), err=True)
+        typer.echo(typer.style(f"  Message: {exc!s}", fg=typer.colors.RED), err=True)
 
         # Show full traceback
         typer.echo(typer.style("\nStack Trace:", fg=typer.colors.RED, bold=True), err=True)
