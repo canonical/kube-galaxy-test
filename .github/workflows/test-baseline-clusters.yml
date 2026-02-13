@@ -2,7 +2,8 @@ name: Test Baseline Clusters
 
 on:
   push:
-    branches: []  # Don't run on push - PRs run fast tests, use workflow_dispatch for comprehensive tests
+    branches:
+      - main
     paths:
       - 'src/**'
       - 'manifests/*.yaml'
