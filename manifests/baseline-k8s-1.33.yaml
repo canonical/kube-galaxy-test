@@ -153,7 +153,7 @@ testing:
 
 infrastructure:
   provider: "github-actions"
-  runner-size: "ubuntu-latest-4-cores"
+  runner-size: "ubuntu-latest"
   region: "us-east-1"
 
 networking:

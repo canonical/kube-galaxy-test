@@ -70,7 +70,7 @@ jobs:
   # Matrix configuration for baseline cluster testing
   test-matrix:
     needs: discover-manifests
-    runs-on: ubuntu-latest-4-cores
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -97,7 +97,7 @@ jobs:
         run: |
           echo "## Test Configuration"
           echo "- **Manifest**: ${{ matrix.manifest-file }}"
-          echo "- **Runner**: ubuntu-latest-4-cores"
+          echo "- **Runner**: ubuntu-latest"
           echo "- **Timeout**: 90 minutes"
 
       - name: Setup Cluster
