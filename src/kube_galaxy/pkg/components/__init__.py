@@ -12,13 +12,13 @@ Component Lifecycle Hooks:
 - configure: Final configuration and verification
 """
 
+import importlib
 from enum import Enum
-from typing import Optional, Type
 
 
 class HookStage(Enum):
     """Component lifecycle stages."""
-    
+
     DOWNLOAD = "download"
     PRE_INSTALL = "pre_install"
     INSTALL = "install"
@@ -28,38 +28,38 @@ class HookStage(Enum):
 
 
 # Registry of component classes
-_COMPONENT_CLASSES: dict[str, Type] = {}
+_COMPONENT_CLASSES: dict[str, type] = {}
 
 
-def register_component_class(component_class: Type) -> Type:
+def register_component_class(component_class: type) -> type:
     """
     Register a component class.
-    
+
     Use as a decorator:
         @register_component_class
         class MyComponent(ComponentBase):
             ...
-    
+
     Args:
         component_class: Class that inherits from ComponentBase
-        
+
     Returns:
         The same class (for decorator usage)
     """
-    if not hasattr(component_class, 'COMPONENT_NAME'):
+    if not hasattr(component_class, "COMPONENT_NAME"):
         raise ValueError(f"Component class {component_class} must define COMPONENT_NAME")
-    
+
     _COMPONENT_CLASSES[component_class.COMPONENT_NAME] = component_class
     return component_class
 
 
-def get_component_class(component_name: str) -> Optional[Type]:
+def get_component_class(component_name: str) -> type | None:
     """
     Get registered class for a component.
-    
+
     Args:
         component_name: Component identifier
-        
+
     Returns:
         Component class if registered, None otherwise
     """
@@ -69,12 +69,12 @@ def get_component_class(component_name: str) -> Optional[Type]:
 def create_component_instance(component_name: str, manifest, component):
     """
     Create an instance of a component with manifest context.
-    
+
     Args:
         component_name: Component identifier
         manifest: Full Manifest object
         component: Component configuration object
-        
+
     Returns:
         Component instance or None if not found
     """
@@ -84,10 +84,9 @@ def create_component_instance(component_name: str, manifest, component):
     return None
 
 
-def get_all_component_classes() -> dict[str, Type]:
+def get_all_component_classes() -> dict[str, type]:
     """Get all registered component classes."""
     return _COMPONENT_CLASSES.copy()
-
 
 
 def get_component_module(component_name: str):
@@ -157,4 +156,3 @@ def remove_component(component_name: str) -> None:
     module = get_component_module(component_name)
     if hasattr(module, "remove"):
         module.remove()
-
