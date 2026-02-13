@@ -208,3 +208,20 @@ def remove_component(component_name: str) -> None:
     module = get_component_module(component_name)
     if hasattr(module, "remove"):
         module.remove()
+
+
+# Auto-import all component modules to register their classes
+# This ensures @register_component_class decorators run on import
+from pathlib import Path
+
+_component_dir = Path(__file__).parent
+for _file in _component_dir.glob("*.py"):
+    if _file.stem not in ["__init__", "base", "constants"]:
+        try:
+            importlib.import_module(f"kube_galaxy.pkg.components.{_file.stem}")
+        except Exception:
+            # Silently ignore import errors for incomplete components
+            pass
+
+# Clean up temporary variables
+del _component_dir, _file, Path
