@@ -35,7 +35,7 @@ class Kubelet(ComponentBase):
     INSTALL_TIMEOUT = 120  # 2 minutes
     CONFIGURE_TIMEOUT = 120  # 2 minutes
     VERIFY_TIMEOUT = 120  # 2 minutes
-    INSTALL_PATH = "/usr/bin/kubelet"
+    INSTALL_PATH = "/usr/local/bin/kubelet"
 
     def download_hook(self, arch: str) -> None:
         """
@@ -60,7 +60,7 @@ class Kubelet(ComponentBase):
 
     def install_hook(self, arch: str) -> None:
         """
-        Installs kubelet binary to /usr/bin/kubelet.
+        Installs kubelet binary to /usr/local/bin/kubelet.
         """
         if not hasattr(self, "binary_path"):
             raise ComponentError("Binary path not set. Download must be completed before install.")
@@ -88,6 +88,7 @@ class Kubelet(ComponentBase):
 
         # Write kubelet.service file
         temp_service = Path("/tmp/kubelet.service")
+        service_content = service_content.replace("/usr/bin/kubelet", self.INSTALL_PATH)
         temp_service.write_text(service_content)
         run(
             ["sudo", "tee", "/usr/lib/systemd/system/kubelet.service"],

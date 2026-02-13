@@ -14,6 +14,7 @@ from kube_galaxy.pkg.utils.components import (
     install_binary,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -92,6 +93,11 @@ class Containerd(ComponentBase):
 
         # Store paths as instance attribute
         self.extract_dir = extract_dir
+
+    def pre_install_hook(self) -> None:
+        """Remove any existing containerd installation to avoid conflicts."""
+        info("  Removing existing containerd installation if present")
+        run(["sudo", "apt", "remove", "-y", "containerd.io"], check=False)
 
     def install_hook(self, arch: str) -> None:
         """
