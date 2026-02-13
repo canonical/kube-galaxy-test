@@ -47,8 +47,7 @@ class Containerd(ComponentBase):
         Returns:
             Pause image URL to use in containerd config
         """
-        pause = self.instances.get("pause")
-        if pause:
+        if pause := self.instances.get("pause"):
             # Use source_format if it's a container image
             if pause.config.installation.source_format:
                 return pause.config.installation.source_format
