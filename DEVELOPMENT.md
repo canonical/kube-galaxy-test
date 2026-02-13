@@ -11,27 +11,25 @@ python --version  # Should be 3.12 or higher
 
 ### 2. uv (Fast Python Package Manager)
 ```bash
-# Install uv if not present
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Or using pip
+# Install uv if not present (optional, tox-uv includes it)
 pip install uv
 
 # Verify installation
 uv --version
 ```
 
+**Note**: Installing tox-uv automatically installs uv, so this step is optional.
+
 ### 3. tox-uv (Test Runner with uv Backend)
 ```bash
-# Install tox-uv
-uv tool install tox-uv
-
-# Or using pip
+# Install tox-uv (includes uv automatically)
 pip install tox-uv
 
 # Verify installation
 tox --version
 ```
+
+**This is the main tool you need!** All development tasks use tox commands.
 
 ## Development Workflow
 
@@ -42,11 +40,11 @@ tox --version
 git clone https://github.com/canonical/kube-galaxy-test.git
 cd kube-galaxy-test
 
-# 2. Install development dependencies
-uv sync --all-extras --dev
+# 2. Install tox-uv (this is all you need!)
+pip install tox-uv
 
-# 3. Verify tools are available
-tox --version
+# 3. Verify setup works
+tox -e test
 ```
 
 ### Before Committing Changes
@@ -67,7 +65,8 @@ tox -e test    # Unit tests with pytest
 
 #### Install Package in Development Mode
 ```bash
-uv pip install -e .
+# Let tox handle this
+tox -e test  # Installs package automatically
 ```
 
 #### Run Unit Tests
@@ -75,32 +74,21 @@ uv pip install -e .
 # All tests
 tox -e test
 
-# Specific test file
+# For quick iteration, you can use pytest directly
+# (but tox is recommended for consistency)
 pytest tests/unit/test_arch.py -v
-
-# With coverage
-pytest tests/unit --cov=src/kube_galaxy --cov-report=html
 ```
 
 #### Run Type Checking
 ```bash
-# Standard mode
+# Type check with mypy
 tox -e type
-
-# Strict mode (more thorough)
-mypy src --strict
 ```
 
 #### Run Linter
 ```bash
-# Check for issues
+# Lint and format code
 tox -e lint
-
-# Auto-fix issues
-ruff check src tests --fix
-
-# Format code
-ruff format src tests
 ```
 
 #### Build Package
@@ -112,9 +100,9 @@ tox -e build
 
 When working with this repository:
 
-1. **ALWAYS install tox-uv first**: `uv tool install tox-uv`
+1. **ALWAYS install tox-uv first**: `pip install tox-uv`
 2. **ALWAYS run checks before committing**: `tox -e type,lint,test`
-3. **Use uv for package management**: It's faster than pip
+3. **Use tox commands, not direct tool calls**: Prefer `tox -e lint` over `ruff check`
 4. **Follow the type hints**: This project uses strict type checking
 
 ## Project Structure
@@ -144,26 +132,26 @@ kube-galaxy-test/
 ### "tox: command not found"
 ```bash
 # Install tox-uv
-uv tool install tox-uv
+pip install tox-uv
 ```
 
 ### "ModuleNotFoundError" when running tests
 ```bash
 # Sync dependencies
-uv sync --all-extras --dev
+tox -e test
+# tox will handle dependencies automatically
 ```
 
 ### Type checking errors
 ```bash
-# Make sure you're using strict mode for consistency
-mypy src --strict
+# Run type checker
+tox -e type
 ```
 
 ### Linting errors
 ```bash
-# Auto-fix what can be fixed
-ruff check src tests --fix
-ruff format src tests
+# Run linter (auto-fixes what it can)
+tox -e lint
 ```
 
 ## CI/CD
