@@ -47,9 +47,9 @@ jobs:
           # Filter manifests based on event type and ci-skip-on-pr label
           # On PRs (pull_request event OR push to PR branch): skip manifests with ci-skip-on-pr: "true"
           # On other events: include all manifests
-          
+
           manifests="[]"
-          
+
           # Check if this is a PR-related event
           IS_PR=false
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -59,7 +59,7 @@ jobs:
             IS_PR=true
             echo "Detected push to PR branch: ${{ github.head_ref }}"
           fi
-          
+
           if [ "$IS_PR" = "true" ]; then
             echo "PR context: Including only manifests without ci-skip-on-pr: true"
             # Find manifests that don't have ci-skip-on-pr: "true"
@@ -72,7 +72,7 @@ jobs:
             echo "Non-PR context: Including all manifests"
             manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
           fi
-          
+
           echo "manifests=$manifests" >> $GITHUB_OUTPUT
           echo "Discovered manifests: $manifests"
 
@@ -116,7 +116,7 @@ jobs:
           # Create sanitized artifact name (replace / with -) before setup
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
-          
+
           kube-galaxy test setup --manifest ${{ matrix.manifest-file }}
           CLUSTER_NAME=$(python3 -c "from kube_galaxy.pkg.manifest.loader import load_manifest; m = load_manifest('${{ matrix.manifest-file }}'); print(m.name)")
           echo "cluster-name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
@@ -131,7 +131,7 @@ jobs:
           if [[ "${{ matrix.manifest-file }}" == *"no-cni"* ]]; then
             echo "⚠️  Skipping node ready check for no-CNI manifest (expected behavior)"
             echo "Verifying control plane components are running..."
-            
+
             # Wait for core system pods to be running
             kubectl wait --for=condition=Ready pod -l component=kube-apiserver -n kube-system --timeout=5m || true
             kubectl wait --for=condition=Ready pod -l component=etcd -n kube-system --timeout=5m || true
@@ -221,7 +221,7 @@ jobs:
 
       - name: Setup tmate session for debugging
         if: failure()
-        uses: canonical/action-tmate@main
+        uses: mxschmitt/action-tmate@master
         timeout-minutes: 5
 
       - name: Create Issue on Failure
