@@ -1,0 +1,50 @@
+"""Manifest validation and utilities."""
+
+from kube_galaxy.pkg.manifest.models import Component, Manifest
+
+
+def validate_manifest(manifest: Manifest) -> None:
+    """Validate manifest structure and required fields.
+
+    Args:
+        manifest: Manifest to validate
+
+    Raises:
+        ValueError: If manifest is invalid
+    """
+    if not manifest.name:
+        raise ValueError("Manifest must have a 'name' field")
+
+    if not manifest.kubernetes_version:
+        raise ValueError("Manifest must have a 'kubernetes-version' field")
+
+    if manifest.nodes.control_plane < 1:
+        raise ValueError("Manifest must have at least 1 control plane node")
+
+    if manifest.nodes.worker < 0:
+        raise ValueError("Worker node count cannot be negative")
+
+
+def get_components_with_spread(manifest: Manifest) -> list[Component]:
+    """Get all components marked with use_spread=true.
+
+    Args:
+        manifest: Manifest to query
+
+    Returns:
+        List of components with spread tests enabled
+    """
+    return [comp for comp in manifest.components if comp.use_spread]
+
+
+def get_component(manifest: Manifest, name: str) -> Component | None:
+    """Get component by name from manifest.
+
+    Args:
+        manifest: Manifest to search
+        name: Component name
+
+    Returns:
+        Component if found, None otherwise
+    """
+    return manifest.get_component(name)

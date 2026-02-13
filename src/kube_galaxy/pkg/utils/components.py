@@ -1,0 +1,132 @@
+"""
+Utilities for component installation and management.
+"""
+
+import hashlib
+import shutil
+from pathlib import Path
+
+from kube_galaxy.pkg.arch.detector import get_arch_info
+from kube_galaxy.pkg.utils.errors import ComponentError
+
+
+def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> None:
+    """
+    Download a file from URL to destination.
+
+    Args:
+        url: File URL
+        dest: Destination path
+        verify_sha256: Optional SHA256 checksum to verify
+
+    Raises:
+        ComponentError: If download fails or checksum mismatch
+    """
+    try:
+        import urllib.request
+
+        urllib.request.urlretrieve(url, dest)
+
+        if verify_sha256:
+            actual_sha256 = compute_sha256(dest)
+            if actual_sha256 != verify_sha256:
+                raise ComponentError(
+                    f"SHA256 mismatch for {dest.name}: "
+                    f"expected {verify_sha256}, got {actual_sha256}"
+                )
+    except Exception as e:
+        raise ComponentError(f"Failed to download {url}: {e}") from e
+
+
+def compute_sha256(file_path: Path) -> str:
+    """Compute SHA256 checksum of a file."""
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
+
+
+def extract_archive(archive_path: Path, dest_dir: Path) -> None:
+    """
+    Extract tar.gz or tar.bz2 archive.
+
+    Args:
+        archive_path: Path to archive
+        dest_dir: Destination directory
+
+    Raises:
+        ComponentError: If extraction fails
+    """
+    try:
+        import tarfile
+
+        with tarfile.open(archive_path) as tar:
+            tar.extractall(dest_dir)
+    except Exception as e:
+        raise ComponentError(f"Failed to extract {archive_path.name}: {e}") from e
+
+
+def install_binary(
+    binary_path: Path,
+    binary_name: str,
+    dest_dir: Path = Path("/usr/local/bin"),
+) -> None:
+    """
+    Install a binary to a directory and make it executable.
+
+    Args:
+        binary_path: Path to the binary
+        binary_name: Name of the binary (e.g., 'containerd')
+        dest_dir: Destination directory (default: /usr/local/bin)
+
+    Raises:
+        ComponentError: If installation fails
+    """
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / binary_name
+        shutil.copy2(binary_path, dest_path)
+        dest_path.chmod(0o755)
+    except Exception as e:
+        raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
+
+
+def remove_binary(binary_name: str, dest_dir: Path = Path("/usr/local/bin")) -> None:
+    """
+    Remove a binary from a directory.
+
+    Args:
+        binary_name: Name of the binary
+        dest_dir: Directory containing the binary
+
+    Raises:
+        ComponentError: If removal fails
+    """
+    try:
+        dest_path = dest_dir / binary_name
+        if dest_path.exists():
+            dest_path.unlink()
+    except Exception as e:
+        raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
+
+
+def get_github_release_url(
+    repo: str,
+    release: str,
+    filename_pattern: str,
+) -> str:
+    """
+    Construct GitHub release download URL.
+
+    Args:
+        repo: GitHub repo (owner/repo)
+        release: Release tag
+        filename_pattern: Filename to download (supports {arch} placeholder)
+
+    Returns:
+        Full download URL
+    """
+    arch_info = get_arch_info()
+    filename = filename_pattern.format(arch=arch_info.k8s)
+    return f"https://github.com/{repo}/releases/download/{release}/{filename}"

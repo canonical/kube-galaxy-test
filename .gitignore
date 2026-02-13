@@ -1,0 +1,50 @@
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+
+# tox
+.tox/
+.coverage
+htmlcov/
+
+# pytest
+.pytest_cache/
+__pycache__/
+
+# Code tools
+.ruff_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+test-results/
+spread-results/
+debug-logs/
+cleanup-logs/
+issue-data/
+test-cluster-config.yaml
+
+*.log
+dns-test.log
+
+# uv
+uv.lock~

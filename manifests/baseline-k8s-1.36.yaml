@@ -1,0 +1,159 @@
+name: baseline-k8s-1.36
+description: "Baseline Kubernetes 1.36.0 cluster with standard components"
+kubernetes-version: "1.36.0"
+labels:
+  environment: testing
+  cluster-type: baseline
+  k8s-version: "1.36"
+
+nodes:
+  control-plane: 1
+  worker: 2
+
+components:
+  # Base components (no dependencies - install first)
+  - name: containerd
+    category: containerd
+    release: "2.2.1"
+    repo: "https://github.com/containerd/containerd"
+    format: Binary
+    use-spread: false
+
+  - name: runc
+    category: containerd
+    release: "1.3.4"
+    repo: "https://github.com/opencontainers/runc"
+    format: Binary
+    use-spread: false
+
+  - name: kubeadm
+    category: kubernetes/kubernetes
+    release: "1.36.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Binary
+    use-spread: false
+
+  - name: kubelet
+    category: kubernetes/kubernetes
+    release: "1.36.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Binary
+    use-spread: false
+
+  - name: kubectl
+    category: kubernetes/kubernetes
+    release: "1.36.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Binary+Container
+    use-spread: false
+
+  # Kubernetes core components
+  - name: kube-apiserver
+    category: kubernetes/kubernetes
+    release: "1.36.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: kube-controller-manager
+    category: kubernetes/kubernetes
+    release: "1.36.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: kube-scheduler
+    category: kubernetes/kubernetes
+    release: "1.36.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: kube-proxy
+    category: kubernetes/kubernetes
+    release: "1.36.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  - name: pause
+    category: kubernetes/kubernetes
+    release: "3.10.1"
+    repo: "https://github.com/kubernetes/kubernetes"
+    format: Container
+    use-spread: false
+
+  # Container networking
+  - name: cni-plugins
+    category: container-networking
+    release: "1.8.0"
+    repo: "https://github.com/containernetworking/plugins"
+    format: Container
+    use-spread: false
+
+  # CoreDNS
+  - name: coredns
+    category: coredns
+    release: "1.13.1"
+    repo: "https://github.com/coredns/coredns"
+    format: Container
+    use-spread: false
+
+  # etcd
+  - name: etcd
+    category: etcd
+    release: "3.5.26"
+    repo: "https://github.com/etcd-io/etcd"
+    format: Container
+    use-spread: false
+
+  - name: etcdctl
+    category: etcd
+    release: "3.5.26"
+    repo: "https://github.com/etcd-io/etcd"
+    format: Binary+Container
+    use-spread: false
+
+  # Kubernetes addons
+  - name: cluster-autoscaler
+    category: kubernetes
+    release: "1.35.0"
+    repo: "https://github.com/kubernetes/autoscaler"
+    format: Container
+    use-spread: false
+
+  - name: node-problem-detector
+    category: kubernetes
+    release: "0.8.21"
+    repo: "https://github.com/kubernetes/node-problem-detector"
+    format: Container
+    use-spread: false
+
+testing:
+  suite: "functional-basic"
+  timeout: "45m"
+  parallel: true
+  retry-count: 2
+
+infrastructure:
+  provider: "github-actions"
+  runner-size: "ubuntu-latest-4-cores"
+  region: "us-east-1"
+
+networking:
+  - name: "calico"
+    service-cidr: "10.96.0.0/12"
+    pod-cidr: "192.168.0.0/16"
+
+storage:
+  - name: "local-path"
+    provisioner: "local-path"
+    storage-classes:
+      - name: "local-path"
+        parameters:
+          type: "default"
+
+security:
+  rbac: true
+  network-policies: true
+  pod-security-standards: "restricted"

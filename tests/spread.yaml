@@ -1,0 +1,74 @@
+project: kube-galaxy-test
+
+environment:
+    PROJECT_PATH: /home/runner/work/kube-galaxy-test/kube-galaxy-test
+    KUBECONFIG: /home/runner/.kube/config
+
+backends:
+    github-actions:
+        type: adhoc
+        allocate: |
+            echo "Using GitHub Actions runner"
+        discard: |
+            echo "GitHub Actions runner cleanup handled by workflow"
+
+path: /home/runner/work/kube-galaxy-test/kube-galaxy-test
+
+exclude: [".git"]
+
+prepare: |
+    # Ensure kubectl is available and configured
+    if ! command -v kubectl &> /dev/null; then
+        echo "kubectl not found in PATH"
+        exit 1
+    fi
+
+    # Verify cluster connectivity
+    if ! kubectl cluster-info &> /dev/null; then
+        echo "Cannot connect to Kubernetes cluster"
+        exit 1
+    fi
+
+    echo "Cluster information:"
+    kubectl cluster-info
+
+    echo "Node status:"
+    kubectl get nodes
+
+    echo "System pods status:"
+    kubectl get pods -n kube-system
+
+restore: |
+    # Clean up any test resources
+    kubectl delete namespace test-namespace --ignore-not-found=true || true
+    kubectl delete clusterrolebinding test-binding --ignore-not-found=true || true
+
+debug: |
+    echo "=== DEBUG INFORMATION ==="
+    echo "Current context:"
+    kubectl config current-context
+
+    echo "Available contexts:"
+    kubectl config get-contexts
+
+    echo "Cluster info:"
+    kubectl cluster-info dump --output-directory=/tmp/cluster-dump --all-namespaces
+
+    echo "Recent events:"
+    kubectl get events --all-namespaces --sort-by=.metadata.creationTimestamp | tail -50
+
+suites:
+    tests/functional/:
+        summary: Functional tests for Kubernetes components
+
+    tests/functional/basic/:
+        summary: Basic Kubernetes functionality tests
+
+    tests/functional/networking/:
+        summary: Kubernetes networking functionality tests
+
+    tests/functional/storage/:
+        summary: Kubernetes storage functionality tests
+
+    tests/functional/security/:
+        summary: Kubernetes security functionality tests
