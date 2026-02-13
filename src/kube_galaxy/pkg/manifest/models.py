@@ -13,6 +13,18 @@ class Component:
     repo: str
     format: str  # Binary, Container, or Binary+Container
     use_spread: bool = False
+    
+    # Component lifecycle configuration
+    dependencies: list[str] = field(default_factory=list)  # Must install after these components
+    priority: int = 50  # Lower = earlier (for components without dependencies)
+    
+    # Custom binary/image URLs (optional, overrides default repo/release)
+    custom_binary_url: str | None = None
+    custom_image_url: str | None = None
+    
+    # Hook configuration overrides
+    skip_hooks: list[str] = field(default_factory=list)  # Hooks to skip (e.g., ["bootstrap"])
+    hook_config: dict = field(default_factory=dict)  # Hook-specific configuration
 
 
 @dataclass
@@ -56,3 +68,46 @@ class Manifest:
             if net.name == name:
                 return net
         return self.networking[0] if self.networking else None
+    
+    def get_components_by_priority(self) -> list[Component]:
+        """
+        Get components sorted by priority and dependencies.
+        
+        Returns components in installation order considering:
+        1. Priority (lower = earlier)
+        2. Dependencies (dependencies must come before dependents)
+        
+        Returns:
+            List of components in execution order
+        """
+        # Simple topological sort based on dependencies and priority
+        sorted_components = []
+        remaining = self.components.copy()
+        
+        while remaining:
+            # Find components with no unmet dependencies
+            ready = []
+            for comp in remaining:
+                deps_met = all(
+                    dep in [c.name for c in sorted_components]
+                    for dep in comp.dependencies
+                )
+                if deps_met:
+                    ready.append(comp)
+            
+            if not ready:
+                # Circular dependency or invalid dependency
+                raise ValueError(
+                    f"Circular or invalid dependencies detected. "
+                    f"Remaining components: {[c.name for c in remaining]}"
+                )
+            
+            # Sort ready components by priority
+            ready.sort(key=lambda c: c.priority)
+            
+            # Add to sorted list and remove from remaining
+            sorted_components.extend(ready)
+            for comp in ready:
+                remaining.remove(comp)
+        
+        return sorted_components
