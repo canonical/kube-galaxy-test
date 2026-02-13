@@ -46,11 +46,10 @@ class ContainerdComponent(ComponentBase):
         Checks for custom_binary_url first, otherwise constructs from repo/release.
         Extracts archive for install hook.
         """
-        # Check for custom URL
-        custom_url = self.get_custom_binary_url()
+        # Check for custom URL using property
+        url = self.custom_binary_url
         
-        if custom_url:
-            url = custom_url
+        if url:
             # Extract filename from URL for archive format detection
             filename = url.split('/')[-1]
         else:
@@ -58,11 +57,11 @@ class ContainerdComponent(ComponentBase):
             if not release.startswith("v"):
                 release = f"v{release}"
             
-            # Get archive format from component config or default to tar.gz
-            archive_format = self.get_archive_format() or "tar.gz"
+            # Get archive format from component config using property
+            archive_fmt = self.archive_format or "tar.gz"
             
             # Construct download URL
-            filename = f"containerd-{release}.linux-{arch}.{archive_format}"
+            filename = f"containerd-{release}.linux-{arch}.{archive_fmt}"
             url = f"{repo}/releases/download/{release}/{filename}"
         
         # Download to temporary directory
@@ -77,8 +76,8 @@ class ContainerdComponent(ComponentBase):
         extract_dir.mkdir(exist_ok=True)
         extract_archive(archive_path, extract_dir)
         
-        # Store paths for install hook
-        self.set_state('extract_dir', extract_dir)
+        # Store paths as instance attribute
+        self.extract_dir = extract_dir
     
     def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """
@@ -86,12 +85,11 @@ class ContainerdComponent(ComponentBase):
         
         Requires download_hook to have completed first.
         """
-        extract_dir = self.get_state('extract_dir')
-        if not extract_dir or not extract_dir.exists():
+        if not hasattr(self, 'extract_dir') or not self.extract_dir.exists():
             raise ComponentError("containerd archive not downloaded. Run download hook first.")
         
         # Install binary
-        binary_path = extract_dir / "bin" / "containerd"
+        binary_path = self.extract_dir / "bin" / "containerd"
         if not binary_path.exists():
             raise ComponentError(f"containerd binary not found in archive at {binary_path}")
         

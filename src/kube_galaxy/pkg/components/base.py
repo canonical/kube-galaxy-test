@@ -2,7 +2,7 @@
 Base class for component installation and lifecycle management.
 
 All component implementations should inherit from ComponentBase and
-implement the lifecycle hooks they need.
+override the lifecycle hooks they need.
 """
 
 from abc import ABC
@@ -22,13 +22,13 @@ class ComponentBase(ABC):
     """
     Base class for Kubernetes component installation.
     
-    Each component should subclass this and implement the lifecycle hooks
+    Each component should subclass this and override the lifecycle hooks
     it needs. The component has access to:
     - The full manifest (self.manifest)
     - Its own component configuration (self.component)
     - Architecture information (passed to hooks)
     
-    Lifecycle hooks (all optional):
+    Lifecycle hooks (all have default empty implementations):
     1. download_hook(repo, release, format, arch) - Download artifacts
     2. pre_install_hook() - Prepare machine for installation
     3. install_hook(repo, release, format, arch) - Install the component
@@ -36,7 +36,10 @@ class ComponentBase(ABC):
     5. post_bootstrap_hook() - Post-initialization tasks
     6. configure_hook() - Final configuration and verification
     
-    Each hook can be overridden. If not implemented, it will not be called.
+    Each hook can be overridden. If not overridden, the default (empty)
+    implementation is used and effectively skips that stage.
+    
+    Use regular instance attributes for state management between hooks.
     """
     
     # Timeout configuration (in seconds) - override in subclass
@@ -63,9 +66,56 @@ class ComponentBase(ABC):
         """
         self.manifest = manifest
         self.component = component
-        self._state = {}  # Component-specific state storage
     
-    # Lifecycle hooks - override as needed
+    # Properties for easy access to component configuration
+    
+    @property
+    def custom_binary_url(self) -> Optional[str]:
+        """Get custom binary URL from component config."""
+        return self.component.custom_binary_url
+    
+    @property
+    def custom_image_url(self) -> Optional[str]:
+        """Get custom image URL from component config."""
+        return self.component.custom_image_url
+    
+    @property
+    def install_method(self) -> Optional[str]:
+        """Get installation method from component config."""
+        return self.component.install_method
+    
+    @property
+    def archive_format(self) -> Optional[str]:
+        """Get archive format from component config."""
+        return self.component.archive_format
+    
+    @property
+    def helm_chart_url(self) -> Optional[str]:
+        """Get Helm chart URL from component config."""
+        return self.component.helm_chart_url
+    
+    @property
+    def helm_values(self) -> dict:
+        """Get Helm values from component config."""
+        return self.component.helm_values
+    
+    @property
+    def manifest_url(self) -> Optional[str]:
+        """Get manifest URL from component config."""
+        return self.component.manifest_url
+    
+    @property
+    def manifest_type(self) -> Optional[str]:
+        """Get manifest type from component config."""
+        return self.component.manifest_type
+    
+    @property
+    def hook_config(self) -> dict:
+        """Get hook-specific configuration from component config."""
+        return self.component.hook_config
+    
+    # Lifecycle hooks - all have default empty implementations
+    # Override in subclass as needed
     
     def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """
@@ -140,7 +190,6 @@ class ComponentBase(ABC):
         Legacy install method (combines download + install).
         
         For backward compatibility with existing code.
-        Override in subclass if needed.
         """
         self.download_hook(repo, release, format, arch)
         self.install_hook(repo, release, format, arch)
@@ -150,44 +199,5 @@ class ComponentBase(ABC):
         Legacy configure method.
         
         For backward compatibility with existing code.
-        Override in subclass if needed.
         """
         self.configure_hook()
-    
-    # Helper methods
-    
-    def get_custom_binary_url(self) -> Optional[str]:
-        """Get custom binary URL from component config."""
-        return self.component.custom_binary_url
-    
-    def get_custom_image_url(self) -> Optional[str]:
-        """Get custom image URL from component config."""
-        return self.component.custom_image_url
-    
-    def get_install_method(self) -> Optional[str]:
-        """Get installation method from component config."""
-        return self.component.install_method
-    
-    def get_archive_format(self) -> Optional[str]:
-        """Get archive format from component config."""
-        return self.component.archive_format
-    
-    def should_skip_hook(self, hook_name: str) -> bool:
-        """Check if a hook should be skipped based on component config."""
-        return hook_name in self.component.skip_hooks
-    
-    def get_hook_config(self, hook_name: str) -> dict:
-        """Get configuration for a specific hook."""
-        return self.component.hook_config.get(hook_name, {})
-    
-    def set_state(self, key: str, value) -> None:
-        """Store state that persists between hooks."""
-        self._state[key] = value
-    
-    def get_state(self, key: str, default=None):
-        """Retrieve state stored by previous hooks."""
-        return self._state.get(key, default)
-    
-    def has_state(self, key: str) -> bool:
-        """Check if state key exists."""
-        return key in self._state

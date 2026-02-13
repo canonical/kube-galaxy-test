@@ -43,12 +43,10 @@ class KubeadmComponent(ComponentBase):
         
         Checks for custom_binary_url first, otherwise constructs from repo/release.
         """
-        # Check for custom URL
-        custom_url = self.get_custom_binary_url()
+        # Check for custom URL using property
+        url = self.custom_binary_url
         
-        if custom_url:
-            url = custom_url
-        else:
+        if not url:
             # Ensure version has 'v' prefix
             if not release.startswith("v"):
                 release = f"v{release}"
@@ -64,8 +62,8 @@ class KubeadmComponent(ComponentBase):
         binary_path = temp_dir / "kubeadm"
         download_file(url, binary_path)
         
-        # Store download location for install hook
-        self.set_state('binary_path', binary_path)
+        # Store download location as instance attribute
+        self.binary_path = binary_path
     
     def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """
@@ -73,25 +71,21 @@ class KubeadmComponent(ComponentBase):
         
         Requires download_hook to have completed first.
         """
-        binary_path = self.get_state('binary_path')
-        if not binary_path or not binary_path.exists():
+        if not hasattr(self, 'binary_path') or not self.binary_path.exists():
             raise RuntimeError("kubeadm binary not downloaded. Run download hook first.")
         
         # Install binary to system
-        install_binary(binary_path, "kubeadm")
+        install_binary(self.binary_path, "kubeadm")
     
     def bootstrap_hook(self) -> None:
         """
         Bootstrap Kubernetes cluster with kubeadm.
         
         This hook would contain kubeadm init logic.
-        Can be skipped via manifest: skip_hooks: [bootstrap]
+        Can be configured via manifest hook_config.
         """
-        if self.should_skip_hook('bootstrap'):
-            return
-        
-        # Get bootstrap configuration from hook_config
-        config = self.get_hook_config('bootstrap')
+        # Get bootstrap configuration using property
+        config = self.hook_config.get('bootstrap', {})
         pod_network_cidr = config.get('pod_network_cidr', '10.244.0.0/16')
         
         # This would contain actual kubeadm init logic
