@@ -113,19 +113,23 @@ LimitNPROC=infinity
 WantedBy=multi-user.target
 """
 
-        unit_path = Path("/etc/systemd/system/containerd.service")
-        unit_path.parent.mkdir(parents=True, exist_ok=True)
-        unit_path.write_text(systemd_unit)
+        # Write to temporary file first, then copy with sudo
+        temp_unit = Path("/tmp/containerd.service")
+        temp_unit.write_text(systemd_unit)
+
+        run(["sudo", "mkdir", "-p", "/etc/systemd/system"], check=True)
+        run(["sudo", "cp", str(temp_unit), "/etc/systemd/system/containerd.service"], check=True)
+        temp_unit.unlink()  # Clean up temp file
 
         # Reload systemd and enable service
-        run(["systemctl", "daemon-reload"])
-        run(["systemctl", "enable", "containerd"])
+        run(["sudo", "systemctl", "daemon-reload"], check=True)
+        run(["sudo", "systemctl", "enable", "containerd"], check=True)
 
     def bootstrap_hook(self) -> None:
         """
         Start containerd service.
         """
-        run(["systemctl", "start", "containerd"])
+        run(["sudo", "systemctl", "start", "containerd"], check=True)
 
     def verify_hook(self) -> None:
         """
@@ -134,7 +138,7 @@ WantedBy=multi-user.target
         Checks service status and command availability.
         """
         # Check service is active
-        run(["systemctl", "is-active", "containerd"], check=True)
+        run(["sudo", "systemctl", "is-active", "containerd"], check=True)
 
         # Check containerd command works
         run(["containerd", "--version"], check=True)
