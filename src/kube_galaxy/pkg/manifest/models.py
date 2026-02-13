@@ -30,7 +30,7 @@ class Component:
 
     # Helm chart specific configuration
     helm_chart_url: str | None = None
-    helm_values: dict = field(default_factory=dict)
+    helm_values: dict[str, Any] = field(default_factory=dict)
 
     # Manifest specific configuration
     manifest_url: str | None = None
@@ -38,7 +38,7 @@ class Component:
 
     # Hook configuration overrides
     skip_hooks: list[str] = field(default_factory=list)  # Hooks to skip (e.g., ["bootstrap"])
-    hook_config: dict = field(default_factory=dict)  # Hook-specific configuration
+    hook_config: dict[str, Any] = field(default_factory=dict)  # Hook-specific configuration
 
 
 @dataclass

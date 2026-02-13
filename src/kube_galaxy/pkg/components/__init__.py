@@ -16,33 +16,17 @@ from enum import Enum
 from typing import Any
 
 from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components.containerd import Containerd
+from kube_galaxy.pkg.components.kubeadm import Kubeadm
 
 __all__ = [
-    # Public API
+    "ComponentBase",
+    "COMPONENTS",
     "HookStage",
-    "cluster_autoscaler",
-    "cni_plugins",
     "configure_component",
-    "containerd",
-    "coredns",
-    "create_component_instance",
-    "etcd",
-    "etcdctl",
-    "get_all_component_classes",
     "get_component_class",
     "install_component",
-    "kube_apiserver",
-    "kube_controller_manager",
-    "kube_proxy",
-    "kube_scheduler",
-    "kubeadm",
-    "kubectl",
-    "kubelet",
-    "node_problem_detector",
-    "pause",
-    "register_component_class",
     "remove_component",
-    "runc",
 ]
 
 
@@ -57,71 +41,24 @@ class HookStage(Enum):
     CONFIGURE = "configure"
 
 
-# Registry of component classes
-_COMPONENT_CLASSES: dict[str, type] = {}
+# Simple mapping of component names to classes
+COMPONENTS: dict[str, type[ComponentBase]] = {
+    "containerd": Containerd,
+    "kubeadm": Kubeadm,
+}
 
 
-def register_component_class(component_class: type[ComponentBase]) -> type[ComponentBase]:
+def get_component_class(component_name: str) -> type[ComponentBase] | None:
     """
-    Register a component class.
-
-    Use as a decorator:
-        @register_component_class
-        class MyComponent(ComponentBase):
-            ...
-
-    Args:
-        component_class: Class that inherits from ComponentBase
-
-    Returns:
-        The same class (for decorator usage)
-    """
-    if not hasattr(component_class, "COMPONENT_NAME"):
-        raise ValueError(f"Component class {component_class} must define COMPONENT_NAME")
-
-    _COMPONENT_CLASSES[component_class.COMPONENT_NAME] = component_class
-    return component_class
-
-
-def get_component_class(component_name: str) -> type | None:
-    """
-    Get registered class for a component.
+    Get component class by name.
 
     Args:
         component_name: Component identifier
 
     Returns:
-        Component class if registered, None otherwise
+        Component class if found, None otherwise
     """
-    return _COMPONENT_CLASSES.get(component_name)
-
-
-def create_component_instance(
-    component_name: str, manifest: Any, component: Any
-) -> ComponentBase:
-    """
-    Create an instance of a component with manifest context.
-
-    Args:
-        component_name: Component identifier
-        manifest: Full Manifest object
-        component: Component configuration object
-
-    Returns:
-        Component instance
-
-    Raises:
-        AttributeError: If component not found
-    """
-    component_class = get_component_class(component_name)
-    if not component_class:
-        raise AttributeError(f"Component '{component_name}' not found.")
-    return component_class(manifest, component)  # type: ignore[no-any-return]
-
-
-def get_all_component_classes() -> dict[str, type]:
-    """Get all registered component classes."""
-    return _COMPONENT_CLASSES.copy()
+    return COMPONENTS.get(component_name)
 
 
 def install_component(
@@ -150,14 +87,10 @@ def install_component(
     """
     component_class = get_component_class(component_name)
     if not component_class:
-        raise AttributeError(
-            f"Component '{component_name}' not found. "
-            f"Please ensure it has a ComponentBase subclass with "
-            f"@register_component_class decorator."
-        )
+        raise AttributeError(f"Component '{component_name}' not found in COMPONENTS registry.")
 
     # Create instance with manifest context
-    instance = create_component_instance(component_name, manifest, component_config)
+    instance = component_class(manifest, component_config)
 
     # Execute hooks in order (ComponentBase provides empty defaults for all hooks)
     instance.download_hook(repo, release, format, arch)
@@ -181,14 +114,10 @@ def configure_component(
     """
     component_class = get_component_class(component_name)
     if not component_class:
-        raise AttributeError(
-            f"Component '{component_name}' not found. "
-            f"Please ensure it has a ComponentBase subclass with "
-            f"@register_component_class decorator."
-        )
+        raise AttributeError(f"Component '{component_name}' not found in COMPONENTS registry.")
 
     # Create instance with manifest context
-    instance = create_component_instance(component_name, manifest, component_config)
+    instance = component_class(manifest, component_config)
 
     # Execute configuration hooks (ComponentBase provides empty defaults for all hooks)
     instance.bootstrap_hook()
@@ -208,35 +137,8 @@ def remove_component(component_name: str) -> None:
     """
     component_class = get_component_class(component_name)
     if not component_class:
-        raise AttributeError(
-            f"Component '{component_name}' not found. "
-            f"Please ensure it has a ComponentBase subclass with "
-            f"@register_component_class decorator."
-        )
+        raise AttributeError(f"Component '{component_name}' not found in COMPONENTS registry.")
 
     # Create instance and call remove hook (ComponentBase provides empty default)
-    instance = create_component_instance(component_name, None, None)
+    instance = component_class(None, None)
     instance.remove_hook()
-
-
-# Import all component modules to trigger @register_component_class decorators.
-# These imports MUST be at the end to avoid circular imports.
-# ruff: noqa: E402
-from kube_galaxy.pkg.components import (
-    cluster_autoscaler,
-    cni_plugins,
-    containerd,
-    coredns,
-    etcd,
-    etcdctl,
-    kube_apiserver,
-    kube_controller_manager,
-    kube_proxy,
-    kube_scheduler,
-    kubeadm,
-    kubectl,
-    kubelet,
-    node_problem_detector,
-    pause,
-    runc,
-)

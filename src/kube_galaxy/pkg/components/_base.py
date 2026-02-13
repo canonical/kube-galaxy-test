@@ -94,7 +94,7 @@ class ComponentBase:
         return self.component.helm_chart_url  # type: ignore[no-any-return]
 
     @property
-    def helm_values(self) -> dict:
+    def helm_values(self) -> dict[str, Any]:
         """Get Helm values from component config."""
         return self.component.helm_values  # type: ignore[no-any-return]
 
@@ -109,7 +109,7 @@ class ComponentBase:
         return self.component.manifest_type  # type: ignore[no-any-return]
 
     @property
-    def hook_config(self) -> dict:
+    def hook_config(self) -> dict[str, Any]:
         """Get hook-specific configuration from component config."""
         return self.component.hook_config  # type: ignore[no-any-return]
 

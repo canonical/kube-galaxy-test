@@ -7,7 +7,6 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 from pathlib import Path
 from typing import ClassVar
 
-from kube_galaxy.pkg.components import register_component_class
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.utils.components import (
     download_file,
@@ -15,7 +14,6 @@ from kube_galaxy.pkg.utils.components import (
 )
 
 
-@register_component_class
 class Kubeadm(ComponentBase):
     """
     Kubeadm component for bootstrapping Kubernetes clusters.
