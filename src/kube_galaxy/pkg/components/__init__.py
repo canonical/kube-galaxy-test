@@ -13,12 +13,14 @@ Component Lifecycle Hooks:
 - bootstrap: Initialize services (e.g., kubeadm init)
 - post_bootstrap: Post-initialization tasks (e.g., get kubeconfig)
 - configure: Final configuration and verification
+
+New in v2: Class-based components inherit from ComponentBase
 """
 
 import importlib
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable, Optional, Type
 
 from kube_galaxy.pkg.components.constants import (
     DEFAULT_BOOTSTRAP_TIMEOUT,
@@ -60,6 +62,9 @@ class ComponentHooks:
     Timeout Configuration:
     Each component can define custom timeouts for each stage.
     If not specified, defaults from constants.py are used.
+    
+    Note: This class is being phased out in favor of ComponentBase.
+    New components should inherit from ComponentBase instead.
     """
     
     # Component metadata
@@ -130,23 +135,49 @@ class ComponentHooks:
         return defaults.get(stage, 60)  # Fallback to 60s if stage not found
 
 
-# Registry of component hooks
+# Registry of component hooks (function-based, legacy)
 _COMPONENT_HOOKS: dict[str, ComponentHooks] = {}
+
+# Registry of component classes (class-based, new)
+_COMPONENT_CLASSES: dict[str, Type] = {}
 
 
 def register_component_hooks(hooks: ComponentHooks) -> None:
     """
-    Register hooks for a component.
+    Register hooks for a component (legacy function-based).
     
     Args:
         hooks: ComponentHooks instance defining the component's lifecycle
+        
+    Note: This is the legacy registration method. New components should
+    use register_component_class instead.
     """
     _COMPONENT_HOOKS[hooks.name] = hooks
 
 
+def register_component_class(component_class: Type) -> None:
+    """
+    Register a component class (new class-based approach).
+    
+    Args:
+        component_class: Class that inherits from ComponentBase
+        
+    Example:
+        @register_component_class
+        class KubeadmComponent(ComponentBase):
+            COMPONENT_NAME = "kubeadm"
+            ...
+    """
+    if not hasattr(component_class, 'COMPONENT_NAME'):
+        raise ValueError(f"Component class {component_class} must define COMPONENT_NAME")
+    
+    _COMPONENT_CLASSES[component_class.COMPONENT_NAME] = component_class
+    return component_class
+
+
 def get_component_hooks(component_name: str) -> Optional[ComponentHooks]:
     """
-    Get registered hooks for a component.
+    Get registered hooks for a component (legacy function-based).
     
     Args:
         component_name: Component identifier
@@ -157,9 +188,45 @@ def get_component_hooks(component_name: str) -> Optional[ComponentHooks]:
     return _COMPONENT_HOOKS.get(component_name)
 
 
+def get_component_class(component_name: str) -> Optional[Type]:
+    """
+    Get registered class for a component (new class-based).
+    
+    Args:
+        component_name: Component identifier
+        
+    Returns:
+        Component class if registered, None otherwise
+    """
+    return _COMPONENT_CLASSES.get(component_name)
+
+
+def create_component_instance(component_name: str, manifest, component):
+    """
+    Create an instance of a component with manifest context.
+    
+    Args:
+        component_name: Component identifier
+        manifest: Full Manifest object
+        component: Component configuration object
+        
+    Returns:
+        Component instance or None if not found
+    """
+    component_class = get_component_class(component_name)
+    if component_class:
+        return component_class(manifest, component)
+    return None
+
+
 def get_all_component_hooks() -> dict[str, ComponentHooks]:
-    """Get all registered component hooks."""
+    """Get all registered component hooks (legacy)."""
     return _COMPONENT_HOOKS.copy()
+
+
+def get_all_component_classes() -> dict[str, Type]:
+    """Get all registered component classes (new)."""
+    return _COMPONENT_CLASSES.copy()
 
 
 def get_component_module(component_name: str):
