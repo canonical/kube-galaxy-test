@@ -5,8 +5,8 @@ from typing import Any
 
 
 @dataclass
-class Component:
-    """Kubernetes component specification."""
+class ComponentConfig:
+    """Kubernetes component configuration from manifest YAML."""
 
     name: str
     category: str
@@ -67,11 +67,11 @@ class Manifest:
     description: str
     kubernetes_version: str
     nodes: NodeConfig
-    components: list[Component] = field(default_factory=list)
+    components: list[ComponentConfig] = field(default_factory=list)
     networking: list[NetworkConfig] = field(default_factory=list)
 
-    def get_component(self, name: str) -> Component | None:
-        """Get component by name."""
+    def get_component(self, name: str) -> ComponentConfig | None:
+        """Get component config by name."""
         for component in self.components:
             if component.name == name:
                 return component
@@ -84,7 +84,7 @@ class Manifest:
                 return net
         return self.networking[0] if self.networking else None
 
-    def get_components_by_priority(self) -> list[Component]:
+    def get_components_by_priority(self) -> list[ComponentConfig]:
         """
         Get components sorted by priority and dependencies.
 
@@ -93,10 +93,10 @@ class Manifest:
         2. Dependencies (dependencies must come before dependents)
 
         Returns:
-            List of components in execution order
+            List of component configs in execution order
         """
         # Simple topological sort based on dependencies and priority
-        sorted_components: list[Component] = []
+        sorted_components: list[ComponentConfig] = []
         remaining = self.components.copy()
 
         while remaining:

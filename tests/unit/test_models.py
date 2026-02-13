@@ -1,11 +1,11 @@
 """Unit tests for manifest models."""
 
-from kube_galaxy.pkg.manifest.models import Component, Manifest, NetworkConfig, NodeConfig
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NetworkConfig, NodeConfig
 
 
 def test_component_creation():
-    """Test component dataclass creation."""
-    comp = Component(
+    """Test component config dataclass creation."""
+    config = ComponentConfig(
         name="test-comp",
         category="test",
         release="1.0.0",
@@ -13,9 +13,9 @@ def test_component_creation():
         format="Binary",
         use_spread=True,
     )
-    assert comp.name == "test-comp"
-    assert comp.use_spread is True
-    assert comp.format == "Binary"
+    assert config.name == "test-comp"
+    assert config.use_spread is True
+    assert config.format == "Binary"
 
 
 def test_node_config_defaults():
@@ -47,7 +47,7 @@ def test_manifest_creation():
     """Test manifest dataclass creation."""
     nodes = NodeConfig(control_plane=1, worker=2)
     components = [
-        Component(
+        ComponentConfig(
             name="test",
             category="test",
             release="1.0.0",
@@ -75,15 +75,15 @@ def test_manifest_creation():
 
 
 def test_manifest_get_component():
-    """Test getting component by name from manifest."""
-    comp1 = Component(
+    """Test getting component config by name from manifest."""
+    comp1 = ComponentConfig(
         name="comp1",
         category="test",
         release="1.0.0",
         repo="https://github.com/test/repo1",
         format="Binary",
     )
-    comp2 = Component(
+    comp2 = ComponentConfig(
         name="comp2",
         category="test",
         release="1.0.0",

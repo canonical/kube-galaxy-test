@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from kube_galaxy.pkg.manifest.models import Component, Manifest, NetworkConfig, NodeConfig
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NetworkConfig, NodeConfig
 
 
 def load_manifest(path: str | Path) -> Manifest:
@@ -45,9 +45,9 @@ def _deserialize_manifest(data: dict[str, Any]) -> Manifest:
     )
 
     # Parse components
-    components: list[Component] = []
+    components: list[ComponentConfig] = []
     for comp_data in data.get("components", []):
-        component = Component(
+        component = ComponentConfig(
             name=comp_data["name"],
             category=comp_data.get("category", ""),
             release=comp_data["release"],

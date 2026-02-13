@@ -55,63 +55,63 @@ class ComponentBase:
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY: int = 50
 
-    def __init__(self, manifest: Any, component: Any) -> None:
+    def __init__(self, manifest: Any, config: Any) -> None:
         """
         Initialize component with manifest context.
 
         Args:
             manifest: The full Manifest object
-            component: The Component object for this specific component
+            config: The ComponentConfig object for this specific component
         """
         self.manifest = manifest
-        self.component = component
+        self.config = config
 
     # Properties for easy access to component configuration
 
     @property
     def custom_binary_url(self) -> str | None:
         """Get custom binary URL from component config."""
-        return self.component.custom_binary_url  # type: ignore[no-any-return]
+        return self.config.custom_binary_url  # type: ignore[no-any-return]
 
     @property
     def custom_image_url(self) -> str | None:
         """Get custom image URL from component config."""
-        return self.component.custom_image_url  # type: ignore[no-any-return]
+        return self.config.custom_image_url  # type: ignore[no-any-return]
 
     @property
     def install_method(self) -> str | None:
         """Get installation method from component config."""
-        return self.component.install_method  # type: ignore[no-any-return]
+        return self.config.install_method  # type: ignore[no-any-return]
 
     @property
     def archive_format(self) -> str | None:
         """Get archive format from component config."""
-        return self.component.archive_format  # type: ignore[no-any-return]
+        return self.config.archive_format  # type: ignore[no-any-return]
 
     @property
     def helm_chart_url(self) -> str | None:
         """Get Helm chart URL from component config."""
-        return self.component.helm_chart_url  # type: ignore[no-any-return]
+        return self.config.helm_chart_url  # type: ignore[no-any-return]
 
     @property
     def helm_values(self) -> dict[str, Any]:
         """Get Helm values from component config."""
-        return self.component.helm_values  # type: ignore[no-any-return]
+        return self.config.helm_values  # type: ignore[no-any-return]
 
     @property
     def manifest_url(self) -> str | None:
         """Get manifest URL from component config."""
-        return self.component.manifest_url  # type: ignore[no-any-return]
+        return self.config.manifest_url  # type: ignore[no-any-return]
 
     @property
     def manifest_type(self) -> str | None:
         """Get manifest type from component config."""
-        return self.component.manifest_type  # type: ignore[no-any-return]
+        return self.config.manifest_type  # type: ignore[no-any-return]
 
     @property
     def hook_config(self) -> dict[str, Any]:
         """Get hook-specific configuration from component config."""
-        return self.component.hook_config  # type: ignore[no-any-return]
+        return self.config.hook_config  # type: ignore[no-any-return]
 
     # Lifecycle hooks - all have default empty implementations
     # Override in subclass as needed
