@@ -74,30 +74,47 @@ Stage 6: CONFIGURE (sequential, dependency-ordered)
 
 ## Component Registration
 
-Components register their hooks at module load time:
+Components register using a class-based decorator pattern:
 
 ```python
-from kube_galaxy.pkg.components import ComponentHooks, register_component_hooks
+from kube_galaxy.pkg.components.base import ComponentBase
+from kube_galaxy.pkg.components import register_component_class
 
-def download_hook(repo: str, release: str, format: str, arch: str) -> None:
-    # Download logic
-    pass
-
-# Register hooks
-_my_hooks = ComponentHooks(
-    name="mycomponent",
-    category="category",
-    download=download_hook,
-    install=install_hook,
-    dependencies=["dependency1"],
-    priority=25,
-)
-register_component_hooks(_my_hooks)
+@register_component_class
+class MyComponent(ComponentBase):
+    """My component description."""
+    
+    COMPONENT_NAME = "mycomponent"
+    CATEGORY = "category"
+    DEPENDENCIES = ["dependency1"]
+    PRIORITY = 25
+    
+    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+        # Download logic
+        pass
+    
+    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+        # Install logic
+        pass
 ```
+
+The `@register_component_class` decorator registers the component at module import time, making it available to the execution engine.
 
 ## Best Practices
 
 1. **Keep hooks idempotent**: Hooks should handle being called multiple times
+
+2. **Use instance attributes for state**: Share data between hooks using `self.attribute_name`
+
+3. **Use properties for configuration**: Access manifest config via `self.custom_binary_url`, `self.hook_config`, etc.
+
+4. **Don't override hooks you don't need**: The base class provides empty defaults
+
+5. **Set dependencies correctly**: List all components that must be installed before yours
+
+6. **Use appropriate timeouts**: Override timeout constants for long-running operations
+
+7. **Handle errors gracefully**: Raise clear exceptions if prerequisites aren't met
 2. **Use module state**: Share data between hooks via module-level variables
 3. **Fail fast**: Raise exceptions early if preconditions aren't met
 4. **Log progress**: Use the logging utilities for user feedback

@@ -14,7 +14,9 @@ The current component installation system is:
 2. **Proper Sequencing**: Execute installation stages in correct order based on dependencies
 3. **Custom Binaries/Images**: Support custom URLs for binaries and container images
 4. **Extensible**: Easy to add new components with complex requirements
-5. **Backward Compatible**: Maintain existing API while adding new features
+5. **Clean API**: Class-based components with properties and instance attributes
+
+**Note**: This is greenfield development - no backward compatibility needed.
 
 ## Architecture
 
@@ -48,21 +50,22 @@ The current component installation system is:
 
 ### Key Design Decisions
 
-1. **Hook Registration**: Components register hooks at import time
-   - Pros: Declarative, easy to discover, self-documenting
-   - Cons: Requires import of all component modules
+1. **Class-Based Components**: Components inherit from `ComponentBase`
+   - Pros: Declarative, easy access to manifest/config, Pythonic
+   - Instance attributes for state management
+   - Properties for configuration access
 
-2. **Module-Level State**: Components use module variables to share state between hooks
-   - Pros: Simple, no complex state management needed
-   - Cons: Not thread-safe (but we don't need that)
+2. **Component Registration**: Decorator pattern at class definition
+   - Pros: Simple, declarative, self-documenting
+   - `@register_component_class` decorator
 
 3. **Dependency Graph**: Manifest model handles dependency resolution
    - Pros: Clear separation of concerns, testable
    - Cons: Must be computed before execution
 
-4. **Backward Compatibility**: Legacy functions wrap hooks
-   - Pros: No breaking changes, gradual migration
-   - Cons: Temporary code duplication
+4. **No Backward Compatibility**: Greenfield development
+   - Pros: Clean codebase, no legacy baggage
+   - Focus on best practices and modern Python idioms
 
 ## Data Flow
 
@@ -73,26 +76,41 @@ components = manifest.get_components_by_priority()
 # Returns: [runc, containerd, kubelet, kubeadm] (sorted by deps + priority)
 ```
 
-### 2. Hook Discovery
+### 2. Component Discovery
 ```python
-for component in components:
-    hooks = get_component_hooks(component.name)
-    # Returns: ComponentHooks with registered functions
+# Get registered component class
+component_class = get_component_class(component.name)
+
+# Create instance with manifest context
+component_instance = create_component_instance(
+    component.name, 
+    manifest, 
+    component
+)
+# Instance has: self.manifest, self.component, and all properties
 ```
 
 ### 3. Stage Execution
 ```python
+# For each component, create instance
+instances = [
+    create_component_instance(comp.name, manifest, comp)
+    for comp in components
+]
+
 # Stage 1: Download (parallel)
 await asyncio.gather(*[
-    run_hook(comp, HookStage.DOWNLOAD) 
-    for comp in components
+    instance.download_hook(
+        comp.repo, comp.release, comp.format, arch
+    )
+    for instance, comp in zip(instances, components)
 ])
 
-# Stage 2-6: Sequential (respecting dependencies)
-for stage in [PRE_INSTALL, INSTALL, BOOTSTRAP, POST_BOOTSTRAP, CONFIGURE]:
-    for comp in components:
-        if hooks.has_hook(stage):
-            run_hook(comp, stage)
+# Stages 2-6: Sequential (respecting dependencies)
+for stage in ['pre_install', 'install', 'bootstrap', 'post_bootstrap', 'configure']:
+    for instance in instances:
+        hook = getattr(instance, f'{stage}_hook')
+        hook()  # Call the hook method
 ```
 
 ## Implementation Phases

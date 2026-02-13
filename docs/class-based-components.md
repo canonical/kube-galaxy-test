@@ -6,26 +6,30 @@ Components in kube-galaxy v2 use an object-oriented class-based interface. Each 
 
 ## Why Class-Based?
 
-The class-based approach provides several advantages over the function-based approach:
+The class-based approach provides several advantages:
 
 1. **Context Access**: Components have direct access to:
    - The full manifest (`self.manifest`)
    - Their component configuration (`self.component`)
-   - Easy access to custom URLs, install methods, etc.
+   - Easy access via properties: `self.custom_binary_url`, `self.install_method`, etc.
 
-2. **State Management**: Clean state passing between hooks:
-   - `self.set_state(key, value)` in one hook
-   - `self.get_state(key)` in another hook
-   - No module-level variables needed
+2. **State Management**: Clean state using regular instance attributes:
+   - `self.binary_path = path` in one hook
+   - `path = self.binary_path` in another hook
+   - Pythonic, simple, no special methods needed
 
-3. **Configuration**: Easy access to manifest configuration:
-   - `self.should_skip_hook(name)` - check if hook should be skipped
-   - `self.get_hook_config(name)` - get hook-specific config
-   - Helper methods for common patterns
+3. **Configuration**: Easy access to manifest configuration via properties:
+   - `self.hook_config` - dict of hook-specific configuration
+   - `self.custom_binary_url` - custom binary URL (if provided)
+   - `self.install_method` - installation method
 
-4. **Testability**: Components can be instantiated with mock manifests for unit testing
+4. **Automatic Hook Skipping**: Don't override a hook = it doesn't run
+   - Base class provides empty default implementations
+   - No need to check if hooks should be skipped
 
-5. **Maintainability**: Clear interface, better organization, easier to understand
+5. **Testability**: Components can be instantiated with mock manifests for unit testing
+
+6. **Maintainability**: Clear interface, better organization, easier to understand
 
 ## Creating a Component
 
@@ -84,10 +88,10 @@ def download_hook(self, repo, release, format, arch):
     # Access your component config
     component_name = self.component.name
     
-    # Use helper methods
-    custom_url = self.get_custom_binary_url()
-    install_method = self.get_install_method()
-    archive_format = self.get_archive_format()
+    # Use properties (not getters!)
+    custom_url = self.custom_binary_url
+    install_method = self.install_method
+    archive_format = self.archive_format
     
     # Use custom URL if provided, otherwise construct default
     url = custom_url or f"{repo}/releases/download/{release}/binary.tar.gz"
@@ -95,7 +99,7 @@ def download_hook(self, repo, release, format, arch):
 
 ### State Management
 
-Share data between hooks using state:
+Share data between hooks using instance attributes:
 
 ```python
 def download_hook(self, repo, release, format, arch):
@@ -104,17 +108,16 @@ def download_hook(self, repo, release, format, arch):
     binary_path = temp_dir / "binary"
     download_file(url, binary_path)
     
-    # Store for next hook
-    self.set_state('binary_path', binary_path)
+    # Store for next hook (just use instance attribute!)
+    self.binary_path = binary_path
 
 def install_hook(self, repo, release, format, arch):
     # Retrieve from previous hook
-    binary_path = self.get_state('binary_path')
-    if not binary_path:
+    if not hasattr(self, 'binary_path'):
         raise RuntimeError("Binary not downloaded")
     
     # Install
-    install_binary(binary_path, 'mycomponent')
+    install_binary(self.binary_path, 'mycomponent')
 ```
 
 ### Hook Configuration
@@ -123,18 +126,16 @@ Access hook-specific configuration from manifest:
 
 ```python
 def bootstrap_hook(self):
-    # Check if hook should be skipped
-    if self.should_skip_hook('bootstrap'):
-        return
-    
-    # Get hook configuration from manifest
-    config = self.get_hook_config('bootstrap')
+    # Get hook configuration from manifest (via property)
+    config = self.hook_config.get('bootstrap', {})
     pod_cidr = config.get('pod_network_cidr', '10.244.0.0/16')
     service_cidr = config.get('service_cidr', '10.96.0.0/12')
     
     # Use configuration
     run(['kubeadm', 'init', f'--pod-network-cidr={pod_cidr}'])
 ```
+
+**Note**: Hook skipping is automatic! If you don't override a hook method, it simply won't run (the base class provides an empty default implementation).
 
 ## Complete Example
 
@@ -161,8 +162,8 @@ class EtcdComponent(ComponentBase):
     
     def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """Download etcd binary."""
-        # Check for custom URL
-        custom_url = self.get_custom_binary_url()
+        # Check for custom URL (via property, not getter!)
+        custom_url = self.custom_binary_url
         
         if custom_url:
             url = custom_url
@@ -185,15 +186,16 @@ class EtcdComponent(ComponentBase):
         extract_dir.mkdir(exist_ok=True)
         run(['tar', 'xzf', str(archive_path), '-C', str(extract_dir)])
         
-        # Store for install
-        self.set_state('extract_dir', extract_dir)
+        # Store for install (use instance attribute!)
+        self.extract_dir = extract_dir
     
     def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """Install etcd binary."""
-        extract_dir = self.get_state('extract_dir')
+        if not hasattr(self, 'extract_dir'):
+            raise RuntimeError("Archive not extracted")
         
         # Find and install binary
-        binary_path = next(extract_dir.rglob('etcd'))
+        binary_path = next(self.extract_dir.rglob('etcd'))
         install_binary(binary_path, 'etcd')
     
     def configure_hook(self) -> None:
