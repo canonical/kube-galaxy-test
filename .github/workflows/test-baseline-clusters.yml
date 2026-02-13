@@ -46,8 +46,9 @@ jobs:
         id: discover
         shell: bash
         run: |
-          # Find all manifest files in manifests/ directory
-          manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
+          # Find all manifest files except those with ci-skip label
+          # Note: single-node-no-cni.yaml is excluded as it requires manual testing
+          manifests=$(find manifests/ -name "*.yaml" -type f ! -name "single-node-no-cni.yaml" | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
           echo "manifests=$manifests" >> $GITHUB_OUTPUT
           echo "Discovered manifests: $manifests"
 

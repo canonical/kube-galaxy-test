@@ -69,6 +69,40 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
    kube-galaxy test spread
    ```
 
+## 📦 Available Manifests
+
+The `manifests/` directory contains several pre-configured cluster definitions:
+
+### Baseline Clusters
+- `baseline-k8s-1.33.yaml` - Full K8s 1.33.0 cluster with Calico CNI
+- `baseline-k8s-1.34.yaml` - Full K8s 1.34.0 cluster with Calico CNI
+- `baseline-k8s-1.35.yaml` - Full K8s 1.35.0 cluster with Calico CNI
+- `baseline-k8s-1.36.yaml` - Full K8s 1.36.0 cluster with Calico CNI
+
+### Minimal Clusters
+- `single-node-no-cni.yaml` - **Single-node cluster without CNI** (core components only)
+  - Perfect for testing core Kubernetes components in isolation
+  - Single control-plane node (no workers)
+  - No CNI plugin (cluster will not have pod networking)
+  - Useful for CNI development, debugging, or learning
+  - See [single-node-no-cni.md](manifests/single-node-no-cni.md) for detailed documentation
+
+**Example**: Testing the minimal cluster
+```bash
+# Inspect the manifest
+kube-galaxy test-manifest manifests/single-node-no-cni.yaml
+
+# Setup the cluster (nodes will be NotReady without CNI)
+kube-galaxy test setup --manifest manifests/single-node-no-cni.yaml
+
+# Verify control plane is running
+kubectl get pods -n kube-system
+kubectl get nodes  # Will show NotReady status
+
+# Clean up
+kube-galaxy cleanup all
+```
+
 ## 📋 Manifest Structure
 
 Cluster manifests define Kubernetes clusters in simple YAML format:

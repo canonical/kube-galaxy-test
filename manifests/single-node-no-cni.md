@@ -1,5 +1,7 @@
 # Single-Node Kubeadm Cluster Without CNI
 
+> ⚠️ **Note**: This manifest is designed for **manual testing only** and is excluded from automated CI/CD workflows because the cluster nodes will remain in `NotReady` state without a CNI plugin.
+
 ## Overview
 
 This manifest creates a minimal, single-node Kubernetes cluster using kubeadm **without any Container Network Interface (CNI)** plugin. This is useful for:
