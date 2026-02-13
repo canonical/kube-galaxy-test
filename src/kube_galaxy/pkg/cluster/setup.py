@@ -1,19 +1,18 @@
-"""Cluster setup and provisioning using kubeadm."""
+"""Cluster setup and provisioning with 8-stage component lifecycle."""
 
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
-from kube_galaxy.pkg.components import configure_component, install_component
+from kube_galaxy.pkg.components import COMPONENTS, ComponentBase
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.logging import error, exception, info, section, success
-from kube_galaxy.pkg.utils.shell import ShellError, run
+from kube_galaxy.pkg.utils.logging import exception, info, section, success
 
 
 def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) -> None:
     """
-    Set up a Kubernetes cluster using kubeadm.
+    Set up a Kubernetes cluster using 8-stage component lifecycle.
 
     Args:
         manifest_path: Path to cluster manifest YAML
@@ -51,14 +50,25 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         (work_dir_path / "components").mkdir(exist_ok=True)
         (work_dir_path / "logs").mkdir(exist_ok=True)
 
-        # Install components
-        _install_components(manifest, work_dir_path, arch_info, debug)
+        # Get components in dependency order
+        configs = manifest.get_components_by_priority()
 
-        # Initialize cluster with kubeadm
-        _initialize_cluster(manifest, debug)
+        # Create all component instances
+        instances: list[ComponentBase] = []
+        for config in configs:
+            component_class = COMPONENTS[config.name]
+            instance = component_class(manifest, config)
+            instances.append(instance)
 
-        # Verify cluster health
-        _verify_cluster_health()
+        # Execute 8-stage lifecycle
+        _download_components(instances, configs, arch_info)
+        _pre_install_components(instances, configs)
+        _install_components(instances, configs, arch_info)
+        _configure_components(instances, configs)
+        _bootstrap_components(instances, configs)
+        _post_bootstrap_components(instances, configs)
+        _verify_components(instances, configs)
+        _test_components(instances, configs)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")
@@ -70,138 +80,114 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         raise ClusterError(f"Cluster setup failed: {exc}") from exc
 
 
-def _install_components(
-    manifest: Manifest, work_dir: Path, arch_info: ArchInfo, debug: bool
+def _download_components(
+    instances: list[ComponentBase], configs: list[ComponentConfig], arch_info: ArchInfo
 ) -> None:
-    """Install all components from manifest."""
-    section("Installing components")
+    """Stage 1/8: Download all component artifacts."""
+    section("Stage 1/8: Downloading Components")
 
-    for i, component in enumerate(manifest.components, 1):
-        info(f"Component [{i}/{len(manifest.components)}]: {component.name}")
-        info(f"  Release: {component.release}")
-        info(f"  Format: {component.format}")
-        info(f"  Repo: {component.repo}")
-
-        log_file = work_dir / "logs" / f"{component.name}.log"
-
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: downloading...")
         try:
-            # Install component using class-based interface with manifest context
-            install_component(
-                component_name=component.name,
-                repo=component.repo,
-                release=component.release,
-                format=component.format,
-                arch=arch_info.k8s,
-                manifest=manifest,
-                component_config=component,
-            )
-            info("  ✓ Installed")
-
-            # Configure component after installation with manifest context
-            configure_component(
-                component_name=component.name,
-                manifest=manifest,
-                component_config=component,
-            )
-            info("  ✓ Configured")
-
+            instance.download_hook(config.repo, config.release, config.format, arch_info.k8s)
         except Exception as exc:
-            exception(f"  ✗ Installation failed for {component.name}", exc)
-            if log_file.exists():
-                error(f"  See {log_file} for details", show_traceback=False)
+            exception(f"  ✗ Download failed for {config.name}", exc)
             raise
 
 
-def _initialize_cluster(manifest: Manifest, debug: bool) -> None:
-    """Initialize Kubernetes cluster with kubeadm."""
-    section("Initializing cluster with kubeadm")
+def _pre_install_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
+    """Stage 2/8: Pre-installation machine preparation."""
+    section("Stage 2/8: Pre-installation Setup")
 
-    # Get networking configuration
-    networking = manifest.get_networking()
-    if not networking:
-        raise ClusterError("No networking configuration found in manifest")
-
-    info("Networking Configuration:")
-    info(f"  Service CIDR: {networking.service_cidr}")
-    info(f"  Pod CIDR: {networking.pod_cidr}")
-
-    # Check kubeadm availability
-    try:
-        run(["which", "kubeadm"], check=True, capture_output=True)
-    except ShellError as exc:
-        raise ClusterError("kubeadm not found in PATH") from exc
-
-    # Initialize cluster
-    cmd = [
-        "sudo",
-        "kubeadm",
-        "init",
-        f"--pod-network-cidr={networking.pod_cidr}",
-        f"--service-cidr={networking.service_cidr}",
-    ]
-
-    if debug:
-        info(f"Running: {' '.join(cmd)}")
-
-    try:
-        run(cmd, check=True)
-        success("Cluster initialized with kubeadm")
-    except ShellError as exc:
-        raise ClusterError(f"kubeadm init failed: {exc}") from exc
-
-    # Setup kubeconfig
-    try:
-        home = Path.home()
-        kube_dir = home / ".kube"
-        kube_dir.mkdir(exist_ok=True)
-
-        run(["sudo", "cp", "/etc/kubernetes/admin.conf", str(kube_dir / "config")], check=True)
-        owner = Path.home().owner()
-        group = Path.home().group()
-        run(["sudo", "chown", f"{owner}:{group}", str(kube_dir / "config")], check=True)
-        success("Kubeconfig configured")
-    except ShellError as exc:
-        raise ClusterError(f"Failed to setup kubeconfig: {exc}") from exc
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: preparing...")
+        try:
+            instance.pre_install_hook()
+        except Exception as exc:
+            exception(f"  ✗ Pre-install failed for {config.name}", exc)
+            raise
 
 
-def _verify_cluster_health() -> None:
-    """Verify cluster is healthy and ready."""
-    section("Verifying cluster health")
+def _install_components(
+    instances: list[ComponentBase], configs: list[ComponentConfig], arch_info: ArchInfo
+) -> None:
+    """Stage 3/8: Install component binaries/configs."""
+    section("Stage 3/8: Installing Components")
 
-    try:
-        # Check cluster info
-        info("Checking cluster connectivity...")
-        run(["kubectl", "cluster-info"], check=True)
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: installing...")
+        try:
+            instance.install_hook(config.repo, config.release, config.format, arch_info.k8s)
+        except Exception as exc:
+            exception(f"  ✗ Install failed for {config.name}", exc)
+            raise
 
-        # Wait for nodes
-        info("Waiting for nodes to be ready...")
-        run(
-            ["kubectl", "wait", "--for=condition=Ready", "nodes", "--all", "--timeout=300s"],
-            check=True,
-        )
 
-        # Wait for system pods
-        info("Waiting for system pods to be ready...")
-        run(
-            [
-                "kubectl",
-                "wait",
-                "--for=condition=Ready",
-                "pods",
-                "--all",
-                "-n",
-                "kube-system",
-                "--timeout=300s",
-            ],
-            check=True,
-        )
+def _configure_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
+    """Stage 4/8: Configure components (config files, settings)."""
+    section("Stage 4/8: Configuring Components")
 
-        # Display cluster info
-        info("Cluster Information:")
-        run(["kubectl", "get", "nodes", "-o", "wide"], check=True)
-        run(["kubectl", "get", "pods", "-n", "kube-system"], check=True)
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: configuring...")
+        try:
+            instance.configure_hook()
+        except Exception as exc:
+            exception(f"  ✗ Configure failed for {config.name}", exc)
+            raise
 
-        success("Cluster is healthy and ready")
 
-    except ShellError as exc:
-        raise ClusterError(f"Cluster verification failed: {exc}") from exc
+def _bootstrap_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
+    """Stage 5/8: Bootstrap/start services (systemd start, kubeadm init)."""
+    section("Stage 5/8: Bootstrapping Services")
+
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: bootstrapping...")
+        try:
+            instance.bootstrap_hook()
+        except Exception as exc:
+            exception(f"  ✗ Bootstrap failed for {config.name}", exc)
+            raise
+
+
+def _post_bootstrap_components(
+    instances: list[ComponentBase], configs: list[ComponentConfig]
+) -> None:
+    """Stage 6/8: Post-bootstrap tasks (kubeconfig setup, etc.)."""
+    section("Stage 6/8: Post-bootstrap Tasks")
+
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: post-bootstrap...")
+        try:
+            instance.post_bootstrap_hook()
+        except Exception as exc:
+            exception(f"  ✗ Post-bootstrap failed for {config.name}", exc)
+            raise
+
+
+def _verify_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
+    """Stage 7/8: Verify components are working."""
+    section("Stage 7/8: Verifying Components")
+
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: verifying...")
+        try:
+            instance.verify_hook()
+        except Exception as exc:
+            exception(f"  ✗ Verification failed for {config.name}", exc)
+            raise
+
+
+def _test_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
+    """Stage 8/8: Run component tests (optional)."""
+    section("Stage 8/8: Testing Components")
+
+    for config, instance in zip(configs, instances, strict=True):
+        if config.use_spread:
+            info(f"  {config.name}: running tests...")
+            try:
+                instance.test_hook()
+            except Exception as exc:
+                exception(f"  ✗ Tests failed for {config.name}", exc)
+                raise
+        else:
+            info(f"  {config.name}: skipping tests (use_spread=false)")

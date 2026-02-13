@@ -12,6 +12,8 @@ from kube_galaxy.pkg.utils.components import (
     download_file,
     install_binary,
 )
+from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.shell import run
 
 
 class Kubeadm(ComponentBase):
@@ -33,7 +35,8 @@ class Kubeadm(ComponentBase):
     INSTALL_TIMEOUT = 60  # 1 minute (just copying binary)
     BOOTSTRAP_TIMEOUT = 600  # 10 minutes (kubeadm init can be slow)
     POST_BOOTSTRAP_TIMEOUT = 30  # 30 seconds (just copy kubeconfig)
-    CONFIGURE_TIMEOUT = 60  # 1 minute (verification)
+    VERIFY_TIMEOUT = 300  # 5 minutes (cluster health checks)
+    CONFIGURE_TIMEOUT = 60  # 1 minute (configuration)
 
     def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """
@@ -77,35 +80,79 @@ class Kubeadm(ComponentBase):
 
     def bootstrap_hook(self) -> None:
         """
-        Bootstrap Kubernetes cluster with kubeadm.
+        Bootstrap Kubernetes cluster with kubeadm init.
 
-        This hook would contain kubeadm init logic.
-        Can be configured via manifest hook_config.
+        This is where the cluster is actually created.
         """
-        # Get bootstrap configuration using property
-        config = self.hook_config.get("bootstrap", {})
-        _pod_network_cidr = config.get("pod_network_cidr", "10.244.0.0/16")
+        # Get networking configuration from manifest
+        networking = self.manifest.get_networking()
+        if not networking:
+            raise ComponentError("No networking configuration found in manifest")
 
-        # This would contain actual kubeadm init logic
-        # For now, it's a placeholder
-        # run(['kubeadm', 'init', f'--pod-network-cidr={_pod_network_cidr}'])
-        pass
+        # Initialize cluster
+        cmd = [
+            "sudo",
+            "kubeadm",
+            "init",
+            f"--pod-network-cidr={networking.pod_cidr}",
+            f"--service-cidr={networking.service_cidr}",
+        ]
+
+        run(cmd, check=True)
 
     def post_bootstrap_hook(self) -> None:
         """
-        Post-bootstrap tasks.
+        Post-bootstrap tasks: setup kubeconfig for user.
 
         Copies kubeconfig to user directory and sets permissions.
         """
-        # This would:
-        # 1. Copy /etc/kubernetes/admin.conf to ~/.kube/config
-        # 2. Set proper permissions
-        # 3. Export KUBECONFIG environment variable
-        pass
+        home = Path.home()
+        kube_dir = home / ".kube"
+        kube_dir.mkdir(exist_ok=True)
+
+        # Copy admin config
+        run(
+            ["sudo", "cp", "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
+            check=True,
+        )
+
+        # Set proper ownership
+        owner = home.owner()
+        group = home.group()
+        run(["sudo", "chown", f"{owner}:{group}", str(kube_dir / "config")], check=True)
 
     def configure_hook(self) -> None:
         """
-        Verify kubeadm installation and cluster state.
+        Configure kubeadm (placeholder for future config).
         """
-        # Verification logic would go here
         pass
+
+    def verify_hook(self) -> None:
+        """
+        Verify cluster is healthy and ready.
+
+        Checks cluster connectivity and waits for nodes/pods to be ready.
+        """
+        # Check cluster info
+        run(["kubectl", "cluster-info"], check=True)
+
+        # Wait for nodes to be ready
+        run(
+            ["kubectl", "wait", "--for=condition=Ready", "nodes", "--all", "--timeout=300s"],
+            check=True,
+        )
+
+        # Wait for system pods to be ready
+        run(
+            [
+                "kubectl",
+                "wait",
+                "--for=condition=Ready",
+                "pods",
+                "--all",
+                "-n",
+                "kube-system",
+                "--timeout=300s",
+            ],
+            check=True,
+        )

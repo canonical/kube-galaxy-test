@@ -133,3 +133,15 @@ WantedBy=multi-user.target
         Start containerd service.
         """
         run(["systemctl", "start", "containerd"])
+
+    def verify_hook(self) -> None:
+        """
+        Verify containerd is running and functional.
+
+        Checks service status and command availability.
+        """
+        # Check service is active
+        run(["systemctl", "is-active", "containerd"], check=True)
+
+        # Check containerd command works
+        run(["containerd", "--version"], check=True)

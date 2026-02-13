@@ -3,13 +3,15 @@ Component installation and management modules.
 
 Components inherit from ComponentBase and override the lifecycle hooks they need.
 
-Component Lifecycle Hooks:
-- download: Download binaries/containers (parallel with pooling)
-- pre_install: Machine preparation (swapoff, sysctl, etc.)
-- install: Install component binaries/configs
-- bootstrap: Initialize services (e.g., kubeadm init)
-- post_bootstrap: Post-initialization tasks (e.g., get kubeconfig)
-- configure: Final configuration and verification
+Component Lifecycle Hooks (8 stages):
+1. download: Download binaries/containers (parallel with pooling)
+2. pre_install: Machine preparation (swapoff, sysctl, etc.)
+3. install: Install component binaries/configs
+4. configure: Configure component (config files, settings)
+5. bootstrap: Initialize services (e.g., kubeadm init)
+6. post_bootstrap: Post-initialization tasks (e.g., get kubeconfig)
+7. verify: Verify component is working
+8. test: Run component tests (optional)
 """
 
 from enum import Enum
@@ -35,9 +37,11 @@ class HookStage(Enum):
     DOWNLOAD = "download"
     PRE_INSTALL = "pre_install"
     INSTALL = "install"
+    CONFIGURE = "configure"
     BOOTSTRAP = "bootstrap"
     POST_BOOTSTRAP = "post_bootstrap"
-    CONFIGURE = "configure"
+    VERIFY = "verify"
+    TEST = "test"
 
 
 # Simple mapping of component names to classes

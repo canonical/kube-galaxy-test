@@ -14,6 +14,8 @@ from kube_galaxy.pkg.components._constants import (
     DEFAULT_INSTALL_TIMEOUT,
     DEFAULT_POST_BOOTSTRAP_TIMEOUT,
     DEFAULT_PRE_INSTALL_TIMEOUT,
+    DEFAULT_TEST_TIMEOUT,
+    DEFAULT_VERIFY_TIMEOUT,
 )
 
 
@@ -24,16 +26,18 @@ class ComponentBase:
     Each component should subclass this and override the lifecycle hooks
     it needs. The component has access to:
     - The full manifest (self.manifest)
-    - Its own component configuration (self.component)
+    - Its own component configuration (self.config)
     - Architecture information (passed to hooks)
 
     Lifecycle hooks (all have default empty implementations):
     1. download_hook(repo, release, format, arch) - Download artifacts
     2. pre_install_hook() - Prepare machine for installation
     3. install_hook(repo, release, format, arch) - Install the component
-    4. bootstrap_hook() - Initialize/start the component
-    5. post_bootstrap_hook() - Post-initialization tasks
-    6. configure_hook() - Final configuration and verification
+    4. configure_hook() - Configure component (config files, settings)
+    5. bootstrap_hook() - Initialize/start the component
+    6. post_bootstrap_hook() - Post-initialization tasks
+    7. verify_hook() - Verify component is working
+    8. test_hook() - Run component tests (optional)
 
     Each hook can be overridden. If not overridden, the default (empty)
     implementation is used and effectively skips that stage.
@@ -45,9 +49,11 @@ class ComponentBase:
     DOWNLOAD_TIMEOUT = DEFAULT_DOWNLOAD_TIMEOUT
     PRE_INSTALL_TIMEOUT = DEFAULT_PRE_INSTALL_TIMEOUT
     INSTALL_TIMEOUT = DEFAULT_INSTALL_TIMEOUT
+    CONFIGURE_TIMEOUT = DEFAULT_CONFIGURE_TIMEOUT
     BOOTSTRAP_TIMEOUT = DEFAULT_BOOTSTRAP_TIMEOUT
     POST_BOOTSTRAP_TIMEOUT = DEFAULT_POST_BOOTSTRAP_TIMEOUT
-    CONFIGURE_TIMEOUT = DEFAULT_CONFIGURE_TIMEOUT
+    VERIFY_TIMEOUT = DEFAULT_VERIFY_TIMEOUT
+    TEST_TIMEOUT = DEFAULT_TEST_TIMEOUT
 
     # Component metadata - override in subclass
     COMPONENT_NAME: str = ""
@@ -175,10 +181,28 @@ class ComponentBase:
 
     def configure_hook(self) -> None:
         """
-        Final configuration and verification.
+        Configure the component (create config files, etc.).
 
-        This hook runs in the CONFIGURE stage (sequential).
-        Override to implement verification logic.
+        This hook runs in the CONFIGURE stage before BOOTSTRAP (sequential).
+        Override to implement configuration logic.
+        """
+        pass
+
+    def verify_hook(self) -> None:
+        """
+        Verify the component is working correctly.
+
+        This hook runs in the VERIFY stage (sequential).
+        Override to implement health check logic.
+        """
+        pass
+
+    def test_hook(self) -> None:
+        """
+        Run tests on the component.
+
+        This hook runs in the TEST stage (sequential).
+        Override to implement testing logic (e.g., spread tests).
         """
         pass
 
