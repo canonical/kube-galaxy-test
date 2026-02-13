@@ -11,8 +11,6 @@ on:
       - '.github/workflows/test-baseline-clusters.yml'
       - 'pyproject.toml'
   pull_request:
-    branches:
-      - main
     paths:
       - 'src/**'
       - 'manifests/*.yaml'
