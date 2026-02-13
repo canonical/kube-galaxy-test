@@ -40,6 +40,20 @@ class Kubeadm(ComponentBase):
     VERIFY_TIMEOUT = 300  # 5 minutes (cluster health checks)
     CONFIGURE_TIMEOUT = 60  # 1 minute (configuration)
 
+
+    def _get_binary_path(self, component: str) -> str:
+        """
+        Get binary path from specified component.
+
+        Returns:
+            Binary path of the specified component
+        """
+        if component_instance := self.instances.get(component):
+            if hasattr(component_instance, "binary_path"):
+                return str(component_instance.binary_path)
+
+        raise ComponentError(f"Binary path for component '{component}' not found")
+
     def download_hook(self, arch: str) -> None:
         """
         Download kubeadm binary.
@@ -93,18 +107,13 @@ class Kubeadm(ComponentBase):
         with urlopen(service_url) as response:
             service_content = response.read().decode("utf-8")
 
-        # Create systemd directories
-        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
-
         # Write kubelet.service file
+        kubelet = self._get_binary_path("kubelet")
+        service_content = service_content.replace("/usr/bin/kubelet", kubelet)
         temp_service = Path("/tmp/kubelet.service")
         temp_service.write_text(service_content)
-        run(
-            ["sudo", "tee", "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"],
-            input=service_content,
-            text=True,
-            check=True,
-        )
+        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
+        run(["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"], check=True)
 
     def bootstrap_hook(self) -> None:
         """
@@ -158,19 +167,21 @@ class Kubeadm(ComponentBase):
 
         Checks cluster connectivity and waits for nodes/pods to be ready.
         """
+
         # Check cluster info
-        run(["kubectl", "cluster-info"], check=True)
+        kubectl = self._get_binary_path("kubectl")
+        run([kubectl, "cluster-info"], check=True)
 
         # Wait for nodes to be ready
         run(
-            ["kubectl", "wait", "--for=condition=Ready", "nodes", "--all", "--timeout=300s"],
+            [kubectl, "wait", "--for=condition=Ready", "nodes", "--all", "--timeout=300s"],
             check=True,
         )
 
         # Wait for system pods to be ready
         run(
             [
-                "kubectl",
+                kubectl,
                 "wait",
                 "--for=condition=Ready",
                 "pods",

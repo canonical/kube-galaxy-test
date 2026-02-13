@@ -90,8 +90,8 @@ class Kubelet(ComponentBase):
         temp_service = Path("/tmp/kubelet.service")
         service_content = service_content.replace("/usr/bin/kubelet", self.INSTALL_PATH)
         temp_service.write_text(service_content)
-        run(["sudo", "mkdir", "-p", "/etc/systemd/system"], check=True)
-        run(["sudo", "cp", str(temp_service), "/etc/systemd/system/kubelet.service"], check=True)
+        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system"], check=True)
+        run(["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service"], check=True)
 
     def bootstrap_hook(self) -> None:
         """
