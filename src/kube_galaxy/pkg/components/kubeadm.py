@@ -13,6 +13,7 @@ from kube_galaxy.pkg.utils.components import (
     install_binary,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -76,6 +77,15 @@ class Kubeadm(ComponentBase):
         # Install binary to system
         install_binary(self.binary_path, "kubeadm")
 
+    def configure_hook(self) -> None:
+        """
+        Configure system for kubeadm.
+
+        Disables swap which is required for kubelet/kubeadm to work properly.
+        """
+        info("  Disabling swap...")
+        run(["sudo", "swapoff", "-a"], check=True)
+
     def bootstrap_hook(self) -> None:
         """
         Bootstrap Kubernetes cluster with kubeadm init.
@@ -121,12 +131,6 @@ class Kubeadm(ComponentBase):
         owner = home.owner()
         group = home.group()
         run(["sudo", "chown", f"{owner}:{group}", str(kube_dir / "config")], check=True)
-
-    def configure_hook(self) -> None:
-        """
-        Configure kubeadm (placeholder for future config).
-        """
-        pass
 
     def verify_hook(self) -> None:
         """
