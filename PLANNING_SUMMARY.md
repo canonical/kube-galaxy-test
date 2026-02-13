@@ -177,23 +177,65 @@ def download_hook(repo: str, release: str, format: str, arch: str) -> None:
 
 ## How to Use (Future State)
 
-### Manifest with Dependencies
+### Manifest with Dependencies and Install Methods
 ```yaml
 components:
+  # Binary with tar.gz archive extraction
   - name: runc
     release: "1.3.4"
     priority: 5
+    install_method: binary-archive
+    archive_format: tar.gz
     
+  # Binary archive with custom URL
   - name: containerd
     release: "2.2.1"
     dependencies: [runc]
     priority: 10
+    install_method: binary-archive
+    archive_format: tar.gz
+    custom_binary_url: "https://custom-mirror.com/containerd-2.2.1.tar.gz"
     
+  # Direct binary download (no extraction)
+  - name: kubectl
+    release: "1.35.0"
+    priority: 20
+    install_method: binary-direct
+    custom_binary_url: "https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl"
+    
+  # Kubeadm with custom bootstrap timeout
   - name: kubeadm
     release: "1.35.0"
     dependencies: [containerd, kubelet]
     priority: 30
-    custom_binary_url: "https://custom-mirror.com/kubeadm"
+    install_method: binary-direct
+    skip_hooks: [bootstrap]  # Manual cluster init
+    hook_config:
+      bootstrap:
+        pod_network_cidr: "10.244.0.0/16"
+        
+  # Helm chart deployment with custom image
+  - name: calico
+    release: "3.27.0"
+    priority: 40
+    install_method: helm-chart
+    helm_chart_url: "https://projectcalico.docs.tigera.io/charts"
+    custom_image_url: "registry.example.com/calico/node:v3.27.0"
+    helm_values:
+      installation:
+        cni:
+          type: Calico
+        calicoNetwork:
+          ipPools:
+            - cidr: 192.168.0.0/16
+              
+  # Pod manifest deployment
+  - name: coredns
+    release: "1.11.0"
+    priority: 45
+    install_method: pod-manifest
+    manifest_url: "https://example.com/manifests/coredns-1.11.0.yaml"
+    manifest_type: deployment
 ```
 
 ### Creating a New Component
@@ -224,10 +266,42 @@ register_component_hooks(_hooks)
 
 ## Questions for Discussion
 
-1. **Connection Pooling**: How many concurrent downloads? (Suggest: 5-10)
-2. **Timeout Values**: Default timeouts per stage? (Suggest: download=300s, install=60s)
-3. **Error Handling**: Retry logic or fail-fast? (Suggest: retry downloads, fail-fast others)
-4. **Custom URLs**: Require HTTPS? Verify checksums? (Suggest: yes to both)
+### Answered and Implemented ✅
+
+1. **Connection Pooling**: How many concurrent downloads?
+   - **Answer**: 5 concurrent downloads
+   - **Implementation**: `DOWNLOAD_POOL_SIZE = 5` in `constants.py`
+
+2. **Timeout Values**: Default timeouts per stage?
+   - **Answer**: Custom timeouts per component, defined as module-level constants
+   - **Implementation**: 
+     - Default timeouts in `constants.py`
+     - Component-specific constants (e.g., `kubeadm.BOOTSTRAP_TIMEOUT = 600`)
+     - `ComponentHooks.get_timeout(stage)` method
+   - **Defaults**:
+     - DOWNLOAD: 300s (5 min)
+     - PRE_INSTALL: 60s (1 min)
+     - INSTALL: 120s (2 min)
+     - BOOTSTRAP: 300s (5 min)
+     - POST_BOOTSTRAP: 60s (1 min)
+     - CONFIGURE: 60s (1 min)
+
+3. **Error Handling**: Retry logic or fail-fast?
+   - **Answer**: Fail-fast (no retries for now)
+   - **Implementation**: `FAIL_FAST = True` in `constants.py`
+
+4. **Installation Methods**: How to handle different binary/container types?
+   - **Answer**: Extensible `install_method` field in Component model
+   - **Implementation**:
+     - `InstallMethod` enum with multiple types
+     - Binary methods: archive, direct, deb, snap, rpm
+     - Container methods: pod-manifest, deployment, helm-chart, kustomize
+     - Component model fields: `install_method`, `archive_format`, `helm_chart_url`, `manifest_url`
+
+5. **Custom URLs**: Require HTTPS? Verify checksums?
+   - **Answer**: Support custom URLs, security to be implemented in download hooks
+   - **Implementation**: `custom_binary_url`, `custom_image_url` fields in Component model
+   - **TODO**: Add HTTPS validation and checksum verification in download hooks
 5. **Priority Range**: Use 0-100 or allow negative? (Suggest: 0-100)
 
 ## Success Criteria
