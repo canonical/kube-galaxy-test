@@ -20,6 +20,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Optional
 
+from kube_galaxy.pkg.components.constants import (
+    DEFAULT_BOOTSTRAP_TIMEOUT,
+    DEFAULT_CONFIGURE_TIMEOUT,
+    DEFAULT_DOWNLOAD_TIMEOUT,
+    DEFAULT_INSTALL_TIMEOUT,
+    DEFAULT_POST_BOOTSTRAP_TIMEOUT,
+    DEFAULT_PRE_INSTALL_TIMEOUT,
+)
+
 
 class HookStage(Enum):
     """Component lifecycle stages."""
@@ -47,6 +56,10 @@ class ComponentHooks:
     4. bootstrap - Initialize/start the component
     5. post_bootstrap - Post-initialization tasks
     6. configure - Final configuration
+    
+    Timeout Configuration:
+    Each component can define custom timeouts for each stage.
+    If not specified, defaults from constants.py are used.
     """
     
     # Component metadata
@@ -67,6 +80,15 @@ class ComponentHooks:
     # Execution priority (lower = earlier, default = 50)
     priority: int = 50
     
+    # Timeout configuration (in seconds) for each stage
+    # None means use default from constants
+    download_timeout: Optional[int] = None
+    pre_install_timeout: Optional[int] = None
+    install_timeout: Optional[int] = None
+    bootstrap_timeout: Optional[int] = None
+    post_bootstrap_timeout: Optional[int] = None
+    configure_timeout: Optional[int] = None
+    
     def has_hook(self, stage: HookStage) -> bool:
         """Check if component has a specific hook."""
         hook_attr = stage.value
@@ -76,6 +98,36 @@ class ComponentHooks:
         """Get the hook function for a stage."""
         hook_attr = stage.value
         return getattr(self, hook_attr, None)
+    
+    def get_timeout(self, stage: HookStage) -> int:
+        """
+        Get timeout for a specific stage.
+        
+        Returns component-specific timeout if set, otherwise default.
+        
+        Args:
+            stage: The lifecycle stage
+            
+        Returns:
+            Timeout in seconds
+        """
+        timeout_attr = f"{stage.value}_timeout"
+        component_timeout = getattr(self, timeout_attr, None)
+        
+        if component_timeout is not None:
+            return component_timeout
+        
+        # Return default timeout for the stage
+        defaults = {
+            HookStage.DOWNLOAD: DEFAULT_DOWNLOAD_TIMEOUT,
+            HookStage.PRE_INSTALL: DEFAULT_PRE_INSTALL_TIMEOUT,
+            HookStage.INSTALL: DEFAULT_INSTALL_TIMEOUT,
+            HookStage.BOOTSTRAP: DEFAULT_BOOTSTRAP_TIMEOUT,
+            HookStage.POST_BOOTSTRAP: DEFAULT_POST_BOOTSTRAP_TIMEOUT,
+            HookStage.CONFIGURE: DEFAULT_CONFIGURE_TIMEOUT,
+        }
+        
+        return defaults.get(stage, 60)  # Fallback to 60s if stage not found
 
 
 # Registry of component hooks

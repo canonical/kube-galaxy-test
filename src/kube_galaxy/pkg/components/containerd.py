@@ -16,6 +16,11 @@ from kube_galaxy.pkg.utils.components import (
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.shell import run
 
+# Component timeout configuration (in seconds)
+DOWNLOAD_TIMEOUT = 300  # 5 minutes (containerd archive can be large)
+INSTALL_TIMEOUT = 120   # 2 minutes (extract and copy)
+BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
+CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
 
 # Component-level variables for hook state
 _download_state = {}
@@ -190,6 +195,11 @@ _containerd_hooks = ComponentHooks(
     configure=configure_hook,
     dependencies=["runc"],  # Needs runc first
     priority=10,  # Install very early (container runtime needed by others)
+    # Custom timeouts for this component
+    download_timeout=DOWNLOAD_TIMEOUT,
+    install_timeout=INSTALL_TIMEOUT,
+    bootstrap_timeout=BOOTSTRAP_TIMEOUT,
+    configure_timeout=CONFIGURE_TIMEOUT,
 )
 
 register_component_hooks(_containerd_hooks)

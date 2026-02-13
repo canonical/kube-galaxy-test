@@ -11,16 +11,28 @@ class Component:
     category: str
     release: str
     repo: str
-    format: str  # Binary, Container, or Binary+Container
+    format: str  # Binary, Container, or Binary+Container (legacy, kept for compatibility)
     use_spread: bool = False
     
     # Component lifecycle configuration
     dependencies: list[str] = field(default_factory=list)  # Must install after these components
     priority: int = 50  # Lower = earlier (for components without dependencies)
     
+    # Installation method configuration
+    install_method: str | None = None  # e.g., "binary-archive", "binary-direct", "helm-chart", "pod-manifest"
+    archive_format: str | None = None  # e.g., "tar.gz", "tar.xz" (for binary-archive method)
+    
     # Custom binary/image URLs (optional, overrides default repo/release)
     custom_binary_url: str | None = None
     custom_image_url: str | None = None
+    
+    # Helm chart specific configuration
+    helm_chart_url: str | None = None
+    helm_values: dict = field(default_factory=dict)
+    
+    # Manifest specific configuration
+    manifest_url: str | None = None
+    manifest_type: str | None = None  # "pod", "deployment", "daemonset", etc.
     
     # Hook configuration overrides
     skip_hooks: list[str] = field(default_factory=list)  # Hooks to skip (e.g., ["bootstrap"])

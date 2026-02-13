@@ -13,6 +13,13 @@ from kube_galaxy.pkg.utils.components import (
     remove_binary,
 )
 
+# Component timeout configuration (in seconds)
+# These override the defaults from constants.py
+DOWNLOAD_TIMEOUT = 180  # 3 minutes (kubeadm binary is small)
+INSTALL_TIMEOUT = 60    # 1 minute (just copying binary)
+BOOTSTRAP_TIMEOUT = 600  # 10 minutes (kubeadm init can be slow)
+POST_BOOTSTRAP_TIMEOUT = 30  # 30 seconds (just copy kubeconfig)
+CONFIGURE_TIMEOUT = 60  # 1 minute (verification)
 
 # Component-level variables for hook state
 _download_state = {}
@@ -154,6 +161,12 @@ _kubeadm_hooks = ComponentHooks(
     configure=configure_hook,
     dependencies=["containerd", "kubelet"],  # Needs container runtime and kubelet
     priority=30,  # Install relatively early
+    # Custom timeouts for this component
+    download_timeout=DOWNLOAD_TIMEOUT,
+    install_timeout=INSTALL_TIMEOUT,
+    bootstrap_timeout=BOOTSTRAP_TIMEOUT,
+    post_bootstrap_timeout=POST_BOOTSTRAP_TIMEOUT,
+    configure_timeout=CONFIGURE_TIMEOUT,
 )
 
 register_component_hooks(_kubeadm_hooks)
