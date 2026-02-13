@@ -1,5 +1,17 @@
 # Component Lifecycle Hook System - Planning Summary
 
+> **⚠️ NOTE**: This document contains historical planning information. 
+> For current implementation, see:
+> - `docs/class-based-components.md` - Current API guide
+> - `docs/component-lifecycle-hooks.md` - Hook system overview  
+> - `IMPLEMENTATION_COMPLETE.md` - Final implementation status
+>
+> **Key Changes from Planning**:
+> - ✅ Class-based components (not function-based)
+> - ✅ Properties instead of getter methods
+> - ✅ Instance attributes instead of state dict
+> - ✅ No backward compatibility (greenfield)
+
 ## What We've Accomplished
 
 We've designed and implemented the foundation for a comprehensive component lifecycle hook system that addresses the requirements from the ChatGPT conversation about custom images and binaries.

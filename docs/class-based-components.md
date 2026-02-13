@@ -252,56 +252,20 @@ instance = create_component_instance('mycomponent', manifest, component_config)
 
 # Test hooks
 instance.download_hook('https://example.com', '1.0.0', 'Binary', 'amd64')
-assert instance.has_state('binary_path')
+assert hasattr(instance, 'binary_path')
 
 instance.install_hook('https://example.com', '1.0.0', 'Binary', 'amd64')
 ```
 
-## Migration from Function-Based
-
-### Before (Function-Based)
-```python
-# mycomponent.py
-_state = {}
-
-def download_hook(repo, release, format, arch):
-    path = download(...)
-    _state['path'] = path
-
-def install_hook(repo, release, format, arch):
-    install(_state['path'])
-
-_hooks = ComponentHooks(
-    name="mycomponent",
-    download=download_hook,
-    install=install_hook,
-)
-register_component_hooks(_hooks)
-```
-
-### After (Class-Based)
-```python
-# mycomponent_v2.py
-@register_component_class
-class MyComponent(ComponentBase):
-    COMPONENT_NAME = "mycomponent"
-    
-    def download_hook(self, repo, release, format, arch):
-        path = download(...)
-        self.set_state('path', path)
-    
-    def install_hook(self, repo, release, format, arch):
-        install(self.get_state('path'))
-```
-
 ## Best Practices
 
-1. **Use Helper Methods**: Take advantage of `get_custom_binary_url()`, `get_install_method()`, etc.
-2. **State Management**: Use `set_state()`/`get_state()` instead of module variables
-3. **Configuration**: Check `should_skip_hook()` and `get_hook_config()` for flexibility
-4. **Error Handling**: Raise clear exceptions with helpful messages
-5. **Documentation**: Document each hook's purpose and requirements
-6. **Timeouts**: Set realistic timeouts based on operation duration
+1. **Use Properties**: Access config via properties like `self.custom_binary_url`, `self.install_method`
+2. **State Management**: Use instance attributes like `self.binary_path` instead of special methods
+3. **Configuration**: Access via `self.hook_config` dictionary
+4. **Don't Override Unnecessary Hooks**: If you don't need a hook, just don't implement it
+5. **Error Handling**: Raise clear exceptions with helpful messages
+6. **Documentation**: Document each hook's purpose and requirements
+7. **Timeouts**: Set realistic timeouts based on operation duration
 
 ## See Also
 

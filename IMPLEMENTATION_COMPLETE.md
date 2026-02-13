@@ -69,14 +69,14 @@ class Kubeadm(ComponentBase):
     BOOTSTRAP_TIMEOUT = 600  # Custom timeout
     
     def download_hook(self, repo, release, format, arch):
-        url = self.custom_binary_url or default_url
-        self.binary_path = download(url)
+        url = self.custom_binary_url or default_url  # Property, not getter!
+        self.binary_path = download(url)  # Instance attribute, not set_state!
     
     def install_hook(self, repo, release, format, arch):
-        install_binary(self.binary_path, "kubeadm")
+        install_binary(self.binary_path, "kubeadm")  # Direct access
     
     def bootstrap_hook(self):
-        config = self.hook_config.get('bootstrap', {})
+        config = self.hook_config.get('bootstrap', {})  # Property access
         # kubeadm init with config
 ```
 
