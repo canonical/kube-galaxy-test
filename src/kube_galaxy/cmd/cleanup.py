@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-import typer  # type: ignore[import-not-found]
+import typer
 
 from kube_galaxy.pkg.utils.logging import error, info, section, success
 

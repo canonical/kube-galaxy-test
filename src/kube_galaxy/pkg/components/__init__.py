@@ -20,8 +20,8 @@ from kube_galaxy.pkg.components.containerd import Containerd
 from kube_galaxy.pkg.components.kubeadm import Kubeadm
 
 __all__ = [
-    "ComponentBase",
     "COMPONENTS",
+    "ComponentBase",
     "HookStage",
     "configure_component",
     "get_component_class",

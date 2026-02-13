@@ -3,7 +3,7 @@
 import traceback
 from typing import Any
 
-import typer  # type: ignore[import-not-found]
+import typer
 
 
 def info(message: str) -> None:

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-import typer  # type: ignore[import-not-found]
+import typer
 import yaml
 
 from kube_galaxy.pkg.manifest.loader import load_manifest

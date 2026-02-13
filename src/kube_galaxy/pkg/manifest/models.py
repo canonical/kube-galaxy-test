@@ -1,6 +1,7 @@
 """Manifest data models for kube-galaxy."""
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
