@@ -182,22 +182,3 @@ class ComponentBase(ABC):
         Override to implement verification logic.
         """
         pass
-    
-    # Legacy compatibility methods
-    
-    def install(self, repo: str, release: str, format: str, arch: str) -> None:
-        """
-        Legacy install method (combines download + install).
-        
-        For backward compatibility with existing code.
-        """
-        self.download_hook(repo, release, format, arch)
-        self.install_hook(repo, release, format, arch)
-    
-    def configure(self) -> None:
-        """
-        Legacy configure method.
-        
-        For backward compatibility with existing code.
-        """
-        self.configure_hook()
