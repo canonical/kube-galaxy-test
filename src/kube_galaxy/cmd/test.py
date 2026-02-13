@@ -9,7 +9,7 @@ import typer
 from kube_galaxy.pkg.cluster.setup import setup_cluster
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.testing.spread import collect_test_results, run_spread_tests
-from kube_galaxy.pkg.utils.logging import error, info, section, success
+from kube_galaxy.pkg.utils.logging import error, exception, info, section, success
 
 
 def local() -> None:
@@ -27,7 +27,7 @@ def local() -> None:
             raise typer.Exit(code=1)
         success("Required tools are available")
     except Exception as e:
-        error(f"Tool check failed: {e}")
+        exception("Tool check failed", e)
         raise typer.Exit(code=1) from e
 
     # Validate manifests
@@ -83,7 +83,7 @@ def spread() -> None:
         success("Spread tests completed")
 
     except Exception as e:
-        error(f"Spread tests failed: {e}")
+        exception("Spread tests failed", e)
         raise typer.Exit(code=1) from e
 
 
@@ -110,7 +110,7 @@ def setup(manifest_path: str | None = None) -> None:
         setup_cluster(manifest_file, work_dir=".", debug=False)
         success("Cluster setup completed")
     except Exception as e:
-        error(f"Cluster setup failed: {e}")
+        exception("Cluster setup failed", e)
         raise typer.Exit(code=1) from e
 
 
@@ -143,5 +143,5 @@ def manifest(manifest_path: str) -> None:
         success("Manifest is valid!")
 
     except Exception as e:
-        error(f"Failed to inspect manifest: {e}")
+        exception("Failed to inspect manifest", e)
         raise typer.Exit(code=1) from e

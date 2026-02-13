@@ -1,5 +1,7 @@
 """CLI output formatting and logging."""
 
+import sys
+import traceback
 from typing import Any
 
 import typer
@@ -15,9 +17,41 @@ def success(message: str) -> None:
     typer.echo(typer.style(f"✅ {message}", fg=typer.colors.GREEN))
 
 
-def error(message: str) -> None:
-    """Print error message with X mark."""
-    typer.echo(typer.style(f"❌ {message}", fg=typer.colors.RED))
+def error(message: str, exc: Exception | None = None, show_traceback: bool = True) -> None:
+    """
+    Print error message with X mark.
+
+    Args:
+        message: Error message to display
+        exc: Optional exception to extract traceback from
+        show_traceback: Whether to show full traceback (default: True)
+    """
+    typer.echo(typer.style(f"❌ {message}", fg=typer.colors.RED), err=True)
+
+    # Show exception details if provided
+    if exc and show_traceback:
+        typer.echo(typer.style("\nError Details:", fg=typer.colors.RED, bold=True), err=True)
+        typer.echo(typer.style(f"  Type: {type(exc).__name__}", fg=typer.colors.RED), err=True)
+        typer.echo(typer.style(f"  Message: {str(exc)}", fg=typer.colors.RED), err=True)
+
+        # Show full traceback
+        typer.echo(typer.style("\nStack Trace:", fg=typer.colors.RED, bold=True), err=True)
+        tb_lines = traceback.format_exception(type(exc), exc, exc.__traceback__)
+        for line in tb_lines:
+            typer.echo(typer.style(line.rstrip(), fg=typer.colors.RED), err=True)
+
+
+def exception(message: str, exc: Exception) -> None:
+    """
+    Print error message with full exception traceback.
+
+    This is a convenience function that always shows the traceback.
+
+    Args:
+        message: Context message describing what failed
+        exc: The exception that was raised
+    """
+    error(message, exc=exc, show_traceback=True)
 
 
 def warning(message: str) -> None:

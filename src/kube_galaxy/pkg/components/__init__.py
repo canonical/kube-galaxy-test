@@ -119,9 +119,11 @@ def install_component(
     release: str,
     format: str,
     arch: str,
+    manifest=None,
+    component_config=None,
 ) -> None:
     """
-    Install a component.
+    Install a component using the class-based interface.
 
     Args:
         component_name: Component identifier
@@ -129,18 +131,68 @@ def install_component(
         release: Release/version tag
         format: Installation format (Binary, Container, Binary+Container)
         arch: Architecture (amd64, arm64, etc.)
+        manifest: Optional manifest object for context
+        component_config: Optional component configuration
     """
+    # Try to get class-based component
+    try:
+        component_class = get_component_class(component_name)
+        if component_class:
+            # Create instance with manifest context
+            instance = create_component_instance(component_class, manifest, component_config)
+            
+            # Execute hooks in order
+            if hasattr(instance, 'download_hook'):
+                instance.download_hook(repo, release, format, arch)
+            if hasattr(instance, 'pre_install_hook'):
+                instance.pre_install_hook()
+            if hasattr(instance, 'install_hook'):
+                instance.install_hook(repo, release, format, arch)
+            return
+    except Exception:
+        # Component not registered as class, try legacy approach
+        pass
+    
+    # Fallback: try to find module with install function
     module = get_component_module(component_name)
-    module.install(repo=repo, release=release, format=format, arch=arch)
+    if hasattr(module, "install"):
+        module.install(repo=repo, release=release, format=format, arch=arch)
+    else:
+        raise AttributeError(
+            f"Component '{component_name}' has no install function or class. "
+            f"Please implement a ComponentBase subclass with install_hook()."
+        )
 
 
-def configure_component(component_name: str) -> None:
+def configure_component(component_name: str, manifest=None, component_config=None) -> None:
     """
-    Configure a component after installation.
+    Configure a component after installation using the class-based interface.
 
     Args:
         component_name: Component identifier
+        manifest: Optional manifest object for context
+        component_config: Optional component configuration
     """
+    # Try to get class-based component
+    try:
+        component_class = get_component_class(component_name)
+        if component_class:
+            # Create instance with manifest context
+            instance = create_component_instance(component_class, manifest, component_config)
+            
+            # Execute configuration hooks
+            if hasattr(instance, 'bootstrap_hook'):
+                instance.bootstrap_hook()
+            if hasattr(instance, 'post_bootstrap_hook'):
+                instance.post_bootstrap_hook()
+            if hasattr(instance, 'configure_hook'):
+                instance.configure_hook()
+            return
+    except Exception:
+        # Component not registered as class, try legacy approach
+        pass
+    
+    # Fallback: try to find module with configure function
     module = get_component_module(component_name)
     if hasattr(module, "configure"):
         module.configure()

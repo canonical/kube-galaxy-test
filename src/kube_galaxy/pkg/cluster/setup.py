@@ -7,7 +7,7 @@ from kube_galaxy.pkg.components import configure_component, install_component
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import Manifest
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.logging import error, info, section, success
+from kube_galaxy.pkg.utils.logging import error, exception, info, section, success
 from kube_galaxy.pkg.utils.shell import ShellError, run
 
 
@@ -66,6 +66,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         success(f"Kubernetes Version: {manifest.kubernetes_version}")
 
     except Exception as exc:
+        exception("Cluster setup failed", exc)
         raise ClusterError(f"Cluster setup failed: {exc}") from exc
 
 
@@ -84,24 +85,30 @@ def _install_components(
         log_file = work_dir / "logs" / f"{component.name}.log"
 
         try:
-            # Install component using dynamic component module
+            # Install component using class-based interface with manifest context
             install_component(
                 component_name=component.name,
                 repo=component.repo,
                 release=component.release,
                 format=component.format,
                 arch=arch_info.k8s,
+                manifest=manifest,
+                component_config=component,
             )
             info("  ✓ Installed")
 
-            # Configure component after installation
-            configure_component(component.name)
+            # Configure component after installation with manifest context
+            configure_component(
+                component_name=component.name,
+                manifest=manifest,
+                component_config=component,
+            )
             info("  ✓ Configured")
 
         except Exception as exc:
-            error(f"  ✗ Installation failed: {exc}")
+            exception(f"  ✗ Installation failed for {component.name}", exc)
             if log_file.exists():
-                error(f"  See {log_file} for details")
+                error(f"  See {log_file} for details", show_traceback=False)
             raise
 
 
