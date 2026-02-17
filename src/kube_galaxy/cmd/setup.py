@@ -1,6 +1,6 @@
 """Setup command handler."""
 
-from kube_galaxy.pkg.cluster.setup import setup_cluster
+from kube_galaxy.pkg.cluster.cluster import setup_cluster
 
 
 def setup(manifest_path: str) -> None:
