@@ -107,9 +107,15 @@ def cleanup_cmd(
 
 
 @app.command(name="setup")
-def setup_cmd() -> None:
-    """Initialize project setup - create necessary directories."""
-    setup.setup()
+def setup_cmd(
+    manifest: str = typer.Argument(..., help="Path to manifest file"),
+) -> None:
+    """Provision a cluster from a manifest file.
+
+    Example:
+        kube-galaxy setup manifests/baseline-k8s-1.35.yaml
+    """
+    setup.setup(manifest)
 
 
 @app.command(name="status")

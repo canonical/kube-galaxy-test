@@ -58,7 +58,7 @@ Key insight: `use-spread: true` means component repo has spread.yaml tests that 
 kube-galaxy validate manifests
 
 # Provision real cluster with kubeadm (no container shortcuts)
-kube-galaxy test setup
+kube-galaxy setup
 
 # Run spread tests from components with use-spread: true
 kube-galaxy test spread
@@ -119,7 +119,7 @@ Architecture detection happens at runtime in `pkg/cluster/setup.py`:
 - CLI commands in `cmd/` compose these modules for user-facing behavior
 
 **Error Handling & Cleanup**:
-- `kube-galaxy test setup`: Creates cluster, exits on first error (fail-fast)
+- `kube-galaxy setup`: Creates cluster, exits on first error (fail-fast)
 - `kube-galaxy cleanup all`: Always runs `kubeadm reset --force`, removes artifacts
 - GitHub Actions use `if: always()` to ensure cleanup even on failures
 
@@ -168,12 +168,11 @@ kube-galaxy validate manifests
 kube-galaxy test-manifest manifests/baseline-k8s-1.35.yaml
 
 # Testing
+kube-galaxy setup
 kube-galaxy test local
 kube-galaxy test spread
-kube-galaxy test setup
 
 # Management
-kube-galaxy setup
 kube-galaxy cleanup all
 kube-galaxy status
 ```

@@ -101,7 +101,7 @@ These comprehensive manifests include full networking and are marked with `ci-sk
 kube-galaxy test-manifest manifests/single-node-no-cni.yaml
 
 # Setup the cluster (nodes will be NotReady without CNI)
-kube-galaxy test setup --manifest manifests/single-node-no-cni.yaml
+kube-galaxy setup manifests/single-node-no-cni.yaml
 
 # Verify control plane is running
 kubectl get pods -n kube-system

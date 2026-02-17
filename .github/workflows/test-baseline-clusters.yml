@@ -117,7 +117,7 @@ jobs:
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
 
-          kube-galaxy test setup --manifest ${{ matrix.manifest-file }}
+          kube-galaxy setup ${{ matrix.manifest-file }}
 
       - name: Verify Cluster Health
         shell: bash
