@@ -51,9 +51,9 @@ class Kubelet(ComponentBase):
         # Construct download URL from source_format template
         url = source_format.format(repo=repo, release=release, arch=arch)
 
-        # Download to temporary directory
-        temp_dir = Path("/tmp/kubelet-install")
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Download to secure temporary directory
+        temp_dir = Path(self.component_tmp_dir)
+        run(["sudo", "mkdir", "-p", str(temp_dir)], check=True)
 
         binary_path = temp_dir / "kubelet"
         download_file(url, binary_path)
@@ -71,7 +71,7 @@ class Kubelet(ComponentBase):
             raise RuntimeError("kubelet binary not downloaded. Run download hook first.")
 
         # Install binary to system
-        self.install_path = install_binary(self.binary_path, "kubelet")
+        self.install_path = install_binary(self.binary_path, "kubelet", self.COMPONENT_NAME)
 
     def configure_hook(self) -> None:
         """
@@ -93,9 +93,10 @@ class Kubelet(ComponentBase):
         run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
 
         # Write kubelet.service file
-        temp_service = Path("/tmp/kubelet.service")
+        temp_service = Path(self.component_tmp_dir) / "kubelet.service"
         service_content = service_content.replace("/usr/bin/kubelet", self.install_path)
-        temp_service.write_text(service_content)
+        run(["sudo", "mkdir", "-p", str(temp_service.parent)], check=True)
+        run(["sudo", "tee", str(temp_service)], input=service_content, text=True, check=True)
         run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system"], check=True)
         run(
             ["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service"], check=True

@@ -9,6 +9,7 @@ from kube_galaxy.pkg.manifest.models import ComponentConfig
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
+from kube_galaxy.pkg.utils.shell import run
 
 __all__ = ["setup_cluster", "teardown_cluster"]
 
@@ -139,6 +140,9 @@ def teardown_cluster(
         _stop_components(instances_list, configs, force)
         _delete_components(instances_list, configs, force)
         _post_delete_components(instances_list, configs, force)
+
+        # Final cleanup: remove any remaining kube-galaxy alternatives
+        _cleanup_kube_galaxy_alternatives(force)
 
         section("Cluster Teardown Complete!")
         success(f"Cluster '{manifest.name}' has been torn down")
@@ -320,3 +324,60 @@ def _post_delete_components(
             else:
                 exception(f"  ✗ Post-delete failed for {config.name}", exc)
                 raise
+
+
+def _cleanup_kube_galaxy_alternatives(force: bool) -> None:
+    """
+    Clean up any remaining kube-galaxy alternatives in /opt/kube-galaxy.
+
+    This function scans for any remaining component directories and removes
+    their alternatives as a final safety net.
+
+    Args:
+        force: Continue cleanup even if errors occur
+    """
+    from pathlib import Path
+
+    try:
+        kube_galaxy_dir = Path("/opt/kube-galaxy")
+        if not kube_galaxy_dir.exists():
+            return
+
+        info("  Final cleanup: removing remaining alternatives...")
+
+        for component_dir in kube_galaxy_dir.iterdir():
+            if component_dir.is_dir():
+                bin_dir = component_dir / "bin"
+                if bin_dir.exists():
+                    for binary in bin_dir.glob("*"):
+                        if binary.is_file():
+                            try:
+                                run(
+                                    [
+                                        "sudo",
+                                        "update-alternatives",
+                                        "--remove",
+                                        binary.name,
+                                        str(binary),
+                                    ],
+                                    check=False,
+                                )
+                            except Exception:
+                                pass  # Ignore individual failures during cleanup
+
+        # Remove the entire /opt/kube-galaxy directory
+        try:
+            run(["sudo", "rm", "-rf", str(kube_galaxy_dir)], check=False)
+            info(f"  Removed {kube_galaxy_dir}")
+        except Exception as e:
+            if force:
+                info(f"  Warning: Failed to remove {kube_galaxy_dir}: {e}")
+            else:
+                raise
+
+    except Exception as exc:
+        if force:
+            exception("Final alternatives cleanup failed (continuing due to --force)", exc)
+        else:
+            exception("Final alternatives cleanup failed", exc)
+            raise

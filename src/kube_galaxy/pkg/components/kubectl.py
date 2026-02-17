@@ -13,6 +13,7 @@ from kube_galaxy.pkg.utils.components import (
     install_binary,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.shell import run
 
 
 class Kubectl(ComponentBase):
@@ -50,9 +51,9 @@ class Kubectl(ComponentBase):
         # Construct download URL from source_format template
         url = source_format.format(repo=repo, release=release, arch=arch)
 
-        # Download to temporary directory
-        temp_dir = Path("/tmp/kubectl-install")
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Download to secure temporary directory
+        temp_dir = Path(self.component_tmp_dir)
+        run(["sudo", "mkdir", "-p", str(temp_dir)], check=True)
 
         binary_path = temp_dir / "kubectl"
         download_file(url, binary_path)
@@ -70,4 +71,4 @@ class Kubectl(ComponentBase):
             raise RuntimeError("kubectl binary not downloaded. Run download hook first.")
 
         # Install binary to system
-        self.install_path = install_binary(self.binary_path, "kubectl")
+        self.install_path = install_binary(self.binary_path, "kubectl", self.COMPONENT_NAME)

@@ -3,11 +3,11 @@ Utilities for component installation and management.
 """
 
 import hashlib
-import shutil
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import get_arch_info
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.shell import run
 
 
 def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> None:
@@ -70,24 +70,47 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> None:
 def install_binary(
     binary_path: Path,
     binary_name: str,
-    dest_dir: Path = Path("/usr/local/bin"),
+    component_name: str,
+    dest_dir: Path | None = None,
 ) -> str:
     """
-    Install a binary to a directory and make it executable.
+    Install a binary to component directory and register with update-alternatives.
 
     Args:
         binary_path: Path to the binary
         binary_name: Name of the binary (e.g., 'containerd')
-        dest_dir: Destination directory (default: /usr/local/bin)
+        component_name: Component name for directory structure
+        dest_dir: Optional override destination directory
 
     Raises:
         ComponentError: If installation fails
     """
     try:
-        dest_dir.mkdir(parents=True, exist_ok=True)
+        # Use component-specific directory if not overridden
+        if dest_dir is None:
+            dest_dir = Path(f"/opt/kube-galaxy/{component_name}/bin")
+
+        # Create directory and install binary
+        run(["sudo", "mkdir", "-p", str(dest_dir)], check=True)
         dest_path = dest_dir / binary_name
-        shutil.copy2(binary_path, dest_path)
-        dest_path.chmod(0o755)
+        run(["sudo", "cp", str(binary_path), str(dest_path)], check=True)
+        run(["sudo", "chmod", "755", str(dest_path)], check=True)
+
+        # Register with update-alternatives
+        alternative_path = f"/usr/local/bin/{binary_name}"
+        run(
+            [
+                "sudo",
+                "update-alternatives",
+                "--install",
+                alternative_path,
+                binary_name,
+                str(dest_path),
+                "100",
+            ],
+            check=True,
+        )
+
     except Exception as e:
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
     return str(dest_path)

@@ -60,9 +60,9 @@ class Kubeadm(ComponentBase):
         # Construct download URL from source_format template
         url = source_format.format(repo=repo, release=release, arch=arch)
 
-        # Download to temporary directory
-        temp_dir = Path("/tmp/kubeadm-install")
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Download to secure temporary directory
+        temp_dir = Path(self.component_tmp_dir)
+        run(["sudo", "mkdir", "-p", str(temp_dir)], check=True)
 
         binary_path = temp_dir / "kubeadm"
         download_file(url, binary_path)
@@ -80,7 +80,7 @@ class Kubeadm(ComponentBase):
             raise RuntimeError("kubeadm binary not downloaded. Run download hook first.")
 
         # Install binary to system
-        self.install_path = install_binary(self.binary_path, "kubeadm")
+        self.install_path = install_binary(self.binary_path, "kubeadm", self.COMPONENT_NAME)
 
     def configure_hook(self) -> None:
         """
@@ -97,11 +97,12 @@ class Kubeadm(ComponentBase):
         with urlopen(service_url) as response:
             service_content = response.read().decode("utf-8")
 
-        # Write kubelet.service file
+        # Write kubelet configuration for kubeadm (10-kubeadm.conf)
         kubelet = self._install_path("kubelet")
         service_content = service_content.replace("/usr/bin/kubelet", kubelet)
-        temp_service = Path("/tmp/kubelet.service")
-        temp_service.write_text(service_content)
+        temp_service = Path(self.component_tmp_dir) / "10-kubeadm.conf"
+        run(["sudo", "mkdir", "-p", str(temp_service.parent)], check=True)
+        run(["sudo", "tee", str(temp_service)], input=service_content, text=True, check=True)
         run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
         run(
             [
@@ -136,8 +137,12 @@ class Kubeadm(ComponentBase):
                     }
                 )
                 config["clusterName"] = self.manifest.name
-        self._cluster_config = Path("/tmp/kubeadm-config.yaml")
-        yaml.safe_dump_all(configs, self._cluster_config.open("w"))
+        self._cluster_config = Path(self.component_tmp_dir) / "kubeadm-config.yaml"
+        run(["sudo", "mkdir", "-p", str(self._cluster_config.parent)], check=True)
+
+        # Write config to temp file via sudo
+        config_content = yaml.safe_dump_all(configs)
+        run(["sudo", "tee", str(self._cluster_config)], input=config_content, text=True, check=True)
 
     def bootstrap_hook(self) -> None:
         """

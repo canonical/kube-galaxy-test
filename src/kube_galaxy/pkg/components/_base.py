@@ -19,6 +19,7 @@ from kube_galaxy.pkg.components._constants import (
 )
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.shell import run
 
 
 class ComponentBase:
@@ -194,6 +195,79 @@ class ComponentBase:
         Override to implement cleanup logic.
         """
         pass
+
+    # Component directory and alternatives management methods
+    @property
+    def component_dir(self) -> str:
+        """
+        Get the component's installation directory.
+
+        Returns:
+            Path to /opt/kube-galaxy/{COMPONENT_NAME}/
+        """
+        return f"/opt/kube-galaxy/{self.COMPONENT_NAME}"
+
+    @property
+    def component_tmp_dir(self) -> str:
+        """
+        Get the component's secure temporary directory.
+
+        Returns:
+            Path to /opt/kube-galaxy/{COMPONENT_NAME}/tmp/
+        """
+        return f"{self.component_dir}/tmp"
+
+    def register_alternative(self, binary_name: str, binary_path: str) -> None:
+        """
+        Register a binary with update-alternatives.
+
+        Args:
+            binary_name: Name of the binary (e.g., 'containerd')
+            binary_path: Full path to the binary
+        """
+        try:
+            alternative_path = f"/usr/local/bin/{binary_name}"
+            run(
+                [
+                    "sudo",
+                    "update-alternatives",
+                    "--install",
+                    alternative_path,
+                    binary_name,
+                    binary_path,
+                    "100",
+                ],
+                check=True,
+            )
+        except Exception as e:
+            raise ComponentError(f"Failed to register alternative for {binary_name}: {e}") from e
+
+    def remove_component_alternatives(self) -> None:
+        """
+        Remove all alternatives for binaries in this component's bin directory.
+        """
+        from pathlib import Path
+
+        component_bin_dir = Path(self.component_dir) / "bin"
+        if component_bin_dir.exists():
+            for binary in component_bin_dir.glob("*"):
+                if binary.is_file():
+                    try:
+                        run(
+                            ["sudo", "update-alternatives", "--remove", binary.name, str(binary)],
+                            check=False,
+                        )  # Don't fail if alternative doesn't exist
+                    except Exception:
+                        pass  # Ignore errors during cleanup
+
+    def cleanup_component_dir(self) -> None:
+        """
+        Remove the entire component directory.
+        """
+        try:
+            run(["sudo", "rm", "-rf", self.component_dir], check=False)
+        except Exception:
+            pass  # Ignore errors during cleanup
 
     # Teardown hooks - all have default empty implementations
     # Override in subclass as needed

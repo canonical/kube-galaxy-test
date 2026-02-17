@@ -77,9 +77,9 @@ class Containerd(ComponentBase):
         url = source_format.format(repo=repo, release=release, arch=arch)
         filename = url.split("/")[-1]
 
-        # Download to temporary directory
-        temp_dir = Path("/tmp/containerd-install")
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Download to secure temporary directory
+        temp_dir = Path(self.component_tmp_dir)
+        run(["sudo", "mkdir", "-p", str(temp_dir)], check=True)
 
         archive_path = temp_dir / filename
         download_file(url, archive_path)
@@ -108,7 +108,7 @@ class Containerd(ComponentBase):
 
         # Install binaries from extracted archive
         for each in (self.extract_dir / "bin").glob("*"):
-            installed = install_binary(each, each.name)
+            installed = install_binary(each, each.name, self.COMPONENT_NAME)
             if each.name == "containerd":
                 self.install_path = installed
 
@@ -140,20 +140,22 @@ class Containerd(ComponentBase):
 
         # Write containerd config to /etc/containerd/config.toml
         run(["sudo", "mkdir", "-p", "/etc/containerd"], check=True)
-        temp_config = Path("/tmp/containerd-config.toml")
-        temp_config.write_text(config_content)
+        temp_config = Path(self.component_tmp_dir) / "config.toml"
+        run(["sudo", "mkdir", "-p", str(temp_config.parent)], check=True)
+
+        # Write config content to temp file with proper permissions
+        run(["sudo", "tee", str(temp_config)], input=config_content, text=True, check=True)
         run(["sudo", "cp", str(temp_config), "/etc/containerd/config.toml"], check=True)
         run(["sudo", "chmod", "644", "/etc/containerd/config.toml"], check=True)
-        temp_config.unlink()
 
         # Create systemd service unit
-        systemd_unit = f"""[Unit]
+        systemd_unit = """[Unit]
 Description=containerd container runtime
 Documentation=https://containerd.io
 After=network.target local-fs.target
 
 [Service]
-ExecStart={self.install_path}
+ExecStart=/usr/local/bin/containerd
 ExecStop=/bin/kill -s TERM $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -168,12 +170,12 @@ WantedBy=multi-user.target
 """
 
         # Write to temporary file first, then copy with sudo
-        temp_unit = Path("/tmp/containerd.service")
-        temp_unit.write_text(systemd_unit)
+        temp_unit = Path(self.component_tmp_dir) / "containerd.service"
 
+        # Write service content to temp file with proper permissions
+        run(["sudo", "tee", str(temp_unit)], input=systemd_unit, text=True, check=True)
         run(["sudo", "mkdir", "-p", "/etc/systemd/system"], check=True)
         run(["sudo", "cp", str(temp_unit), "/etc/systemd/system/containerd.service"], check=True)
-        temp_unit.unlink()  # Clean up temp file
 
         # Reload systemd and enable service
         run(["sudo", "systemctl", "daemon-reload"], check=True)
@@ -196,3 +198,81 @@ WantedBy=multi-user.target
 
         # Check containerd command works
         run(["containerd", "--version"], check=True)
+
+    def stop_hook(self) -> None:
+        """
+        Stop the containerd service and remove containers/images.
+
+        This is a destructive process that removes all container runtime data.
+        """
+        try:
+            # Stop containerd service
+            run(["sudo", "systemctl", "stop", "containerd"], check=False)
+            info("Stopped containerd service")
+
+            # TODO: Add crictl commands to remove containers and images
+            # crictl rm --all
+            # crictl rmi --all
+            # Note: crictl may not be available during teardown
+
+        except Exception as e:
+            info(f"Failed to stop containerd service: {e}")
+
+    def delete_hook(self) -> None:
+        """
+        Remove containerd alternatives, binaries, and configuration files.
+        """
+        # Remove update-alternatives entries for this component
+        self.remove_component_alternatives()
+
+        # Remove component directory (binaries)
+        self.cleanup_component_dir()
+
+        # Remove containerd configuration files
+        config_files = [
+            Path("/etc/containerd/config.toml"),
+            Path("/etc/systemd/system/containerd.service"),
+        ]
+
+        for config in config_files:
+            if config.exists():
+                try:
+                    run(["sudo", "rm", "-f", str(config)], check=False)
+                    info(f"Removed config: {config}")
+                except Exception as e:
+                    info(f"Failed to remove {config}: {e}")
+
+    def post_delete_hook(self) -> None:
+        """
+        Clean up containerd data directories and disable systemd service.
+        """
+        # Disable and reload systemd if service still exists
+        try:
+            run(["sudo", "systemctl", "disable", "containerd"], check=False)
+            run(["sudo", "systemctl", "daemon-reload"], check=False)
+            info("Disabled containerd service")
+        except Exception:
+            pass
+
+        # Remove containerd data directories (destructive cleanup)
+        containerd_dirs = [
+            Path("/var/lib/containerd"),
+            Path("/run/containerd"),
+            Path("/etc/containerd"),
+        ]
+
+        for directory in containerd_dirs:
+            if directory.exists():
+                try:
+                    run(["sudo", "rm", "-rf", str(directory)], check=False)
+                    info(f"Removed containerd directory: {directory}")
+                except Exception as e:
+                    info(f"Failed to remove {directory}: {e}")
+
+        # Clean up temporary extraction directory if it exists
+        if hasattr(self, "extract_dir") and self.extract_dir.exists():
+            try:
+                run(["sudo", "rm", "-rf", str(self.extract_dir.parent)], check=False)
+                info(f"Removed extraction directory: {self.extract_dir.parent}")
+            except Exception as e:
+                info(f"Failed to remove extraction directory: {e}")
