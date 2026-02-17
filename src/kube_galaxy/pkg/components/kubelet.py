@@ -107,3 +107,40 @@ class Kubelet(ComponentBase):
         """
         run(["sudo", "systemctl", "daemon-reload"], check=True)
         run(["sudo", "systemctl", "enable", "--now", "kubelet"], check=True)
+
+    def verify_hook(self) -> None:
+        """Verify kubelet is working correctly."""
+        # Check kubelet systemctl status
+        run(["systemctl", "is-active", "kubelet"], check=True)
+
+    def stop_hook(self) -> None:
+        """Stop the kubelet service."""
+        from kube_galaxy.pkg.utils.logging import info
+
+        try:
+            run(["sudo", "systemctl", "stop", "kubelet"], check=False)
+            info("Stopped kubelet service")
+        except Exception as e:
+            info(f"Failed to stop kubelet service: {e}")
+
+    def delete_hook(self) -> None:
+        """Remove kubelet binary and configuration."""
+        from kube_galaxy.pkg.utils.logging import info
+
+        # Remove kubelet binary
+        if self.install_path and Path(self.install_path).exists():
+            Path(self.install_path).unlink()
+            info(f"Removed kubelet binary: {self.install_path}")
+
+    def post_delete_hook(self) -> None:
+        """Clean up kubelet data directory and remaining files."""
+        from kube_galaxy.pkg.utils.logging import info
+
+        # Remove kubelet data directory
+        kubelet_dir = Path("/var/lib/kubelet")
+        if kubelet_dir.exists():
+            try:
+                run(["sudo", "rm", "-rf", str(kubelet_dir)], check=False)
+                info(f"Removed kubelet directory: {kubelet_dir}")
+            except Exception as e:
+                info(f"Failed to remove {kubelet_dir}: {e}")

@@ -255,13 +255,12 @@ class Kubeadm(ComponentBase):
 
     def post_delete_hook(self) -> None:
         """
-        Clean up remaining Kubernetes directories and files.
+        Clean up remaining Kubernetes cluster directories and files.
         """
-        # Kubernetes directories to clean up
+        # Kubernetes cluster directories to clean up (not kubelet-specific)
         k8s_dirs = [
             Path("/var/lib/etcd"),
             Path("/etc/kubernetes"),
-            Path("/var/lib/kubelet"),
             Path("/etc/cni/net.d"),
         ]
 
@@ -272,10 +271,3 @@ class Kubeadm(ComponentBase):
                     info(f"Removed Kubernetes directory: {k8s_dir}")
                 except Exception as e:
                     info(f"Failed to remove {k8s_dir}: {e}")
-
-        # Remove any remaining container runtime state
-        try:
-            run(["sudo", "systemctl", "stop", "kubelet"], check=False)
-            info("Stopped kubelet service")
-        except Exception:
-            pass  # Service might not exist or already stopped
