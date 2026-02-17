@@ -17,7 +17,6 @@ class Pause(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "pause"
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY = 100

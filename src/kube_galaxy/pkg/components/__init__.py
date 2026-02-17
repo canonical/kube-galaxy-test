@@ -12,10 +12,8 @@ from kube_galaxy.pkg.components.kube_controller_manager import KubeControllerMan
 from kube_galaxy.pkg.components.kube_proxy import KubeProxy
 from kube_galaxy.pkg.components.kube_scheduler import KubeScheduler
 from kube_galaxy.pkg.components.kubeadm import Kubeadm
-from kube_galaxy.pkg.components.kubectl import Kubectl
 from kube_galaxy.pkg.components.kubelet import Kubelet
 from kube_galaxy.pkg.components.pause import Pause
-from kube_galaxy.pkg.components.runc import Runc
 
 __all__ = [
     "COMPONENTS",
@@ -32,8 +30,6 @@ COMPONENTS: dict[str, type[ComponentBase]] = {
     "kube-controller-manager": KubeControllerManager,
     "kube-proxy": KubeProxy,
     "kube-scheduler": KubeScheduler,
-    "kubectl": Kubectl,
     "kubelet": Kubelet,
     "pause": Pause,
-    "runc": Runc,
 }

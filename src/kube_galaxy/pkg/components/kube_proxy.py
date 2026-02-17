@@ -17,7 +17,6 @@ class KubeProxy(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "kube-proxy"
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY = 100

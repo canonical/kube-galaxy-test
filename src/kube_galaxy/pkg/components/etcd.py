@@ -17,7 +17,6 @@ class Etcd(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "etcd"
     CATEGORY = "etcd"
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY = 100

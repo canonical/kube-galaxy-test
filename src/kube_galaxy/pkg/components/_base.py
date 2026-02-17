@@ -20,7 +20,7 @@ from kube_galaxy.pkg.components._constants import (
     DEFAULT_VERIFY_TIMEOUT,
 )
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
-from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
 from kube_galaxy.pkg.utils.components import download_file, extract_archive, install_binary
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
@@ -70,7 +70,6 @@ class ComponentBase:
     TEST_TIMEOUT = DEFAULT_TEST_TIMEOUT
 
     # Component metadata - override in subclass
-    COMPONENT_NAME: str = ""
     CATEGORY: str = ""
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY: int = 50
@@ -93,6 +92,20 @@ class ComponentBase:
         self.manifest = manifest
         self.config = config
         self.install_path: str | None = None
+        self.binary_path: Path | None = None
+        self.extracted_dir: Path | None = None
+
+    @property
+    def name(self) -> str:
+        """
+        Get the component's name.
+
+        Returns:
+            Component name from config
+        """
+        if self.config and self.config.name:
+            return self.config.name
+        raise ComponentError("Component name not found in config")
 
     def _install_path(self, component: str) -> str:
         """
@@ -122,7 +135,15 @@ class ComponentBase:
         Args:
             arch: Architecture (amd64, arm64, etc.)
         """
-        pass
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        comp_name = self.config.name
+        match self.config.installation.method:
+            case InstallMethod.BINARY:
+                self.binary_path = self.download_binary_from_config(arch, comp_name)
+            case InstallMethod.BINARY_ARCHIVE:
+                self.extracted_dir = self.download_and_extract_archive(arch)
 
     def pre_install_hook(self) -> None:
         """
@@ -145,7 +166,26 @@ class ComponentBase:
         Args:
             arch: Architecture (amd64, arm64, etc.)
         """
-        pass
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        comp_name = self.config.name
+        match self.config.installation.method:
+            case InstallMethod.BINARY:
+                if not self.binary_path or not self.binary_path.exists():
+                    raise ComponentError(
+                        f"{comp_name} binary not downloaded. Run download hook first."
+                    )
+                self.install_path = self.install_downloaded_binary(self.binary_path)
+            case InstallMethod.BINARY_ARCHIVE:
+                if not self.extracted_dir or not self.extracted_dir.exists():
+                    raise ComponentError(
+                        f"{comp_name} archive not downloaded. Run download hook first."
+                    )
+                for each in self.extracted_dir.glob("*"):
+                    installed = self.install_downloaded_binary(each, each.name)
+                    if each.name == comp_name:
+                        self.install_path = installed
 
     def bootstrap_hook(self) -> None:
         """
@@ -208,9 +248,9 @@ class ComponentBase:
         Get the component's installation directory.
 
         Returns:
-            Path to /opt/kube-galaxy/{COMPONENT_NAME}/
+            Path to /opt/kube-galaxy/{self.name}/
         """
-        return str(SystemPaths.component_dir(self.COMPONENT_NAME))
+        return str(SystemPaths.component_dir(self.name))
 
     @property
     def component_tmp_dir(self) -> str:
@@ -218,9 +258,9 @@ class ComponentBase:
         Get the component's secure temporary directory.
 
         Returns:
-            Path to /opt/kube-galaxy/{COMPONENT_NAME}/tmp/
+            Path to /opt/kube-galaxy/{self.name}/tmp/
         """
-        return str(SystemPaths.component_temp_dir(self.COMPONENT_NAME))
+        return str(SystemPaths.component_temp_dir(self.name))
 
     def register_alternative(self, binary_name: str, binary_path: str) -> None:
         """
@@ -360,10 +400,10 @@ class ComponentBase:
             ComponentError: If installation fails
         """
         if not binary_path.exists():
-            raise ComponentError(f"{self.COMPONENT_NAME} binary not found at {binary_path}")
+            raise ComponentError(f"{self.name} binary not found at {binary_path}")
 
-        name = binary_name or self.COMPONENT_NAME
-        install_path = install_binary(binary_path, name, self.COMPONENT_NAME)
+        name = binary_name or self.name
+        install_path = install_binary(binary_path, name, self.name)
         self.install_path = install_path
         return install_path
 
@@ -529,9 +569,9 @@ class ComponentBase:
 
         Args:
             directories: List of directory paths to remove
-            component_name: Component name for logging (defaults to self.COMPONENT_NAME)
+            component_name: Component name for logging (defaults to self.name)
         """
-        name = component_name or self.COMPONENT_NAME
+        name = component_name or self.name
         for directory in directories:
             dir_path = Path(directory)
             if dir_path.exists():
@@ -549,9 +589,9 @@ class ComponentBase:
 
         Args:
             config_files: List of config file paths to remove
-            component_name: Component name for logging (defaults to self.COMPONENT_NAME)
+            component_name: Component name for logging (defaults to self.name)
         """
-        name = component_name or self.COMPONENT_NAME
+        name = component_name or self.name
         for config_path in config_files:
             config_file = Path(config_path)
             if config_file.exists():
@@ -567,4 +607,4 @@ class ComponentBase:
         """
         if self.install_path and Path(self.install_path).exists():
             Path(self.install_path).unlink()
-            info(f"Removed {self.COMPONENT_NAME} binary: {self.install_path}")
+            info(f"Removed {self.name} binary: {self.install_path}")

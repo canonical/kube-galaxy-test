@@ -42,24 +42,23 @@ from kube_galaxy.pkg.components import register_component_class
 @register_component_class
 class MyComponent(ComponentBase):
     """Component description."""
-    
+
     # Required: Component metadata
-    COMPONENT_NAME = "mycomponent"
     CATEGORY = "tools"
     DEPENDENCIES = ["dependency1", "dependency2"]
     PRIORITY = 25
-    
+
     # Optional: Custom timeouts (seconds)
     DOWNLOAD_TIMEOUT = 300
     INSTALL_TIMEOUT = 120
     BOOTSTRAP_TIMEOUT = 180
-    
+
     # Implement hooks you need
     def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """Download component artifacts."""
         # Your download logic
         pass
-    
+
     def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         """Install the component."""
         # Your install logic
@@ -84,15 +83,15 @@ def download_hook(self, repo, release, format, arch):
     # Access full manifest
     cluster_name = self.manifest.name
     k8s_version = self.manifest.kubernetes_version
-    
+
     # Access your component config
     component_name = self.component.name
-    
+
     # Use properties (not getters!)
     custom_url = self.custom_binary_url
     install_method = self.install_method
     archive_format = self.archive_format
-    
+
     # Use custom URL if provided, otherwise construct default
     url = custom_url or f"{repo}/releases/download/{release}/binary.tar.gz"
 ```
@@ -107,7 +106,7 @@ def download_hook(self, repo, release, format, arch):
     temp_dir = Path("/tmp/mycomponent")
     binary_path = temp_dir / "binary"
     download_file(url, binary_path)
-    
+
     # Store for next hook (just use instance attribute!)
     self.binary_path = binary_path
 
@@ -115,7 +114,7 @@ def install_hook(self, repo, release, format, arch):
     # Retrieve from previous hook
     if not hasattr(self, 'binary_path'):
         raise RuntimeError("Binary not downloaded")
-    
+
     # Install
     install_binary(self.binary_path, 'mycomponent')
 ```
@@ -130,7 +129,7 @@ def bootstrap_hook(self):
     config = self.hook_config.get('bootstrap', {})
     pod_cidr = config.get('pod_network_cidr', '10.244.0.0/16')
     service_cidr = config.get('service_cidr', '10.96.0.0/12')
-    
+
     # Use configuration
     run(['kubeadm', 'init', f'--pod-network-cidr={pod_cidr}'])
 ```
@@ -149,55 +148,16 @@ from kube_galaxy.pkg.utils.shell import run
 @register_component_class
 class EtcdComponent(ComponentBase):
     """Etcd distributed key-value store."""
-    
-    COMPONENT_NAME = "etcd"
+
     CATEGORY = "database"
     DEPENDENCIES = []
     PRIORITY = 5  # Install very early
-    
+
     # Custom timeouts
     DOWNLOAD_TIMEOUT = 240
     INSTALL_TIMEOUT = 60
     BOOTSTRAP_TIMEOUT = 120
-    
-    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
-        """Download etcd binary."""
-        # Check for custom URL (via property, not getter!)
-        custom_url = self.custom_binary_url
-        
-        if custom_url:
-            url = custom_url
-        else:
-            # Construct default URL
-            if not release.startswith('v'):
-                release = f'v{release}'
-            filename = f"etcd-{release}-linux-{arch}.tar.gz"
-            url = f"{repo}/releases/download/{release}/{filename}"
-        
-        # Download
-        temp_dir = Path(f"/tmp/{self.COMPONENT_NAME}-install")
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        archive_path = temp_dir / "etcd.tar.gz"
-        
-        download_file(url, archive_path)
-        
-        # Extract
-        extract_dir = temp_dir / "extracted"
-        extract_dir.mkdir(exist_ok=True)
-        run(['tar', 'xzf', str(archive_path), '-C', str(extract_dir)])
-        
-        # Store for install (use instance attribute!)
-        self.extract_dir = extract_dir
-    
-    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
-        """Install etcd binary."""
-        if not hasattr(self, 'extract_dir'):
-            raise RuntimeError("Archive not extracted")
-        
-        # Find and install binary
-        binary_path = next(self.extract_dir.rglob('etcd'))
-        install_binary(binary_path, 'etcd')
-    
+
     def configure_hook(self) -> None:
         """Configure etcd systemd service."""
         service = """[Unit]
@@ -214,10 +174,10 @@ WantedBy=multi-user.target
 """
         service_path = Path('/etc/systemd/system/etcd.service')
         service_path.write_text(service)
-        
+
         run(['systemctl', 'daemon-reload'])
         run(['systemctl', 'enable', 'etcd'])
-    
+
     def bootstrap_hook(self) -> None:
         """Start etcd service."""
         run(['systemctl', 'start', 'etcd'])

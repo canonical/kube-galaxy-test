@@ -22,7 +22,6 @@ class Containerd(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "containerd"
     CATEGORY = "containerd"
     DEPENDENCIES: ClassVar[list[str]] = ["runc"]
     PRIORITY = 10
@@ -54,16 +53,6 @@ class Containerd(ComponentBase):
         # Fallback to default if no pause component
         return "registry.k8s.io/pause:3.9"
 
-    def download_hook(self, arch: str) -> None:
-        """
-        Download containerd binary archive.
-
-        Constructs download URL from self.config (repo, release, installation).
-        Extracts archive for install hook.
-        """
-        # Download and extract archive using base class utility
-        self.extract_dir = self.download_and_extract_archive(arch)
-
     def pre_install_hook(self) -> None:
         """Remove any existing containerd installation to avoid conflicts."""
         info("  Removing existing containerd installation if present")
@@ -75,14 +64,13 @@ class Containerd(ComponentBase):
 
         Requires download_hook to have completed first.
         """
-        if not hasattr(self, "extract_dir") or not self.extract_dir.exists():
+        if not self.extracted_dir or not self.extracted_dir.exists():
             raise ComponentError("containerd archive not downloaded. Run download hook first.")
 
-        # Install binaries from extracted archive
-        for each in (self.extract_dir / "bin").glob("*"):
-            installed = self.install_downloaded_binary(each, each.name)
-            if each.name == "containerd":
-                self.install_path = installed
+        if self.extracted_dir.name != "bin":
+            self.extracted_dir = self.extracted_dir / "bin"
+
+        return super().install_hook(arch)
 
     def configure_hook(self) -> None:
         """
@@ -228,5 +216,5 @@ WantedBy=multi-user.target
         self.remove_directories(containerd_dirs)
 
         # Clean up temporary extraction directory if it exists
-        if hasattr(self, "extract_dir") and self.extract_dir.exists():
-            self.remove_directories([str(self.extract_dir.parent)])
+        if self.extracted_dir and self.extracted_dir.exists():
+            self.remove_directories([str(self.extracted_dir.parent)])

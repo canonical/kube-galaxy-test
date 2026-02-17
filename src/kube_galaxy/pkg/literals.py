@@ -187,12 +187,3 @@ class ManifestFields:
     COMPONENTS = "components"
     NODES = "nodes"
     NETWORKING = "networking"
-
-
-class InstallFormats:
-    """Component installation format types."""
-
-    BINARY = "Binary"
-    CONTAINER = "Container"
-    BINARY_CONTAINER = "Binary+Container"
-    BINARY_ARCHIVE = "binary-archive"

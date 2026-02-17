@@ -17,7 +17,6 @@ class KubeAPIServer(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "kube-apiserver"
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY = 100

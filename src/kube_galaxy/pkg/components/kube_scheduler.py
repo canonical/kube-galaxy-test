@@ -17,7 +17,6 @@ class KubeScheduler(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "kube-scheduler"
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY = 100

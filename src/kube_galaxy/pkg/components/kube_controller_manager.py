@@ -17,7 +17,6 @@ class KubeControllerManager(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "kube-controller-manager"
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = []
     PRIORITY = 100

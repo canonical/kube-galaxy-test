@@ -12,6 +12,7 @@ from urllib.request import urlopen
 import yaml
 
 from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.literals import URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -26,7 +27,6 @@ class Kubeadm(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "kubeadm"
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = ["kubelet"]
     PRIORITY = 30
@@ -41,23 +41,6 @@ class Kubeadm(ComponentBase):
 
     _cluster_config: Path | None = None
 
-    def download_hook(self, arch: str) -> None:
-        """
-        Download kubeadm binary using base method.
-        """
-        # Use base method for standard binary download
-        self.binary_path = self.download_binary_from_config(arch, "kubeadm")
-
-    def install_hook(self, arch: str) -> None:
-        """
-        Install kubeadm binary using base install method.
-        """
-        if not hasattr(self, "binary_path") or not self.binary_path.exists():
-            raise RuntimeError("kubeadm binary not downloaded. Run download hook first.")
-
-        # Use base method for standard binary installation
-        self.install_path = self.install_downloaded_binary(self.binary_path)
-
     def configure_hook(self) -> None:
         """
         Configure system for kubeadm.
@@ -69,7 +52,7 @@ class Kubeadm(ComponentBase):
 
         # Download kubeadm.service from Kubernetes release repository
         info("  Installing kubelet configs")
-        service_url = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
+        service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
         with urlopen(service_url) as response:
             service_content = response.read().decode("utf-8")
 

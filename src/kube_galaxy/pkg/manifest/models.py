@@ -8,6 +8,7 @@ from typing import Any
 class InstallMethod(StrEnum):
     """Installation method for components."""
 
+    BINARY = "binary"  # Direct binary download and install
     BINARY_ARCHIVE = "binary-archive"  # Binary in tar/zip/xz archive from releases
     CONTAINER_IMAGE = "container-image"  # Container image from registry
     HELM_CHART = "helm-chart"  # Helm chart installation

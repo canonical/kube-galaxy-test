@@ -9,6 +9,7 @@ from typing import ClassVar
 from urllib.request import urlopen
 
 from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.literals import URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -22,7 +23,6 @@ class Kubelet(ComponentBase):
     """
 
     # Component metadata
-    COMPONENT_NAME = "kubelet"
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = ["containerd"]
     PRIORITY = 50
@@ -32,25 +32,6 @@ class Kubelet(ComponentBase):
     INSTALL_TIMEOUT = 120  # 2 minutes
     CONFIGURE_TIMEOUT = 120  # 2 minutes
     VERIFY_TIMEOUT = 120  # 2 minutes
-
-    def download_hook(self, arch: str) -> None:
-        """
-        Downloads the kubelet release binary.
-        Constructs download URL from self.config (repo, release, installation).
-        """
-        self.binary_path = self.download_binary_from_config(arch, "kubelet")
-
-    def install_hook(self, arch: str) -> None:
-        """
-        Install kubelet binary to system.
-
-        Requires download_hook to have completed first.
-        """
-        if not hasattr(self, "binary_path") or not self.binary_path.exists():
-            raise RuntimeError("kubelet binary not downloaded. Run download hook first.")
-
-        # Install binary to system
-        self.install_path = self.install_downloaded_binary(self.binary_path, "kubelet")
 
     def configure_hook(self) -> None:
         """
@@ -64,7 +45,7 @@ class Kubelet(ComponentBase):
             raise ComponentError("Config required for configuration")
 
         # Download kubelet.service from Kubernetes release repository
-        service_url = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2/cmd/krel/templates/latest/kubelet/kubelet.service"
+        service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubelet/kubelet.service"
         with urlopen(service_url) as response:
             service_content = response.read().decode("utf-8")
 

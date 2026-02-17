@@ -13,41 +13,41 @@ The component lifecycle hook system provides a structured way to manage Kubernet
 Components can implement any or all of these lifecycle hooks:
 
 ### 1. DOWNLOAD
-**Purpose**: Download binaries and container images  
-**Execution**: Can run in parallel with connection pooling  
-**When**: Before any installation begins  
+**Purpose**: Download binaries and container images
+**Execution**: Can run in parallel with connection pooling
+**When**: Before any installation begins
 
 ### 2. PRE_INSTALL
-**Purpose**: Prepare the machine for installation  
-**Execution**: Sequential, after all downloads complete  
-**When**: Before installing any components  
+**Purpose**: Prepare the machine for installation
+**Execution**: Sequential, after all downloads complete
+**When**: Before installing any components
 
 ### 3. INSTALL
-**Purpose**: Install the component  
-**Execution**: Sequential, respecting dependencies  
-**When**: After downloads and pre-install hooks  
+**Purpose**: Install the component
+**Execution**: Sequential, respecting dependencies
+**When**: After downloads and pre-install hooks
 
 ### 4. BOOTSTRAP
-**Purpose**: Initialize and start the component  
-**Execution**: Sequential, respecting dependencies  
-**When**: After all components are installed  
+**Purpose**: Initialize and start the component
+**Execution**: Sequential, respecting dependencies
+**When**: After all components are installed
 
 ### 5. POST_BOOTSTRAP
-**Purpose**: Post-initialization configuration  
-**Execution**: Sequential, after bootstrap  
-**When**: After cluster/services are running  
+**Purpose**: Post-initialization configuration
+**Execution**: Sequential, after bootstrap
+**When**: After cluster/services are running
 
 ### 6. CONFIGURE
-**Purpose**: Final configuration and verification  
-**Execution**: Sequential, after post_bootstrap  
-**When**: Final stage before completion  
+**Purpose**: Final configuration and verification
+**Execution**: Sequential, after post_bootstrap
+**When**: Final stage before completion
 
 ## Execution Flow
 
 ```
 Stage 1: DOWNLOAD (parallel for all components)
   ├─ runc download
-  ├─ containerd download  
+  ├─ containerd download
   ├─ kubelet download
   └─ kubeadm download
 
@@ -83,16 +83,15 @@ from kube_galaxy.pkg.components import register_component_class
 @register_component_class
 class MyComponent(ComponentBase):
     """My component description."""
-    
-    COMPONENT_NAME = "mycomponent"
+
     CATEGORY = "category"
     DEPENDENCIES = ["dependency1"]
     PRIORITY = 25
-    
+
     def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         # Download logic
         pass
-    
+
     def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         # Install logic
         pass
