@@ -111,7 +111,7 @@ kubectl get nodes  # Will show NotReady status
 kube-galaxy cleanup all
 ```
 
-## 📋 Manifest Structure
+## 📋 Cluster Manifest Format
 
 Cluster manifests define Kubernetes clusters in simple YAML format:
 
@@ -135,24 +135,10 @@ components:
     release: "main"
     repo: "https://github.com/myorg/custom-cni"
     use-spread: true
-testing:
-  suite: "functional-basic"
-  timeout: "30m"
-  parallel: true
-infrastructure:
-  provider: "github-actions"
-  runner-size: "ubuntu-latest-4-cores"
 networking:
   - name: "calico"
     service-cidr: "10.96.0.0/12"
     pod-cidr: "192.168.0.0/16"
-storage:
-  - name: "rawfile-localpv"
-    provisioner: "https://github.com/openebs/rawfile-localpv"
-security:
-  rbac: true
-  network-policies: true
-  pod-security-standards: "restricted"
 ```
 
 ### Manifest Fields
@@ -164,12 +150,8 @@ security:
   - **name**: Component identifier
   - **release**: Git tag/branch to checkout
   - **repo**: Git repository URL
-  - **use-spread**: If true, component provides spread tests (see below)
-- **testing**: Test configuration
-- **infrastructure**: GitHub Actions runner configuration
+  - **use-spread**: If `true`, component repository provides spread tests
 - **networking**: CNI and network settings
-- **storage**: Storage provisioner configuration
-- **security**: Security settings
 
 ## 🔧 Component Repositories
 
@@ -216,161 +198,108 @@ Component install scripts receive these environment variables:
 - `COMPONENT_RELEASE`: The release version being installed
 - `COMPONENT_REPO`: The repository URL
 
-## 🚀 GitHub Actions Workflow
+## 🚀 GitHub Actions Integration
 
-The project uses two main custom actions:
+The project uses GitHub Actions workflows for automated testing:
 
-### 1. setup-cluster
+- **CI Triggers**: Pull requests run fast validation on `single-node-no-cni.yaml`
+- **Manual Dispatch**: Baseline manifests run on manual `workflow_dispatch`
+- **Test Automation**: Workflows invoke `kube-galaxy` CLI directly
+- **Log Collection**: Failed runs preserve debug logs and cluster state
 
-Provisions a Kubernetes cluster with custom components:
+See `.github/workflows/` for workflow definitions and [.github/copilot-instructions.md](.github/copilot-instructions.md) for architecture details.
 
-1. Detects system architecture
-2. Installs base dependencies (yq, git, curl)
-3. Parses cluster manifest
-4. Clones each component from its repository
-5. Executes component install scripts from spread.yaml
-6. Initializes Kubernetes cluster with kubeadm
-7. Configures networking (CNI)
-8. Verifies cluster health
+## 🏛️ Architecture Support
 
-**Responsibility**: Infrastructure provisioning
+The infrastructure supports multiple CPU architectures:
 
-### 2. run-spread-tests
+| System | Kubernetes |
+|--------|-----------|
+| x86_64 | amd64 |
+| aarch64 | arm64 |
+| riscv64 | riscv64 |
+| ppc64le | ppc64le |
+| s390x | s390x |
 
-Executes test suites defined in components and locally:
+**Runtime Detection**: Architecture is detected at startup via `uname -m` and automatically mapped to Kubernetes naming conventions. Components receive the mapped architecture for correct binary selection.
 
-1. Installs spread testing framework
-2. Scans manifest for components with `use-spread: true`
-3. Clones component repositories
-4. Executes spread tests from component spread.yaml files
-5. Runs local tests if tests/ directory exists
-6. Collects test artifacts and results
-
-**Responsibility**: Test execution and results collection
-
-### Separation of Concerns
-
-- **setup-cluster**: "How do we build the cluster?"
-- **run-spread-tests**: "How do we test it?"
-
-Tests come from two sources:
-1. **Component-provided tests**: Each component with `use-spread: true` provides its own tests
-2. **Local tests**: `tests/` directory can contain infrastructure-level tests
-
-## 🏛️ Multiarch Architecture Support
-
-The infrastructure supports multiple architectures from the start:
-
-1. **Runtime Detection**: `uname -m` detects the runner architecture
-2. **Architecture Mapping**: Linux arch names map to Kubernetes names:
-   - x86_64 → amd64
-   - aarch64 → arm64
-   - riscv64 → riscv64
-   - ppc64le → ppc64le
-   - s390x → s390x
-
-3. **Dynamic Tool Installation**: Tools like yq and spread download for the detected architecture
-4. **Component Awareness**: Install scripts receive both architecture formats
-
-This ensures tests work on any architecture without modification.
-
-## 🐛 Error Handling & Debugging
+## 🐛 Debugging
 
 When tests fail:
 
-1. **Collect Debug Information** via collect-kubernetes-logs action
-2. **Create Failure Issue** with structured debugging data
-3. **Preserve Artifacts** for offline analysis
-4. **Graceful Cleanup** via cleanup-cluster action
+1. **Check logs**: Look at the test output and error messages
+2. **Inspect cluster state**:
+   ```bash
+   kubectl get pods -A
+   kubectl describe nodes
+   ```
+3. **Review preserved state**: Debug logs are collected before cleanup
+4. **See manifests**: Use `kube-galaxy test-manifest` to inspect configurations
 
 ## 🛠️ Development & Project Structure
 
-### Project Layout
+### Source Code Layout
 
 ```
-src/kube_galaxy/           # Main Python package
+src/kube_galaxy/
 ├── __main__.py            # CLI entry point
 ├── cli.py                 # Typer CLI dispatcher
-├── cmd/                   # Command implementations
-│   ├── validate.py        # Manifest/workflow validation
+├── cmd/                   # CLI command implementations
+│   ├── validate.py        # Manifest validation
 │   ├── test.py            # Test execution
 │   ├── cleanup.py         # Cleanup operations
 │   ├── setup.py           # Project initialization
-│   └── status.py          # Project status display
-└── pkg/                   # Business logic modules
-    ├── manifest/          # YAML manifest handling
-    │   ├── models.py      # Dataclasses for manifest structure
-    │   ├── loader.py      # YAML → dataclass deserialization
+│   └── status.py          # Project status
+└── pkg/                   # Core business logic
+    ├── manifest/          # YAML manifest parsing
+    │   ├── models.py      # Dataclasses
+    │   ├── loader.py      # YAML deserialization
     │   └── validator.py   # Schema validation
     ├── arch/              # Architecture detection
-    │   └── detector.py    # Multi-arch support
+    │   └── detector.py    # uname → K8s mapping
+    ├── cluster/           # Cluster provisioning
+    │   └── setup.py       # Kubeadm-based setup
+    ├── components/        # Component registry
+    │   ├── _base.py       # Base component class
+    │   ├── containerd.py  # Containerd component
+    │   ├── kubeadm.py     # Kubeadm component
+    │   └── *.py           # Other components
+    ├── testing/           # Test execution
+    │   └── spread.py      # Spread framework integration
     └── utils/             # Shared utilities
         ├── errors.py      # Custom exceptions
+        ├── components.py  # Component utilities
         ├── logging.py     # Colored output
-        └── shell.py       # Subprocess wrapper
-
-tests/                     # Test suite
-├── unit/                  # Unit tests
-│   ├── test_models.py     # Manifest model tests
-│   ├── test_loader.py     # YAML loader tests
-│   ├── test_validator.py  # Validation tests
-│   └── test_arch.py       # Architecture mapping tests
-└── functional/            # Functional/integration tests
+        ├── shell.py       # Subprocess wrapper
+        ├── logs.py        # Log collection
+        └── gh.py          # GitHub Actions integration
 ```
 
-### Task Automation with tox
+### Test Suite
 
-All tasks are automated with `tox` for consistency:
-
-```bash
-# Run kube-galaxy CLI directly
-tox -e kube-galaxy -- validate all
-tox -e kube-galaxy -- status
-tox -e kube-galaxy -- test local
-
-# Run pytest test suite
-tox -e test
-
-# Run ruff linter/formatter
-tox -e lint
-
-# Run mypy type checker
-tox -e type
-
-# Build distribution
-tox -e build
-
-# List all available environments
-tox list
+```
+tests/
+├── unit/                  # Unit tests (35 tests)
+│   ├── test_arch.py       # Architecture mapping
+│   ├── test_loader.py     # Manifest parsing
+│   ├── test_models.py     # Data structures
+│   └── test_validator.py  # Validation logic
+└── conftest.py            # Pytest configuration
 ```
 
-### Direct CLI Usage
+### Core Modules Overview
 
-After installing the package, use `kube-galaxy` directly:
+| Module | Purpose |
+|--------|---------|
+| `pkg/cluster/setup.py` | Kubernetes cluster provisioning using kubeadm |
+| `pkg/testing/spread.py` | Spread test framework integration |
+| `pkg/manifest/loader.py` | YAML manifest parsing and deserialization |
+| `pkg/manifest/validator.py` | Manifest schema and field validation |
+| `pkg/arch/detector.py` | Runtime architecture detection and mapping |
+| `pkg/utils/logs.py` | Kubernetes log collection for debugging |
+| `pkg/utils/shell.py` | Safe subprocess execution wrapper |
 
-```bash
-# Validation commands
-kube-galaxy validate all              # Validate manifests
-kube-galaxy validate manifests        # Validate only manifests
-
-# Testing commands
-kube-galaxy test local                # Local validation tests
-kube-galaxy test spread               # Run spread tests against cluster
-kube-galaxy test setup                # Create kubernetes cluster
-kube-galaxy test-manifest <path>      # Inspect single manifest
-
-# Cleanup commands
-kube-galaxy cleanup all               # Clean files and clusters
-kube-galaxy cleanup files             # Clean test artifacts
-kube-galaxy cleanup clusters          # Remove kubernetes clusters
-
-# Status and setup
-kube-galaxy setup                     # Initialize project directories
-kube-galaxy status                    # Show project status
-kube-galaxy --version                 # Show CLI version
-```
-
-## 📋 Manifest Structure
+## 📋 Manifest Authoring
 
 1. Create a new manifest in `manifests/`:
    ```bash

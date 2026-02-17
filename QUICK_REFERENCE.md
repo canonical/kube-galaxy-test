@@ -211,9 +211,6 @@ uv pip install -e . --no-deps
 ```bash
 # Inspect manifest details
 kube-galaxy test-manifest manifests/baseline-k8s-1.35.yaml
-
-# Validate YAML syntax
-yq eval '.' manifests/baseline-k8s-1.35.yaml
 ```
 
 ## References

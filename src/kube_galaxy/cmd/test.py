@@ -22,9 +22,6 @@ def local() -> None:
         if not shutil.which("spread"):
             error("spread not found")
             raise typer.Exit(code=1)
-        if not shutil.which("yq"):
-            error("yq not found")
-            raise typer.Exit(code=1)
         success("Required tools are available")
     except Exception as e:
         exception("Tool check failed", e)
