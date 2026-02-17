@@ -27,22 +27,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
+      - name: Setup Astral UV
         uses: astral-sh/setup-uv@v7.2.1
+        with:
+          python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install kube-galaxy
+        shell: bash
         run: |
-          uv pip install --system ruff
+          uv tool install tox --with tox-uv
 
-      - name: Run ruff check
+      - name: Run lint checks
         run: |
-          ruff check src tests
-
-      - name: Run ruff format check
-        run: |
-          ruff format --check src tests
+          tox -e lint

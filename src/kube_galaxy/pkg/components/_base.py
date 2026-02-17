@@ -18,6 +18,7 @@ from kube_galaxy.pkg.components._constants import (
     DEFAULT_VERIFY_TIMEOUT,
 )
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
+from kube_galaxy.pkg.utils.errors import ComponentError
 
 
 class ComponentBase:
@@ -79,6 +80,20 @@ class ComponentBase:
         self.instances = instances
         self.manifest = manifest
         self.config = config
+        self.install_path: str | None = None
+
+    def _install_path(self, component: str) -> str:
+        """
+        Get binary path from specified component.
+
+        Returns:
+            Binary path of the specified component
+        """
+        if component_instance := self.instances.get(component):
+            if component_instance.install_path:
+                return component_instance.install_path
+
+        raise ComponentError(f"Install path for component '{component}' not found")
 
     # Lifecycle hooks - all have default empty implementations
     # Override in subclass as needed

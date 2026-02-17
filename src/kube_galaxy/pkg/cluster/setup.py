@@ -7,6 +7,7 @@ from kube_galaxy.pkg.components import COMPONENTS, ComponentBase
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig
 from kube_galaxy.pkg.utils.errors import ClusterError
+from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
 
 
@@ -56,7 +57,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         # Create all component instances
         instances: dict[str, ComponentBase] = {}
         for config in configs:
-            component_class = COMPONENTS[config.name]
+            component_class = COMPONENTS.get(config.name, ComponentBase)
             instance = component_class(instances, manifest, config)
             instances[config.name] = instance
 
@@ -75,6 +76,8 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         success("Kubeconfig: $HOME/.kube/config")
         success(f"Cluster Name: {manifest.name}")
         success(f"Kubernetes Version: {manifest.kubernetes_version}")
+        gh_output("CLUSTER_NAME", manifest.name)
+        gh_output("KUBECONFIG", str(Path.home() / ".kube" / "config"))
 
     except Exception as exc:
         exception("Cluster setup failed", exc)

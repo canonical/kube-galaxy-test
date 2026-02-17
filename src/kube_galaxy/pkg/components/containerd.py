@@ -38,8 +38,6 @@ class Containerd(ComponentBase):
     BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
     CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
 
-    INSTALL_PATH = "/usr/local/bin/containerd"
-
     def _get_pause_image(self) -> str:
         """
         Get pause image from pause component or use default.
@@ -108,12 +106,11 @@ class Containerd(ComponentBase):
         if not hasattr(self, "extract_dir") or not self.extract_dir.exists():
             raise ComponentError("containerd archive not downloaded. Run download hook first.")
 
-        # Install binary
-        binary_path = self.extract_dir / "bin" / "containerd"
-        if not binary_path.exists():
-            raise ComponentError(f"containerd binary not found in archive at {binary_path}")
-
-        install_binary(binary_path, self.INSTALL_PATH)
+        # Install binaries from extracted archive
+        for each in (self.extract_dir / "bin").glob("*"):
+            installed = install_binary(each, each.name)
+            if each.name == "containerd":
+                self.install_path = installed
 
     def configure_hook(self) -> None:
         """
@@ -156,7 +153,7 @@ Documentation=https://containerd.io
 After=network.target local-fs.target
 
 [Service]
-ExecStart={self.INSTALL_PATH}
+ExecStart={self.install_path}
 ExecStop=/bin/kill -s TERM $MAINPID
 Restart=on-failure
 RestartSec=5

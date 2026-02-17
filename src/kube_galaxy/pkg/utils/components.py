@@ -71,7 +71,7 @@ def install_binary(
     binary_path: Path,
     binary_name: str,
     dest_dir: Path = Path("/usr/local/bin"),
-) -> None:
+) -> str:
     """
     Install a binary to a directory and make it executable.
 
@@ -90,6 +90,7 @@ def install_binary(
         dest_path.chmod(0o755)
     except Exception as e:
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
+    return str(dest_path)
 
 
 def remove_binary(binary_name: str, dest_dir: Path = Path("/usr/local/bin")) -> None:

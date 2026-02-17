@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import ClassVar
 
 from kube_galaxy.pkg.components._base import ComponentBase
-from kube_galaxy.pkg.utils.components import download_file
+from kube_galaxy.pkg.utils.components import (
+    download_file,
+    install_binary,
+)
 from kube_galaxy.pkg.utils.errors import ComponentError
 
 
@@ -56,3 +59,15 @@ class Kubectl(ComponentBase):
 
         # Store download location as instance attribute
         self.binary_path = binary_path
+
+    def install_hook(self, arch: str) -> None:
+        """
+        Install kubectl binary to system.
+
+        Requires download_hook to have completed first.
+        """
+        if not hasattr(self, "binary_path") or not self.binary_path.exists():
+            raise RuntimeError("kubectl binary not downloaded. Run download hook first.")
+
+        # Install binary to system
+        self.install_path = install_binary(self.binary_path, "kubectl")

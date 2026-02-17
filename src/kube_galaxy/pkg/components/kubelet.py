@@ -35,12 +35,15 @@ class Kubelet(ComponentBase):
     INSTALL_TIMEOUT = 120  # 2 minutes
     CONFIGURE_TIMEOUT = 120  # 2 minutes
     VERIFY_TIMEOUT = 120  # 2 minutes
-    INSTALL_PATH = "/usr/local/bin/kubelet"
 
     def download_hook(self, arch: str) -> None:
         """
         Downloads the kubelet release binary.
+        Constructs download URL from self.config (repo, release, installation).
         """
+        if not self.config:
+            raise RuntimeError("Component config required for download")
+
         repo = self.config.repo
         release = self.config.release
         source_format = self.config.installation.source_format
@@ -60,12 +63,15 @@ class Kubelet(ComponentBase):
 
     def install_hook(self, arch: str) -> None:
         """
-        Installs kubelet binary to /usr/local/bin/kubelet.
-        """
-        if not hasattr(self, "binary_path"):
-            raise ComponentError("Binary path not set. Download must be completed before install.")
+        Install kubelet binary to system.
 
-        install_binary(self.binary_path, self.INSTALL_PATH)
+        Requires download_hook to have completed first.
+        """
+        if not hasattr(self, "binary_path") or not self.binary_path.exists():
+            raise RuntimeError("kubelet binary not downloaded. Run download hook first.")
+
+        # Install binary to system
+        self.install_path = install_binary(self.binary_path, "kubelet")
 
     def configure_hook(self) -> None:
         """
@@ -88,10 +94,12 @@ class Kubelet(ComponentBase):
 
         # Write kubelet.service file
         temp_service = Path("/tmp/kubelet.service")
-        service_content = service_content.replace("/usr/bin/kubelet", self.INSTALL_PATH)
+        service_content = service_content.replace("/usr/bin/kubelet", self.install_path)
         temp_service.write_text(service_content)
         run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system"], check=True)
-        run(["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service"], check=True)
+        run(
+            ["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service"], check=True
+        )
 
     def bootstrap_hook(self) -> None:
         """

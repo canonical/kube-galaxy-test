@@ -118,9 +118,6 @@ jobs:
           echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
 
           kube-galaxy test setup --manifest ${{ matrix.manifest-file }}
-          CLUSTER_NAME=$(python3 -c "from kube_galaxy.pkg.manifest.loader import load_manifest; m = load_manifest('${{ matrix.manifest-file }}'); print(m.name)")
-          echo "cluster-name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
-          echo "kubeconfig=$HOME/.kube/config" >> $GITHUB_OUTPUT
 
       - name: Verify Cluster Health
         shell: bash

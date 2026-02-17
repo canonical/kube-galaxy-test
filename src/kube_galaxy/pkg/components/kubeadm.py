@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import ClassVar
 from urllib.request import urlopen
 
+import yaml
+
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.utils.components import (
     download_file,
@@ -29,7 +31,7 @@ class Kubeadm(ComponentBase):
     # Component metadata
     COMPONENT_NAME = "kubeadm"
     CATEGORY = "kubernetes/kubernetes"
-    DEPENDENCIES: ClassVar[list[str]] = ["containerd", "kubelet"]
+    DEPENDENCIES: ClassVar[list[str]] = ["kubelet"]
     PRIORITY = 30
 
     # Timeout configuration (in seconds)
@@ -40,19 +42,7 @@ class Kubeadm(ComponentBase):
     VERIFY_TIMEOUT = 300  # 5 minutes (cluster health checks)
     CONFIGURE_TIMEOUT = 60  # 1 minute (configuration)
 
-
-    def _get_binary_path(self, component: str) -> str:
-        """
-        Get binary path from specified component.
-
-        Returns:
-            Binary path of the specified component
-        """
-        if component_instance := self.instances.get(component):
-            if hasattr(component_instance, "binary_path"):
-                return str(component_instance.binary_path)
-
-        raise ComponentError(f"Binary path for component '{component}' not found")
+    _cluster_config: Path | None = None
 
     def download_hook(self, arch: str) -> None:
         """
@@ -90,7 +80,7 @@ class Kubeadm(ComponentBase):
             raise RuntimeError("kubeadm binary not downloaded. Run download hook first.")
 
         # Install binary to system
-        install_binary(self.binary_path, "kubeadm")
+        self.install_path = install_binary(self.binary_path, "kubeadm")
 
     def configure_hook(self) -> None:
         """
@@ -108,19 +98,21 @@ class Kubeadm(ComponentBase):
             service_content = response.read().decode("utf-8")
 
         # Write kubelet.service file
-        kubelet = self._get_binary_path("kubelet")
+        kubelet = self._install_path("kubelet")
         service_content = service_content.replace("/usr/bin/kubelet", kubelet)
         temp_service = Path("/tmp/kubelet.service")
         temp_service.write_text(service_content)
         run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
-        run(["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"], check=True)
+        run(
+            [
+                "sudo",
+                "cp",
+                str(temp_service),
+                "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf",
+            ],
+            check=True,
+        )
 
-    def bootstrap_hook(self) -> None:
-        """
-        Bootstrap Kubernetes cluster with kubeadm init.
-
-        This is where the cluster is actually created.
-        """
         if not self.manifest:
             raise ComponentError("Manifest required for kubeadm bootstrap")
 
@@ -129,15 +121,36 @@ class Kubeadm(ComponentBase):
         if not networking:
             raise ComponentError("No networking configuration found in manifest")
 
-        # Initialize cluster
-        cmd = [
-            "sudo",
-            "kubeadm",
-            "init",
-            f"--pod-network-cidr={networking.pod_cidr}",
-            f"--service-cidr={networking.service_cidr}",
-        ]
+        cmd = ["kubeadm", "config", "print", "init-defaults"]
+        config_str = run(cmd, check=True, capture_output=True)
+        configs = list(yaml.safe_load_all(config_str.stdout))
+        for config in configs:
+            kind = config.get("kind")
+            if kind == "InitConfiguration":
+                config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
+            elif kind == "ClusterConfiguration":
+                config["networking"].update(
+                    {
+                        "podSubnet": networking.pod_cidr,
+                        "serviceSubnet": networking.service_cidr,
+                    }
+                )
+                config["clusterName"] = self.manifest.name
+        self._cluster_config = Path("/tmp/kubeadm-config.yaml")
+        yaml.safe_dump_all(configs, self._cluster_config.open("w"))
 
+    def bootstrap_hook(self) -> None:
+        """
+        Bootstrap Kubernetes cluster with kubeadm init.
+
+        This is where the cluster is actually created.
+        """
+
+        if not self._cluster_config or not self._cluster_config.exists():
+            raise ComponentError("Cluster config not generated. Run configure hook first.")
+
+        # Initialize cluster
+        cmd = ["sudo", "kubeadm", "init", f"--config={self._cluster_config}"]
         run(cmd, check=True)
 
     def post_bootstrap_hook(self) -> None:
@@ -169,7 +182,7 @@ class Kubeadm(ComponentBase):
         """
 
         # Check cluster info
-        kubectl = self._get_binary_path("kubectl")
+        kubectl = self._install_path("kubectl")
         run([kubectl, "cluster-info"], check=True)
 
         # Wait for nodes to be ready
