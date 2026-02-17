@@ -45,10 +45,26 @@ def cleanup_files() -> None:
     success("File cleanup completed!")
 
 
-def cleanup_clusters() -> None:
-    """Clean up test clusters using kubeadm reset."""
-    section("Cleaning Up Test Clusters")
+def cleanup_clusters(manifest_path: str | None = None, force: bool = False) -> None:
+    """Clean up test clusters using component teardown hooks."""
+    if not manifest_path:
+        section("No manifest provided, using fallback kubeadm reset")
+        _fallback_kubeadm_reset(force)
+        return
 
+    from kube_galaxy.pkg.cluster.setup import teardown_cluster
+    from kube_galaxy.pkg.utils.errors import ClusterError
+
+    try:
+        teardown_cluster(manifest_path, force=force)
+    except ClusterError as e:
+        if not force:
+            error(f"Failed to tear down cluster: {e}")
+            raise typer.Exit(code=1) from e
+
+
+def _fallback_kubeadm_reset(force: bool) -> None:
+    """Fallback to kubeadm reset when no manifest is available."""
     import shutil
     import subprocess
 
@@ -64,12 +80,15 @@ def cleanup_clusters() -> None:
         )
         success("Cluster cleanup completed!")
     except subprocess.CalledProcessError as e:
-        error(f"Failed to clean up cluster: {e}")
-        raise typer.Exit(code=1) from e
+        if force:
+            error(f"kubeadm reset failed (continuing due to --force): {e}")
+        else:
+            error(f"Failed to clean up cluster: {e}")
+            raise typer.Exit(code=1) from e
 
 
-def cleanup_all() -> None:
-    """Full cleanup: files and kubeadm cluster."""
+def cleanup_all(manifest_path: str | None = None, force: bool = False) -> None:
+    """Full cleanup: files and cluster teardown."""
     cleanup_files()
     info("")
-    cleanup_clusters()
+    cleanup_clusters(manifest_path, force)

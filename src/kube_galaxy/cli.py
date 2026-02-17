@@ -86,21 +86,27 @@ def test_manifest_cmd(
 @app.command(name="cleanup")
 def cleanup_cmd(
     target: str = typer.Argument("all", help="What to cleanup: files, clusters, or all"),
+    manifest: str = typer.Option(
+        None, "--manifest", "-m", help="Path to manifest file for cluster cleanup"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Continue cleanup even if errors occur"
+    ),
 ) -> None:
     """Clean up temporary files and test clusters.
 
     Examples:
         kube-galaxy cleanup files
-        kube-galaxy cleanup clusters
-        kube-galaxy cleanup all
+        kube-galaxy cleanup clusters --manifest manifests/baseline-k8s-1.35.yaml
+        kube-galaxy cleanup all --manifest manifests/baseline-k8s-1.35.yaml --force
     """
     match target:
         case "files":
             cleanup.cleanup_files()
         case "clusters":
-            cleanup.cleanup_clusters()
+            cleanup.cleanup_clusters(manifest, force)
         case "all":
-            cleanup.cleanup_all()
+            cleanup.cleanup_all(manifest, force)
         case _:
             typer.echo(f"Unknown cleanup target: {target}")
             raise typer.Exit(code=1)

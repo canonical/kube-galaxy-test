@@ -32,6 +32,7 @@ class ComponentBase:
     - Architecture information (passed to hooks)
 
     Lifecycle hooks (all have default empty implementations):
+    Setup Hooks:
     1. download_hook(repo, release, method, source_format, arch) - Download artifacts
     2. pre_install_hook() - Prepare machine for installation
     3. install_hook(repo, release, method, source_format, arch) - Install the component
@@ -40,6 +41,11 @@ class ComponentBase:
     6. post_bootstrap_hook() - Post-initialization tasks
     7. verify_hook() - Verify component is working
     8. test_hook() - Run component tests (optional)
+
+    Teardown Hooks (run in reverse dependency order):
+    9. stop_hook() - Stop services and processes
+    10. delete_hook() - Remove binaries and configurations
+    11. post_delete_hook() - Clean up remaining files, images, etc.
 
     Each hook can be overridden. If not overridden, the default (empty)
     implementation is used and effectively skips that stage.
@@ -186,5 +192,35 @@ class ComponentBase:
 
         This hook runs during component removal.
         Override to implement cleanup logic.
+        """
+        pass
+
+    # Teardown hooks - all have default empty implementations
+    # Override in subclass as needed
+
+    def stop_hook(self) -> None:
+        """
+        Stop component services and processes.
+
+        This hook runs in the STOP stage of teardown (sequential, reverse dependency order).
+        Override to implement service shutdown logic.
+        """
+        pass
+
+    def delete_hook(self) -> None:
+        """
+        Delete component binaries and configuration files.
+
+        This hook runs in the DELETE stage of teardown (sequential, reverse dependency order).
+        Override to implement binary/config removal logic.
+        """
+        pass
+
+    def post_delete_hook(self) -> None:
+        """
+        Clean up remaining files, images, and artifacts.
+
+        This hook runs in the POST_DELETE stage of teardown (sequential, reverse dependency order).
+        Override to implement final cleanup logic.
         """
         pass

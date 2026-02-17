@@ -84,6 +84,73 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         raise ClusterError(f"Cluster setup failed: {exc}") from exc
 
 
+def teardown_cluster(
+    manifest_path: str, force: bool = False, work_dir: str = ".", debug: bool = False
+) -> None:
+    """
+    Tear down a Kubernetes cluster using component teardown hooks.
+
+    Args:
+        manifest_path: Path to cluster manifest YAML
+        force: Continue teardown even if errors occur
+        work_dir: Working directory for artifacts
+        debug: Enable debug output
+
+    Raises:
+        ClusterError: If cluster teardown fails (unless force=True)
+    """
+    try:
+        # Load and validate manifest
+        manifest = load_manifest(manifest_path)
+
+        section("Kubernetes Cluster Teardown")
+        info(f"Manifest: {manifest_path}")
+        info(f"Work Dir: {work_dir}")
+        info(f"Force: {force}")
+        info(f"Debug: {debug}")
+
+        # Display configuration
+        section("Configuration")
+        info(f"Cluster Name: {manifest.name}")
+        info(f"Kubernetes Version: {manifest.kubernetes_version}")
+        info(f"Control Plane Nodes: {manifest.nodes.control_plane}")
+        info(f"Worker Nodes: {manifest.nodes.worker}")
+
+        # Detect architecture
+        arch_info = get_arch_info()
+        info(f"System Architecture: {arch_info.system}")
+        info(f"Kubernetes Architecture: {arch_info.k8s}")
+        info(f"Image Architecture: {arch_info.image}")
+
+        # Get components in dependency order, then reverse for teardown
+        configs = list(reversed(manifest.get_components_by_priority()))
+
+        # Create all component instances
+        instances: dict[str, ComponentBase] = {}
+        for config in configs:
+            component_class = COMPONENTS.get(config.name, ComponentBase)
+            instance = component_class(instances, manifest, config)
+            instances[config.name] = instance
+
+        # Execute 3-stage teardown lifecycle in reverse dependency order
+        instances_list = list(instances.values())
+        _stop_components(instances_list, configs, force)
+        _delete_components(instances_list, configs, force)
+        _post_delete_components(instances_list, configs, force)
+
+        section("Cluster Teardown Complete!")
+        success(f"Cluster '{manifest.name}' has been torn down")
+        gh_output("CLUSTER_TEARDOWN_STATUS", "complete")
+
+    except Exception as exc:
+        if force:
+            exception("Cluster teardown encountered errors (continuing due to --force)", exc)
+            success("Cluster teardown completed with errors (forced)")
+        else:
+            exception("Cluster teardown failed", exc)
+            raise ClusterError(f"Cluster teardown failed: {exc}") from exc
+
+
 def _download_components(
     instances: list[ComponentBase], configs: list[ComponentConfig], arch_info: ArchInfo
 ) -> None:
@@ -195,3 +262,59 @@ def _test_components(instances: list[ComponentBase], configs: list[ComponentConf
                 raise
         else:
             info(f"  {config.name}: skipping tests (use_spread=false)")
+
+
+def _stop_components(
+    instances: list[ComponentBase], configs: list[ComponentConfig], force: bool
+) -> None:
+    """Teardown Stage 1/3: Stop component services."""
+    section("Teardown Stage 1/3: Stopping Components")
+
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: stopping...")
+        try:
+            instance.stop_hook()
+        except Exception as exc:
+            if force:
+                exception(f"  ✗ Stop failed for {config.name} (continuing due to --force)", exc)
+            else:
+                exception(f"  ✗ Stop failed for {config.name}", exc)
+                raise
+
+
+def _delete_components(
+    instances: list[ComponentBase], configs: list[ComponentConfig], force: bool
+) -> None:
+    """Teardown Stage 2/3: Delete component binaries and configs."""
+    section("Teardown Stage 2/3: Deleting Components")
+
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: deleting...")
+        try:
+            instance.delete_hook()
+        except Exception as exc:
+            if force:
+                exception(f"  ✗ Delete failed for {config.name} (continuing due to --force)", exc)
+            else:
+                exception(f"  ✗ Delete failed for {config.name}", exc)
+                raise
+
+
+def _post_delete_components(
+    instances: list[ComponentBase], configs: list[ComponentConfig], force: bool
+) -> None:
+    """Teardown Stage 3/3: Clean up remaining artifacts."""
+    section("Teardown Stage 3/3: Post-Delete Cleanup")
+
+    for config, instance in zip(configs, instances, strict=True):
+        info(f"  {config.name}: cleaning up...")
+        try:
+            instance.post_delete_hook()
+        except Exception as exc:
+            if force:
+                exception(
+                    f"  ✗ Post-delete failed for {config.name} (continuing due to --force)", exc
+                )
+            else:
+                exception(f"  ✗ Post-delete failed for {config.name}", exc)
+                raise
