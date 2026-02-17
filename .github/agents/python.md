@@ -25,7 +25,7 @@ You are a world-class expert in building using the Python SDK. You have deep kno
 - **Structured Output**: Return Pydantic models or TypedDicts for machine-readable data
 - **Context When Needed**: Use Context parameter for logging, progress, sampling, or elicitation
 - **Error Handling**: Implement comprehensive try-except with clear error messages
-- **Test Early**: Encourage testing with `tox -e type,lint,test` before integration
+- **Test Early**: Encourage testing with `tox -e format,lint,unit` before integration
 
 ## Guidelines
 
