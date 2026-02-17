@@ -5,6 +5,7 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
+from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar
 
@@ -18,8 +19,11 @@ from kube_galaxy.pkg.components._constants import (
     DEFAULT_TEST_TIMEOUT,
     DEFAULT_VERIFY_TIMEOUT,
 )
+from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
+from kube_galaxy.pkg.utils.components import download_file, extract_archive, install_binary
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -206,7 +210,7 @@ class ComponentBase:
         Returns:
             Path to /opt/kube-galaxy/{COMPONENT_NAME}/
         """
-        return f"/opt/kube-galaxy/{self.COMPONENT_NAME}"
+        return str(SystemPaths.component_dir(self.COMPONENT_NAME))
 
     @property
     def component_tmp_dir(self) -> str:
@@ -216,7 +220,7 @@ class ComponentBase:
         Returns:
             Path to /opt/kube-galaxy/{COMPONENT_NAME}/tmp/
         """
-        return f"{self.component_dir}/tmp"
+        return str(SystemPaths.component_temp_dir(self.COMPONENT_NAME))
 
     def register_alternative(self, binary_name: str, binary_path: str) -> None:
         """
@@ -227,16 +231,14 @@ class ComponentBase:
             binary_path: Full path to the binary
         """
         try:
-            alternative_path = f"/usr/local/bin/{binary_name}"
+            alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
             run(
                 [
-                    "sudo",
-                    "update-alternatives",
-                    "--install",
+                    *Commands.UPDATE_ALTERNATIVES_INSTALL,
                     alternative_path,
                     binary_name,
                     binary_path,
-                    "100",
+                    Permissions.ALTERNATIVES_PRIORITY,
                 ],
                 check=True,
             )
@@ -253,7 +255,7 @@ class ComponentBase:
                 if binary.is_file():
                     try:
                         run(
-                            ["sudo", "update-alternatives", "--remove", binary.name, str(binary)],
+                            [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary.name, str(binary)],
                             check=False,
                         )  # Don't fail if alternative doesn't exist
                     except Exception:
@@ -264,7 +266,7 @@ class ComponentBase:
         Remove the entire component directory.
         """
         try:
-            run(["sudo", "rm", "-rf", self.component_dir], check=False)
+            run([*Commands.SUDO_RM_RF, self.component_dir], check=False)
         except Exception:
             pass  # Ignore errors during cleanup
 
@@ -297,3 +299,272 @@ class ComponentBase:
         Override to implement final cleanup logic.
         """
         pass
+
+    # Common utility methods - reduces code duplication across components
+
+    def ensure_temp_dir(self) -> Path:
+        """
+        Ensure component temp directory exists and return path.
+
+        Returns:
+            Path to component temp directory
+        """
+        temp_dir = Path(self.component_tmp_dir)
+        run([*Commands.SUDO_MKDIR_P, str(temp_dir)], check=True)
+        return temp_dir
+
+    def download_binary_from_config(self, arch: str, binary_name: str | None = None) -> Path:
+        """
+        Download binary using component config source_format.
+
+        Args:
+            arch: Architecture string for URL template
+            binary_name: Optional override for binary filename
+
+        Returns:
+            Path to downloaded binary
+
+        Raises:
+            ComponentError: If download fails or config missing
+        """
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        repo = self.config.repo
+        release = self.config.release
+        source_format = self.config.installation.source_format
+
+        # Construct download URL from source_format template
+        url = source_format.format(repo=repo, release=release, arch=arch)
+        filename = binary_name or url.split("/")[-1]
+
+        # Download to secure temporary directory
+        temp_dir = self.ensure_temp_dir()
+        binary_path = temp_dir / filename
+        download_file(url, binary_path)
+
+        return binary_path
+
+    def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
+        """
+        Install downloaded binary using standard install_binary function.
+
+        Args:
+            binary_path: Path to binary file
+            binary_name: Binary name (defaults to component name)
+
+        Returns:
+            Installation path
+
+        Raises:
+            ComponentError: If installation fails
+        """
+        if not binary_path.exists():
+            raise ComponentError(f"{self.COMPONENT_NAME} binary not found at {binary_path}")
+
+        name = binary_name or self.COMPONENT_NAME
+        install_path = install_binary(binary_path, name, self.COMPONENT_NAME)
+        self.install_path = install_path
+        return install_path
+
+    def download_and_extract_archive(self, arch: str, extract_dir: Path | None = None) -> Path:
+        """
+        Download and extract archive from config.
+
+        Args:
+            arch: Architecture string (e.g., 'amd64')
+            extract_dir: Custom extraction directory (optional)
+
+        Returns:
+            Path to extraction directory
+
+        Raises:
+            ComponentError: If download or extraction fails
+        """
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        repo = self.config.repo
+        release = self.config.release
+        source_format = self.config.installation.source_format
+
+        # Construct download URL from source_format template
+        url = source_format.format(repo=repo, release=release, arch=arch)
+        filename = url.split("/")[-1]
+
+        # Download to temp directory
+        temp_dir = self.ensure_temp_dir()
+        archive_path = temp_dir / filename
+        download_file(url, archive_path)
+
+        # Extract archive
+        extract_destination = extract_dir or (temp_dir / "extracted")
+        extract_destination.mkdir(exist_ok=True)
+        extract_archive(archive_path, extract_destination)
+
+        return extract_destination
+
+    def start_systemd_service(self, service_name: str) -> None:
+        """
+        Enable and start a systemd service.
+
+        Args:
+            service_name: Name of the service
+
+        Raises:
+            ComponentError: If service operations fail
+        """
+        try:
+            run([*Commands.SYSTEMCTL_DAEMON_RELOAD], check=True)
+            run([*Commands.SYSTEMCTL_ENABLE, service_name], check=True)
+            run([*Commands.SYSTEMCTL_START, service_name], check=True)
+        except Exception as e:
+            raise ComponentError(f"Failed to start {service_name} service: {e}") from e
+
+    def stop_systemd_service(self, service_name: str) -> None:
+        """
+        Stop and disable a systemd service (best effort).
+
+        Args:
+            service_name: Name of the service
+        """
+        try:
+            run([*Commands.SYSTEMCTL_STOP, service_name], check=False)
+            run(["sudo", "systemctl", "disable", service_name], check=False)
+            info(f"Stopped {service_name} service")
+        except Exception as e:
+            info(f"Failed to stop {service_name} service: {e}")
+
+    def create_systemd_service(
+        self, service_name: str, service_content: str, system_location: bool = True
+    ) -> None:
+        """
+        Create a systemd service file.
+
+        Args:
+            service_name: Name of the service
+            service_content: Service file content
+            system_location: If True, use /etc/systemd/system; else /usr/lib/systemd/system
+
+        Raises:
+            ComponentError: If service file creation fails
+        """
+        try:
+            # Write to temp file first
+            temp_dir = self.ensure_temp_dir()
+            temp_unit = temp_dir / f"{service_name}.service"
+            run([*Commands.SUDO_TEE, str(temp_unit)], input=service_content, text=True, check=True)
+
+            # Create target directory and copy
+            target_dir = "/etc/systemd/system" if system_location else "/usr/lib/systemd/system"
+            target_path = f"{target_dir}/{service_name}.service"
+            run([*Commands.SUDO_MKDIR_P, target_dir], check=True)
+            run([*Commands.SUDO_CP, str(temp_unit), target_path], check=True)
+        except Exception as e:
+            raise ComponentError(f"Failed to create {service_name} service: {e}") from e
+
+    def write_config_file(
+        self, config_content: str, target_path: str, mode: str = Permissions.READABLE
+    ) -> None:
+        """
+        Write configuration content to a file via temporary file.
+
+        Args:
+            config_content: Configuration file content
+            target_path: Final path for config file
+            mode: File permissions (default: 644)
+
+        Raises:
+            ComponentError: If file writing fails
+        """
+        try:
+            temp_dir = self.ensure_temp_dir()
+            temp_config = temp_dir / "config"
+
+            # Write to temp file, then copy and set permissions
+            run([*Commands.SUDO_TEE, str(temp_config)], input=config_content, text=True, check=True)
+            run([*Commands.SUDO_MKDIR_P, str(Path(target_path).parent)], check=True)
+            run([*Commands.SUDO_CP, str(temp_config), target_path], check=True)
+            run([*Commands.SUDO_CHMOD, mode, target_path], check=True)
+        except Exception as e:
+            raise ComponentError(f"Failed to write config to {target_path}: {e}") from e
+
+    def verify_systemd_service(self, service_name: str) -> None:
+        """
+        Verify that a systemd service is running.
+
+        Args:
+            service_name: Name of the service
+
+        Raises:
+            ComponentError: If service is not active
+        """
+        try:
+            run(["sudo", "systemctl", "is-active", service_name], check=True)
+        except Exception as e:
+            raise ComponentError(f"Service {service_name} is not active: {e}") from e
+
+    def verify_binary_works(self, binary_name: str, args: list[str] | None = None) -> None:
+        """
+        Verify that a binary command works.
+
+        Args:
+            binary_name: Name of the binary to test
+            args: Arguments to pass to binary (default: ['--version'])
+
+        Raises:
+            ComponentError: If binary command fails
+        """
+        test_args = args or ["--version"]
+        try:
+            run([binary_name, *test_args], check=True)
+        except Exception as e:
+            raise ComponentError(f"Binary {binary_name} verification failed: {e}") from e
+
+    def remove_directories(
+        self, directories: Iterable[str | Path], component_name: str | None = None
+    ) -> None:
+        """
+        Remove multiple directories (best effort).
+
+        Args:
+            directories: List of directory paths to remove
+            component_name: Component name for logging (defaults to self.COMPONENT_NAME)
+        """
+        name = component_name or self.COMPONENT_NAME
+        for directory in directories:
+            dir_path = Path(directory)
+            if dir_path.exists():
+                try:
+                    run([*Commands.SUDO_RM_RF, str(dir_path)], check=False)
+                    info(f"Removed {name} directory: {dir_path}")
+                except Exception as e:
+                    info(f"Failed to remove {dir_path}: {e}")
+
+    def remove_config_files(
+        self, config_files: Iterable[str | Path], component_name: str | None = None
+    ) -> None:
+        """
+        Remove multiple configuration files (best effort).
+
+        Args:
+            config_files: List of config file paths to remove
+            component_name: Component name for logging (defaults to self.COMPONENT_NAME)
+        """
+        name = component_name or self.COMPONENT_NAME
+        for config_path in config_files:
+            config_file = Path(config_path)
+            if config_file.exists():
+                try:
+                    run(["sudo", "rm", "-f", str(config_file)], check=False)
+                    info(f"Removed {name} config: {config_file}")
+                except Exception as e:
+                    info(f"Failed to remove {config_file}: {e}")
+
+    def remove_installed_binary(self) -> None:
+        """
+        Remove the installed binary if it exists.
+        """
+        if self.install_path and Path(self.install_path).exists():
+            Path(self.install_path).unlink()
+            info(f"Removed {self.COMPONENT_NAME} binary: {self.install_path}")

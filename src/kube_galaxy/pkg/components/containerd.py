@@ -8,11 +8,6 @@ from pathlib import Path
 from typing import ClassVar
 
 from kube_galaxy.pkg.components._base import ComponentBase
-from kube_galaxy.pkg.utils.components import (
-    download_file,
-    extract_archive,
-    install_binary,
-)
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -66,31 +61,8 @@ class Containerd(ComponentBase):
         Constructs download URL from self.config (repo, release, installation).
         Extracts archive for install hook.
         """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
-        # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
-        filename = url.split("/")[-1]
-
-        # Download to secure temporary directory
-        temp_dir = Path(self.component_tmp_dir)
-        run(["sudo", "mkdir", "-p", str(temp_dir)], check=True)
-
-        archive_path = temp_dir / filename
-        download_file(url, archive_path)
-
-        # Extract archive
-        extract_dir = temp_dir / "extracted"
-        extract_dir.mkdir(exist_ok=True)
-        extract_archive(archive_path, extract_dir)
-
-        # Store paths as instance attribute
-        self.extract_dir = extract_dir
+        # Download and extract archive using base class utility
+        self.extract_dir = self.download_and_extract_archive(arch)
 
     def pre_install_hook(self) -> None:
         """Remove any existing containerd installation to avoid conflicts."""
@@ -108,7 +80,7 @@ class Containerd(ComponentBase):
 
         # Install binaries from extracted archive
         for each in (self.extract_dir / "bin").glob("*"):
-            installed = install_binary(each, each.name, self.COMPONENT_NAME)
+            installed = self.install_downloaded_binary(each, each.name)
             if each.name == "containerd":
                 self.install_path = installed
 
@@ -230,17 +202,10 @@ WantedBy=multi-user.target
 
         # Remove containerd configuration files
         config_files = [
-            Path("/etc/containerd/config.toml"),
-            Path("/etc/systemd/system/containerd.service"),
+            "/etc/containerd/config.toml",
+            "/etc/systemd/system/containerd.service",
         ]
-
-        for config in config_files:
-            if config.exists():
-                try:
-                    run(["sudo", "rm", "-f", str(config)], check=False)
-                    info(f"Removed config: {config}")
-                except Exception as e:
-                    info(f"Failed to remove {config}: {e}")
+        self.remove_config_files(config_files)
 
     def post_delete_hook(self) -> None:
         """
@@ -256,23 +221,12 @@ WantedBy=multi-user.target
 
         # Remove containerd data directories (destructive cleanup)
         containerd_dirs = [
-            Path("/var/lib/containerd"),
-            Path("/run/containerd"),
-            Path("/etc/containerd"),
+            "/var/lib/containerd",
+            "/run/containerd",
+            "/etc/containerd",
         ]
-
-        for directory in containerd_dirs:
-            if directory.exists():
-                try:
-                    run(["sudo", "rm", "-rf", str(directory)], check=False)
-                    info(f"Removed containerd directory: {directory}")
-                except Exception as e:
-                    info(f"Failed to remove {directory}: {e}")
+        self.remove_directories(containerd_dirs)
 
         # Clean up temporary extraction directory if it exists
         if hasattr(self, "extract_dir") and self.extract_dir.exists():
-            try:
-                run(["sudo", "rm", "-rf", str(self.extract_dir.parent)], check=False)
-                info(f"Removed extraction directory: {self.extract_dir.parent}")
-            except Exception as e:
-                info(f"Failed to remove extraction directory: {e}")
+            self.remove_directories([str(self.extract_dir.parent)])

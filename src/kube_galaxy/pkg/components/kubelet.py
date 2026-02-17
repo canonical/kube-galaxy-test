@@ -9,10 +9,6 @@ from typing import ClassVar
 from urllib.request import urlopen
 
 from kube_galaxy.pkg.components._base import ComponentBase
-from kube_galaxy.pkg.utils.components import (
-    download_file,
-    install_binary,
-)
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -42,25 +38,7 @@ class Kubelet(ComponentBase):
         Downloads the kubelet release binary.
         Constructs download URL from self.config (repo, release, installation).
         """
-        if not self.config:
-            raise RuntimeError("Component config required for download")
-
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
-        # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
-
-        # Download to secure temporary directory
-        temp_dir = Path(self.component_tmp_dir)
-        run(["sudo", "mkdir", "-p", str(temp_dir)], check=True)
-
-        binary_path = temp_dir / "kubelet"
-        download_file(url, binary_path)
-
-        # Store download location as instance attribute
-        self.binary_path = binary_path
+        self.binary_path = self.download_binary_from_config(arch, "kubelet")
 
     def install_hook(self, arch: str) -> None:
         """
@@ -72,7 +50,7 @@ class Kubelet(ComponentBase):
             raise RuntimeError("kubelet binary not downloaded. Run download hook first.")
 
         # Install binary to system
-        self.install_path = install_binary(self.binary_path, "kubelet", self.COMPONENT_NAME)
+        self.install_path = self.install_downloaded_binary(self.binary_path, "kubelet")
 
     def configure_hook(self) -> None:
         """
@@ -126,17 +104,9 @@ class Kubelet(ComponentBase):
     def delete_hook(self) -> None:
         """Remove kubelet binary and configuration."""
         # Remove kubelet binary
-        if self.install_path and Path(self.install_path).exists():
-            Path(self.install_path).unlink()
-            info(f"Removed kubelet binary: {self.install_path}")
+        self.remove_installed_binary()
 
     def post_delete_hook(self) -> None:
         """Clean up kubelet data directory and remaining files."""
         # Remove kubelet data directory
-        kubelet_dir = Path("/var/lib/kubelet")
-        if kubelet_dir.exists():
-            try:
-                run(["sudo", "rm", "-rf", str(kubelet_dir)], check=False)
-                info(f"Removed kubelet directory: {kubelet_dir}")
-            except Exception as e:
-                info(f"Failed to remove {kubelet_dir}: {e}")
+        self.remove_directories(["/var/lib/kubelet"])

@@ -8,6 +8,7 @@ import urllib.request
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import get_arch_info
+from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.shell import run
 
@@ -86,35 +87,32 @@ def install_binary(
     try:
         # Use component-specific directory if not overridden
         if dest_dir is None:
-            dest_dir = Path(f"/opt/kube-galaxy/{component_name}/bin")
+            dest_dir = SystemPaths.component_bin_dir(component_name)
 
         # Create directory and install binary
-        run(["sudo", "mkdir", "-p", str(dest_dir)], check=True)
+        run([*Commands.SUDO_MKDIR_P, str(dest_dir)], check=True)
         dest_path = dest_dir / binary_name
-        run(["sudo", "cp", str(binary_path), str(dest_path)], check=True)
-        run(["sudo", "chmod", "755", str(dest_path)], check=True)
+        run([*Commands.SUDO_CP, str(binary_path), str(dest_path)], check=True)
+        run([*Commands.SUDO_CHMOD, Permissions.EXECUTABLE, str(dest_path)], check=True)
 
         # Register with update-alternatives
-        alternative_path = f"/usr/local/bin/{binary_name}"
+        alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
         run(
             [
-                "sudo",
-                "update-alternatives",
-                "--install",
+                *Commands.UPDATE_ALTERNATIVES_INSTALL,
                 alternative_path,
                 binary_name,
                 str(dest_path),
-                "100",
+                Permissions.ALTERNATIVES_PRIORITY,
             ],
             check=True,
         )
-
+        return alternative_path
     except Exception as e:
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
-    return str(dest_path)
 
 
-def remove_binary(binary_name: str, dest_dir: Path = Path("/usr/local/bin")) -> None:
+def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_BIN)) -> None:
     """
     Remove a binary from a directory.
 
@@ -151,4 +149,4 @@ def get_github_release_url(
     """
     arch_info = get_arch_info()
     filename = filename_pattern.format(arch=arch_info.k8s)
-    return f"https://github.com/{repo}/releases/download/{release}/{filename}"
+    return URLs.GITHUB_RELEASES_PATTERN.format(repo=repo, release=release, filename=filename)

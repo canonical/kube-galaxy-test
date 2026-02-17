@@ -12,10 +12,6 @@ from urllib.request import urlopen
 import yaml
 
 from kube_galaxy.pkg.components._base import ComponentBase
-from kube_galaxy.pkg.utils.components import (
-    download_file,
-    install_binary,
-)
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -47,41 +43,20 @@ class Kubeadm(ComponentBase):
 
     def download_hook(self, arch: str) -> None:
         """
-        Download kubeadm binary.
-
-        Constructs download URL from self.config (repo, release, installation).
+        Download kubeadm binary using base method.
         """
-        if not self.config:
-            raise RuntimeError("Component config required for download")
-
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
-        # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
-
-        # Download to secure temporary directory
-        temp_dir = Path(self.component_tmp_dir)
-        run(["sudo", "mkdir", "-p", str(temp_dir)], check=True)
-
-        binary_path = temp_dir / "kubeadm"
-        download_file(url, binary_path)
-
-        # Store download location as instance attribute
-        self.binary_path = binary_path
+        # Use base method for standard binary download
+        self.binary_path = self.download_binary_from_config(arch, "kubeadm")
 
     def install_hook(self, arch: str) -> None:
         """
-        Install kubeadm binary to system.
-
-        Requires download_hook to have completed first.
+        Install kubeadm binary using base install method.
         """
         if not hasattr(self, "binary_path") or not self.binary_path.exists():
             raise RuntimeError("kubeadm binary not downloaded. Run download hook first.")
 
-        # Install binary to system
-        self.install_path = install_binary(self.binary_path, "kubeadm", self.COMPONENT_NAME)
+        # Use base method for standard binary installation
+        self.install_path = self.install_downloaded_binary(self.binary_path)
 
     def configure_hook(self) -> None:
         """
@@ -101,18 +76,10 @@ class Kubeadm(ComponentBase):
         # Write kubelet configuration for kubeadm (10-kubeadm.conf)
         kubelet = self._install_path("kubelet")
         service_content = service_content.replace("/usr/bin/kubelet", kubelet)
-        temp_service = Path(self.component_tmp_dir) / "10-kubeadm.conf"
-        run(["sudo", "mkdir", "-p", str(temp_service.parent)], check=True)
-        run(["sudo", "tee", str(temp_service)], input=service_content, text=True, check=True)
-        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
-        run(
-            [
-                "sudo",
-                "cp",
-                str(temp_service),
-                "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf",
-            ],
-            check=True,
+
+        # Use base method to write config file
+        self.write_config_file(
+            service_content, "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
         )
 
         if not self.manifest:
@@ -231,47 +198,29 @@ class Kubeadm(ComponentBase):
         """
         Remove kubeadm binary and cluster configuration files.
         """
-
-        # Remove kubeadm binary
-        if self.install_path and Path(self.install_path).exists():
-            Path(self.install_path).unlink()
-            info(f"Removed kubeadm binary: {self.install_path}")
+        # Use base method to remove installed binary
+        self.remove_installed_binary()
 
         # Remove cluster configuration if it exists
         if self._cluster_config and self._cluster_config.exists():
             self._cluster_config.unlink()
             info(f"Removed cluster config: {self._cluster_config}")
 
-        # Remove kubeconfig files
+        # Use base method to remove kubeconfig files
         kubeconfig_paths = [
-            Path.home() / ".kube" / "config",
-            Path("/etc/kubernetes/admin.conf"),
+            str(Path.home() / ".kube" / "config"),
+            "/etc/kubernetes/admin.conf",
         ]
-
-        for kubeconfig in kubeconfig_paths:
-            if kubeconfig.exists():
-                try:
-                    kubeconfig.unlink()
-                    info(f"Removed kubeconfig: {kubeconfig}")
-                except PermissionError:
-                    run(["sudo", "rm", "-f", str(kubeconfig)], check=False)
-                    info(f"Removed kubeconfig with sudo: {kubeconfig}")
+        self.remove_config_files(kubeconfig_paths)
 
     def post_delete_hook(self) -> None:
         """
         Clean up remaining Kubernetes cluster directories and files.
         """
-        # Kubernetes cluster directories to clean up (not kubelet-specific)
+        # Use base method to remove Kubernetes cluster directories
         k8s_dirs = [
-            Path("/var/lib/etcd"),
-            Path("/etc/kubernetes"),
-            Path("/etc/cni/net.d"),
+            "/var/lib/etcd",
+            "/etc/kubernetes",
+            "/etc/cni/net.d",
         ]
-
-        for k8s_dir in k8s_dirs:
-            if k8s_dir.exists():
-                try:
-                    run(["sudo", "rm", "-rf", str(k8s_dir)], check=False)
-                    info(f"Removed Kubernetes directory: {k8s_dir}")
-                except Exception as e:
-                    info(f"Failed to remove {k8s_dir}: {e}")
+        self.remove_directories(k8s_dirs, "Kubernetes")

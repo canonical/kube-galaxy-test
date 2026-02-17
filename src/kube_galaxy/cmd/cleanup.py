@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 from kube_galaxy.pkg.cluster import teardown_cluster
+from kube_galaxy.pkg.literals import FilePatterns, TestDirectories
 from kube_galaxy.pkg.utils.logging import error, info, section, success
 
 
@@ -12,12 +13,12 @@ def cleanup_files() -> None:
     section("Cleaning Up Temporary Files")
 
     cleanup_paths = [
-        "test-results",
-        "spread-results",
-        "debug-logs",
-        "cleanup-logs",
-        "issue-data",
-        "test-cluster-config.yaml",
+        TestDirectories.TEST_RESULTS,
+        TestDirectories.SPREAD_RESULTS,
+        TestDirectories.DEBUG_LOGS,
+        TestDirectories.CLEANUP_LOGS,
+        TestDirectories.ISSUE_DATA,
+        FilePatterns.TEST_CLUSTER_CONFIG,
     ]
 
     for path_str in cleanup_paths:

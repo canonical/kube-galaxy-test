@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from kube_galaxy.pkg.literals import TestDirectories
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import Manifest
 from kube_galaxy.pkg.manifest.validator import get_components_with_spread
@@ -95,7 +96,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
         info(f"  Release: {component.release}")
         info(f"  Repo: {component.repo}")
 
-        test_results_dir = work_dir / "spread-results" / component.name
+        test_results_dir = work_dir / TestDirectories.SPREAD_RESULTS / component.name
         test_results_dir.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -129,14 +130,14 @@ def collect_test_results(work_dir: str = ".") -> str | None:
         Path to consolidated test results file or None if no results
     """
     work_dir_path = Path(work_dir)
-    results_dir = work_dir_path / "spread-results"
+    results_dir = work_dir_path / TestDirectories.SPREAD_RESULTS
 
     if not results_dir.exists():
         warning(f"No test results found in {results_dir}")
         return None
 
     # Collect results from all components
-    results_summary = work_dir_path / "test-results" / "summary.txt"
+    results_summary = work_dir_path / TestDirectories.TEST_RESULTS / "summary.txt"
     results_summary.parent.mkdir(parents=True, exist_ok=True)
 
     try:
