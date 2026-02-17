@@ -205,3 +205,77 @@ class Kubeadm(ComponentBase):
             ],
             check=True,
         )
+
+    def stop_hook(self) -> None:
+        """
+        Stop the Kubernetes cluster using kubeadm reset.
+
+        This performs a kubeadm reset to cleanly shut down the cluster,
+        removing the node from the cluster and cleaning up cluster state.
+        """
+        import shutil
+
+        if not shutil.which("kubeadm"):
+            info("kubeadm not found in PATH, skipping cluster reset")
+            return
+
+        info("Performing kubeadm reset to stop cluster")
+        run(["sudo", "kubeadm", "reset", "--force"], check=True)
+        info("Kubeadm reset completed successfully")
+
+    def delete_hook(self) -> None:
+        """
+        Remove kubeadm binary and cluster configuration files.
+        """
+
+        # Remove kubeadm binary
+        if self.install_path and Path(self.install_path).exists():
+            Path(self.install_path).unlink()
+            info(f"Removed kubeadm binary: {self.install_path}")
+
+        # Remove cluster configuration if it exists
+        if self._cluster_config and self._cluster_config.exists():
+            self._cluster_config.unlink()
+            info(f"Removed cluster config: {self._cluster_config}")
+
+        # Remove kubeconfig files
+        kubeconfig_paths = [
+            Path.home() / ".kube" / "config",
+            Path("/etc/kubernetes/admin.conf"),
+        ]
+
+        for kubeconfig in kubeconfig_paths:
+            if kubeconfig.exists():
+                try:
+                    kubeconfig.unlink()
+                    info(f"Removed kubeconfig: {kubeconfig}")
+                except PermissionError:
+                    run(["sudo", "rm", "-f", str(kubeconfig)], check=False)
+                    info(f"Removed kubeconfig with sudo: {kubeconfig}")
+
+    def post_delete_hook(self) -> None:
+        """
+        Clean up remaining Kubernetes directories and files.
+        """
+        # Kubernetes directories to clean up
+        k8s_dirs = [
+            Path("/var/lib/etcd"),
+            Path("/etc/kubernetes"),
+            Path("/var/lib/kubelet"),
+            Path("/etc/cni/net.d"),
+        ]
+
+        for k8s_dir in k8s_dirs:
+            if k8s_dir.exists():
+                try:
+                    run(["sudo", "rm", "-rf", str(k8s_dir)], check=False)
+                    info(f"Removed Kubernetes directory: {k8s_dir}")
+                except Exception as e:
+                    info(f"Failed to remove {k8s_dir}: {e}")
+
+        # Remove any remaining container runtime state
+        try:
+            run(["sudo", "systemctl", "stop", "kubelet"], check=False)
+            info("Stopped kubelet service")
+        except Exception:
+            pass  # Service might not exist or already stopped
