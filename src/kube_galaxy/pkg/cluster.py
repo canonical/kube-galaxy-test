@@ -10,6 +10,8 @@ from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
 
+__all__ = ["setup_cluster", "teardown_cluster"]
+
 
 def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) -> None:
     """

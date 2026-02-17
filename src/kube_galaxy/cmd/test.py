@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from kube_galaxy.pkg.cluster.setup import setup_cluster
+from kube_galaxy.pkg.cluster import setup_cluster
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.testing.spread import collect_test_results, run_spread_tests
 from kube_galaxy.pkg.utils.logging import error, exception, info, section, success

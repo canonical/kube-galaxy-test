@@ -52,7 +52,7 @@ def cleanup_clusters(manifest_path: str | None = None, force: bool = False) -> N
         _fallback_kubeadm_reset(force)
         return
 
-    from kube_galaxy.pkg.cluster.cluster import teardown_cluster
+    from kube_galaxy.pkg.cluster import teardown_cluster
     from kube_galaxy.pkg.utils.errors import ClusterError
 
     try:
