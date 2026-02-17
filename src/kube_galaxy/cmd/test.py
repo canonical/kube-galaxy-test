@@ -6,6 +6,7 @@ from pathlib import Path
 
 import typer
 
+from kube_galaxy.cmd.validate import validate_manifests_cmd
 from kube_galaxy.pkg.cluster import setup_cluster
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.testing.spread import collect_test_results, run_spread_tests
@@ -29,8 +30,6 @@ def local() -> None:
 
     # Validate manifests
     info("")
-    from kube_galaxy.cmd.validate import validate_manifests_cmd
-
     validate_manifests_cmd()
 
     success("All local tests passed!")

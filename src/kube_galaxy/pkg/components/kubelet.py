@@ -14,6 +14,7 @@ from kube_galaxy.pkg.utils.components import (
     install_binary,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -116,8 +117,6 @@ class Kubelet(ComponentBase):
 
     def stop_hook(self) -> None:
         """Stop the kubelet service."""
-        from kube_galaxy.pkg.utils.logging import info
-
         try:
             run(["sudo", "systemctl", "stop", "kubelet"], check=False)
             info("Stopped kubelet service")
@@ -126,8 +125,6 @@ class Kubelet(ComponentBase):
 
     def delete_hook(self) -> None:
         """Remove kubelet binary and configuration."""
-        from kube_galaxy.pkg.utils.logging import info
-
         # Remove kubelet binary
         if self.install_path and Path(self.install_path).exists():
             Path(self.install_path).unlink()
@@ -135,8 +132,6 @@ class Kubelet(ComponentBase):
 
     def post_delete_hook(self) -> None:
         """Clean up kubelet data directory and remaining files."""
-        from kube_galaxy.pkg.utils.logging import info
-
         # Remove kubelet data directory
         kubelet_dir = Path("/var/lib/kubelet")
         if kubelet_dir.exists():

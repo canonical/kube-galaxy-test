@@ -4,6 +4,7 @@ Kubeadm component installation and management.
 Kubeadm is used to bootstrap Kubernetes clusters.
 """
 
+import shutil
 from pathlib import Path
 from typing import ClassVar
 from urllib.request import urlopen
@@ -218,8 +219,6 @@ class Kubeadm(ComponentBase):
         This performs a kubeadm reset to cleanly shut down the cluster,
         removing the node from the cluster and cleaning up cluster state.
         """
-        import shutil
-
         if not shutil.which("kubeadm"):
             info("kubeadm not found in PATH, skipping cluster reset")
             return

@@ -5,6 +5,7 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
+from pathlib import Path
 from typing import ClassVar
 
 from kube_galaxy.pkg.components._constants import (
@@ -246,8 +247,6 @@ class ComponentBase:
         """
         Remove all alternatives for binaries in this component's bin directory.
         """
-        from pathlib import Path
-
         component_bin_dir = Path(self.component_dir) / "bin"
         if component_bin_dir.exists():
             for binary in component_bin_dir.glob("*"):

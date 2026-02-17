@@ -1,5 +1,6 @@
 """Cleanup command handler."""
 
+import shutil
 from pathlib import Path
 
 from kube_galaxy.pkg.cluster import teardown_cluster
@@ -23,8 +24,6 @@ def cleanup_files() -> None:
         path = Path(path_str)
         try:
             if path.is_dir():
-                import shutil
-
                 shutil.rmtree(path)
                 info(f"Removed directory: {path}")
             elif path.is_file():

@@ -241,7 +241,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          kube-galaxy cleanup all
+          kube-galaxy cleanup all --manifest ${{ matrix.manifest-file }}
 
   # Summary job that reports overall test status
   test-summary:

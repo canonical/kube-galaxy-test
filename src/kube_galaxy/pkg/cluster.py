@@ -336,8 +336,6 @@ def _cleanup_kube_galaxy_alternatives(force: bool) -> None:
     Args:
         force: Continue cleanup even if errors occur
     """
-    from pathlib import Path
-
     try:
         kube_galaxy_dir = Path("/opt/kube-galaxy")
         if not kube_galaxy_dir.exists():

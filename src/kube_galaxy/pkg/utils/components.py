@@ -3,6 +3,8 @@ Utilities for component installation and management.
 """
 
 import hashlib
+import tarfile
+import urllib.request
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import get_arch_info
@@ -23,8 +25,6 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
         ComponentError: If download fails or checksum mismatch
     """
     try:
-        import urllib.request
-
         urllib.request.urlretrieve(url, dest)
 
         if verify_sha256:
@@ -59,8 +59,6 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> None:
         ComponentError: If extraction fails
     """
     try:
-        import tarfile
-
         with tarfile.open(archive_path) as tar:
             tar.extractall(dest_dir)
     except Exception as e:
