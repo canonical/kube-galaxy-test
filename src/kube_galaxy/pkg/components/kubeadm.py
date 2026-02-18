@@ -50,14 +50,14 @@ class Kubeadm(ComponentBase):
         info("  Disabling swap...")
         run(["sudo", "swapoff", "-a"], check=True)
 
-        # Download kubeadm.service from Kubernetes release repository
+        # Configure kubeadm.service based on Kubernetes release repository
         info("  Installing kubelet configs")
         service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
         with urlopen(service_url) as response:
             service_content = response.read().decode("utf-8")
 
         # Write kubelet configuration for kubeadm (10-kubeadm.conf)
-        kubelet = self._install_path("kubelet")
+        kubelet = self._which("kubelet")
         service_content = service_content.replace("/usr/bin/kubelet", kubelet)
 
         # Use base method to write config file
@@ -138,7 +138,7 @@ class Kubeadm(ComponentBase):
         """
 
         # Check cluster info
-        kubectl = self._install_path("kubectl")
+        kubectl = self._which("kubectl")
         run([kubectl, "cluster-info"], check=True)
 
         # Wait for nodes to be ready

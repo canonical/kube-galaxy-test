@@ -64,7 +64,7 @@ jobs:
             echo "PR context: Including only manifests without ci-skip-on-pr: true"
             # Find manifests that don't have ci-skip-on-pr: "true"
             manifests=$(find manifests/ -name "*.yaml" -type f | while read -r file; do
-              if ! grep -q 'ci-skip-on-pr.*:.*"true"' "$file" && ! grep -q "ci-skip-on-pr.*:.*'true'" "$file"; then
+              if ! grep -q 'ci-skip-on-pr.*\:.*"true"' "$file" && ! grep -q "ci-skip-on-pr.*\:.*'true'" "$file"; then
                 echo "$file"
               fi
             done | sort | jq -R -s -c 'split("\n")[:-1] | map(select(length > 0)) | map({"manifest-file": .})')

@@ -106,7 +106,7 @@ class ComponentBase:
             return self.config.name
         raise ComponentError("Component name not found in config")
 
-    def _install_path(self, component: str) -> str:
+    def _which(self, component: str) -> str:
         """
         Get binary path from specified component.
 

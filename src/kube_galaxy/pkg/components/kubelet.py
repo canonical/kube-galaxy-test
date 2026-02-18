@@ -37,7 +37,7 @@ class Kubelet(ComponentBase):
         """
         Configures kubelet systemd service to be ready to start by kubeadm.
 
-        Downloads the kubelet.service template from the Kubernetes release repository,
+        Configure the kubelet.service based on the Kubernetes release repository,
         replaces /usr/bin with the actual kubelet installation path, and creates
         the systemd service file and service.d directory.
         """
