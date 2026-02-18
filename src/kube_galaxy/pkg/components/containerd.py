@@ -7,12 +7,13 @@ Containerd is the container runtime used by Kubernetes clusters.
 from pathlib import Path
 from typing import ClassVar
 
-from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
+@register_component
 class Containerd(ComponentBase):
     """
     Containerd container runtime component.

@@ -6,9 +6,10 @@ Kube-apiserver is the core API server for Kubernetes.
 
 from typing import ClassVar
 
-from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
+@register_component
 class KubeAPIServer(ComponentBase):
     """
     Kube-APIServer component for Kubernetes control plane.

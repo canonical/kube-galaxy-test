@@ -6,9 +6,10 @@ Kube-controller-manager runs Kubernetes controllers.
 
 from typing import ClassVar
 
-from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
+@register_component
 class KubeControllerManager(ComponentBase):
     """
     Kube-ControllerManager component for Kubernetes control loops.

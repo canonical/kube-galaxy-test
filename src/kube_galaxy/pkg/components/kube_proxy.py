@@ -6,9 +6,10 @@ Kube-proxy handles Kubernetes service networking.
 
 from typing import ClassVar
 
-from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
+@register_component
 class KubeProxy(ComponentBase):
     """
     Kube-Proxy component for service networking.

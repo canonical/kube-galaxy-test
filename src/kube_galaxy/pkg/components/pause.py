@@ -6,9 +6,10 @@ The pause container is used for infrastructure.
 
 from typing import ClassVar
 
-from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
+@register_component
 class Pause(ComponentBase):
     """
     Pause component for Kubernetes infrastructure.

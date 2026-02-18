@@ -11,13 +11,14 @@ from urllib.request import urlopen
 
 import yaml
 
-from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.literals import URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
+@register_component
 class Kubeadm(ComponentBase):
     """
     Kubeadm component for bootstrapping Kubernetes clusters.
