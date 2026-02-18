@@ -25,7 +25,6 @@ class Kubelet(ComponentBase):
     # Component metadata
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = ["containerd"]
-    PRIORITY = 50
 
     # Timeout configuration (in seconds)
     DOWNLOAD_TIMEOUT = 180  # 3 minutes

@@ -55,7 +55,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         (work_dir_path / "logs").mkdir(exist_ok=True)
 
         # Get components in dependency order
-        configs = manifest.get_components_by_priority()
+        configs = manifest.components
 
         # Create all component instances
         instances: dict[str, ComponentBase] = {}
@@ -126,7 +126,7 @@ def teardown_cluster(
         info(f"Image Architecture: {arch_info.image}")
 
         # Get components in dependency order, then reverse for teardown
-        configs = list(reversed(manifest.get_components_by_priority()))
+        configs = list(reversed(manifest.components))
 
         # Create all component instances
         instances: dict[str, ComponentBase] = {}

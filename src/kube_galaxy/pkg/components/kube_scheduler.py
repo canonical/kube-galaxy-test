@@ -19,7 +19,6 @@ class KubeScheduler(ComponentBase):
     # Component metadata
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = []
-    PRIORITY = 100
 
     # Timeout configuration (in seconds)
     DOWNLOAD_TIMEOUT = 120  # 2 minutes

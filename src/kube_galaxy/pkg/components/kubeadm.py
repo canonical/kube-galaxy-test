@@ -29,7 +29,6 @@ class Kubeadm(ComponentBase):
     # Component metadata
     CATEGORY = "kubernetes/kubernetes"
     DEPENDENCIES: ClassVar[list[str]] = ["kubelet"]
-    PRIORITY = 30
 
     # Timeout configuration (in seconds)
     DOWNLOAD_TIMEOUT = 180  # 3 minutes (kubeadm binary is small)

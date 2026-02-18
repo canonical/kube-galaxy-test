@@ -72,8 +72,7 @@ The current component installation system is:
 ### 1. Manifest Loading
 ```python
 manifest = load_manifest("cluster.yaml")
-components = manifest.get_components_by_priority()
-# Returns: [runc, containerd, kubelet, kubeadm] (sorted by deps + priority)
+# Returns: [runc, containerd, kubelet, kubeadm]
 ```
 
 ### 2. Component Discovery
@@ -83,8 +82,8 @@ component_class = get_component_class(component.name)
 
 # Create instance with manifest context
 component_instance = create_component_instance(
-    component.name, 
-    manifest, 
+    component.name,
+    manifest,
     component
 )
 # Instance has: self.manifest, self.component, and all properties
@@ -168,31 +167,6 @@ for stage in ['pre_install', 'install', 'bootstrap', 'post_bootstrap', 'configur
 - [ ] Performance benchmarks (parallel vs sequential)
 - [ ] Complete documentation with examples
 
-## Component Dependencies Map
-
-```
-runc (priority: 5)
-  └─ containerd (priority: 10)
-      ├─ kubelet (priority: 20)
-      │   └─ kubeadm (priority: 30)
-      └─ kube-proxy (priority: 25)
-
-etcd (priority: 15)
-
-coredns (priority: 40)
-  └─ (after cluster bootstrap)
-
-kube-apiserver (priority: 35)
-kube-controller-manager (priority: 35)
-kube-scheduler (priority: 35)
-  └─ (all started by kubeadm bootstrap)
-
-pause (priority: 8)
-  └─ (needed by containerd)
-
-kubectl (priority: 20)
-  └─ (independent, just a client tool)
-```
 
 ## Manifest Example
 
@@ -204,28 +178,19 @@ components:
   # Container runtime foundation
   - name: runc
     release: "1.3.4"
-    priority: 5
-    
+
   - name: containerd
     release: "2.2.1"
-    dependencies: [runc]
-    priority: 10
-    custom_binary_url: "https://custom-mirror.example.com/containerd-2.2.1.tar.gz"
-    
+    installation:
+      method: "binary-archive"
+      source_format: "https://custom-mirror.example.com/containerd-{version}.tar.gz"
+
   # Kubernetes core
   - name: kubelet
     release: "1.35.0"
-    dependencies: [containerd]
-    priority: 20
-    
+
   - name: kubeadm
     release: "1.35.0"
-    dependencies: [containerd, kubelet]
-    priority: 30
-    skip_hooks: [bootstrap]  # Manual cluster init
-    hook_config:
-      bootstrap:
-        pod_network_cidr: "10.244.0.0/16"
 ```
 
 ## Performance Expectations

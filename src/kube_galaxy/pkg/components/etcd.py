@@ -19,7 +19,6 @@ class Etcd(ComponentBase):
     # Component metadata
     CATEGORY = "etcd"
     DEPENDENCIES: ClassVar[list[str]] = []
-    PRIORITY = 100
 
     # Timeout configuration (in seconds)
     DOWNLOAD_TIMEOUT = 180  # 3 minutes

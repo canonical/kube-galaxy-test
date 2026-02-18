@@ -46,7 +46,6 @@ class MyComponent(ComponentBase):
     # Required: Component metadata
     CATEGORY = "tools"
     DEPENDENCIES = ["dependency1", "dependency2"]
-    PRIORITY = 25
 
     # Optional: Custom timeouts (seconds)
     DOWNLOAD_TIMEOUT = 300
@@ -151,7 +150,6 @@ class EtcdComponent(ComponentBase):
 
     CATEGORY = "database"
     DEPENDENCIES = []
-    PRIORITY = 5  # Install very early
 
     # Custom timeouts
     DOWNLOAD_TIMEOUT = 240

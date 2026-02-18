@@ -72,7 +72,6 @@ class ComponentBase:
     # Component metadata - override in subclass
     CATEGORY: str = ""
     DEPENDENCIES: ClassVar[list[str]] = []
-    PRIORITY: int = 50
 
     def __init__(
         self,

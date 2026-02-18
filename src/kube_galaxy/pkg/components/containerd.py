@@ -24,7 +24,6 @@ class Containerd(ComponentBase):
     # Component metadata
     CATEGORY = "containerd"
     DEPENDENCIES: ClassVar[list[str]] = ["runc"]
-    PRIORITY = 10
 
     # Timeout configuration (in seconds)
     DOWNLOAD_TIMEOUT = 300  # 5 minutes (containerd archive can be large)

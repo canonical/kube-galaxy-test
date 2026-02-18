@@ -86,7 +86,6 @@ class MyComponent(ComponentBase):
 
     CATEGORY = "category"
     DEPENDENCIES = ["dependency1"]
-    PRIORITY = 25
 
     def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
         # Download logic
