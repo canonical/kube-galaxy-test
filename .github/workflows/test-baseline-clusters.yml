@@ -95,11 +95,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Inspect runner
-        uses: owenthereal/action-upterm@v1
-        with:
-          limit-access-to-actor: true
-
       - name: Install kube-galaxy
         shell: bash
         run: |

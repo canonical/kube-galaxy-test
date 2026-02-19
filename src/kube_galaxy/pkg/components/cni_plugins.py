@@ -52,6 +52,7 @@ class CNIPlugins(ComponentBase):
                     raise ComponentError(
                         f"{comp_name} archive not downloaded. Run download hook first."
                     )
+                run([*Commands.SUDO_MKDIR_P, str(self.OPT_CNI_PLUGINS_DIR)], check=True)
                 for item in self.extracted_dir.iterdir():
                     if item.is_file() and item.stat().st_mode & 0o111:
                         run(
