@@ -288,7 +288,7 @@ class ComponentBase:
         """
         Remove all alternatives for binaries in this component's bin directory.
         """
-        component_bin_dir = Path(self.component_dir) / "bin"
+        component_bin_dir = SystemPaths.component_bin_dir(self.name)
         if component_bin_dir.exists():
             for binary in component_bin_dir.glob("*"):
                 if binary.is_file():
@@ -349,7 +349,7 @@ class ComponentBase:
             Path to component temp directory
         """
         temp_dir = Path(self.component_tmp_dir)
-        run([*Commands.SUDO_MKDIR_P, str(temp_dir)], check=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
     def download_binary_from_config(self, arch: str, binary_name: str | None = None) -> Path:
@@ -469,13 +469,17 @@ class ComponentBase:
         """
         try:
             run([*Commands.SYSTEMCTL_STOP, service_name], check=False)
-            run(["sudo", "systemctl", "disable", service_name], check=False)
+            run([*Commands.SYSTEMCTL_DISABLE, service_name], check=False)
             info(f"Stopped {service_name} service")
         except Exception as e:
             info(f"Failed to stop {service_name} service: {e}")
 
     def create_systemd_service(
-        self, service_name: str, service_content: str, system_location: bool = True
+        self,
+        service_name: str,
+        service_content: str,
+        system_location: bool = True,
+        enabled: bool = False,
     ) -> None:
         """
         Create a systemd service file.
@@ -492,18 +496,23 @@ class ComponentBase:
             # Write to temp file first
             temp_dir = self.ensure_temp_dir()
             temp_unit = temp_dir / f"{service_name}.service"
-            run([*Commands.SUDO_TEE, str(temp_unit)], input=service_content, text=True, check=True)
+            temp_unit.write_text(service_content)
 
             # Create target directory and copy
             target_dir = "/etc/systemd/system" if system_location else "/usr/lib/systemd/system"
             target_path = f"{target_dir}/{service_name}.service"
             run([*Commands.SUDO_MKDIR_P, target_dir], check=True)
             run([*Commands.SUDO_CP, str(temp_unit), target_path], check=True)
+
+            # Reload systemd and enable service
+            run([*Commands.SYSTEMCTL_DAEMON_RELOAD], check=True)
+            if enabled:
+                run([*Commands.SYSTEMCTL_ENABLE, service_name], check=True)
         except Exception as e:
             raise ComponentError(f"Failed to create {service_name} service: {e}") from e
 
     def write_config_file(
-        self, config_content: str, target_path: str, mode: str = Permissions.READABLE
+        self, config_content: str, target_path: str | Path, mode: str = Permissions.READABLE
     ) -> None:
         """
         Write configuration content to a file via temporary file.
@@ -519,12 +528,12 @@ class ComponentBase:
         try:
             temp_dir = self.ensure_temp_dir()
             temp_config = temp_dir / "config"
+            temp_config.write_text(config_content)
 
             # Write to temp file, then copy and set permissions
-            run([*Commands.SUDO_TEE, str(temp_config)], input=config_content, text=True, check=True)
             run([*Commands.SUDO_MKDIR_P, str(Path(target_path).parent)], check=True)
-            run([*Commands.SUDO_CP, str(temp_config), target_path], check=True)
-            run([*Commands.SUDO_CHMOD, mode, target_path], check=True)
+            run([*Commands.SUDO_CP, str(temp_config), str(target_path)], check=True)
+            run([*Commands.SUDO_CHMOD, mode, str(target_path)], check=True)
         except Exception as e:
             raise ComponentError(f"Failed to write config to {target_path}: {e}") from e
 
@@ -539,7 +548,7 @@ class ComponentBase:
             ComponentError: If service is not active
         """
         try:
-            run(["sudo", "systemctl", "is-active", service_name], check=True)
+            run([*Commands.SYSTEMCTL_IS_ACTIVE, service_name], check=True)
         except Exception as e:
             raise ComponentError(f"Service {service_name} is not active: {e}") from e
 
@@ -595,7 +604,7 @@ class ComponentBase:
             config_file = Path(config_path)
             if config_file.exists():
                 try:
-                    run(["sudo", "rm", "-f", str(config_file)], check=False)
+                    run([*Commands.SUDO_RM_RF, str(config_file)], check=False)
                     info(f"Removed {name} config: {config_file}")
                 except Exception as e:
                     info(f"Failed to remove {config_file}: {e}")

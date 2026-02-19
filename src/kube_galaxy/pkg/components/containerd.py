@@ -4,10 +4,10 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
-from pathlib import Path
 from typing import ClassVar
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
+from kube_galaxy.pkg.literals import Commands, Permissions
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -56,7 +56,7 @@ class Containerd(ComponentBase):
     def pre_install_hook(self) -> None:
         """Remove any existing containerd installation to avoid conflicts."""
         info("  Removing existing containerd installation if present")
-        run(["sudo", "apt", "remove", "-y", "containerd.io"], check=False)
+        run([*Commands.SUDO_APT_REMOVE, "-y", "containerd.io"], check=False)
 
     def install_hook(self, arch: str) -> None:
         """
@@ -99,14 +99,9 @@ class Containerd(ComponentBase):
         )
 
         # Write containerd config to /etc/containerd/config.toml
-        run(["sudo", "mkdir", "-p", "/etc/containerd"], check=True)
-        temp_config = Path(self.component_tmp_dir) / "config.toml"
-        run(["sudo", "mkdir", "-p", str(temp_config.parent)], check=True)
-
-        # Write config content to temp file with proper permissions
-        run(["sudo", "tee", str(temp_config)], input=config_content, text=True, check=True)
-        run(["sudo", "cp", str(temp_config), "/etc/containerd/config.toml"], check=True)
-        run(["sudo", "chmod", "644", "/etc/containerd/config.toml"], check=True)
+        self.write_config_file(
+            config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
+        )
 
         # Create systemd service unit
         systemd_unit = """[Unit]
@@ -129,23 +124,13 @@ LimitNPROC=infinity
 WantedBy=multi-user.target
 """
 
-        # Write to temporary file first, then copy with sudo
-        temp_unit = Path(self.component_tmp_dir) / "containerd.service"
-
-        # Write service content to temp file with proper permissions
-        run(["sudo", "tee", str(temp_unit)], input=systemd_unit, text=True, check=True)
-        run(["sudo", "mkdir", "-p", "/etc/systemd/system"], check=True)
-        run(["sudo", "cp", str(temp_unit), "/etc/systemd/system/containerd.service"], check=True)
-
-        # Reload systemd and enable service
-        run(["sudo", "systemctl", "daemon-reload"], check=True)
-        run(["sudo", "systemctl", "enable", "containerd"], check=True)
+        self.create_systemd_service("containerd", systemd_unit, enabled=True)
 
     def bootstrap_hook(self) -> None:
         """
         Start containerd service.
         """
-        run(["sudo", "systemctl", "start", "containerd"], check=True)
+        run([*Commands.SYSTEMCTL_START, "containerd"], check=True)
 
     def verify_hook(self) -> None:
         """
@@ -154,7 +139,7 @@ WantedBy=multi-user.target
         Checks service status and command availability.
         """
         # Check service is active
-        run(["sudo", "systemctl", "is-active", "containerd"], check=True)
+        run([*Commands.SYSTEMCTL_IS_ACTIVE, "containerd"], check=True)
 
         # Check containerd command works
         run(["containerd", "--version"], check=True)
@@ -167,7 +152,7 @@ WantedBy=multi-user.target
         """
         try:
             # Stop containerd service
-            run(["sudo", "systemctl", "stop", "containerd"], check=False)
+            run([*Commands.SYSTEMCTL_STOP, "containerd"], check=False)
             info("Stopped containerd service")
 
             # TODO: Add crictl commands to remove containers and images
@@ -201,8 +186,8 @@ WantedBy=multi-user.target
         """
         # Disable and reload systemd if service still exists
         try:
-            run(["sudo", "systemctl", "disable", "containerd"], check=False)
-            run(["sudo", "systemctl", "daemon-reload"], check=False)
+            run([*Commands.SYSTEMCTL_DISABLE, "containerd"], check=False)
+            run([*Commands.SYSTEMCTL_DAEMON_RELOAD], check=False)
             info("Disabled containerd service")
         except Exception:
             pass

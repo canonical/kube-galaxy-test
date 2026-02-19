@@ -26,19 +26,18 @@ def test_ensure_temp_dir_calls_mkdir(monkeypatch, tmp_path):
     comp = ExampleComponent(
         {}, Manifest(name="m", description="d", kubernetes_version="1.0", nodes=None), make_config()
     )
-
-    called = []
-
-    def fake_run(cmd, **kwargs):
-        called.append(list(cmd))
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    # redirect component temp dir to test tmp_path to avoid /opt writes
+    monkeypatch.setattr(
+        SystemPaths,
+        "component_temp_dir",
+        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
+    )
 
     p = Path(comp.component_tmp_dir)
-    # ensure_temp_dir should call sudo mkdir -p with the temp dir
+    # ensure_temp_dir should create the temp dir under tmp_path
     ret = comp.ensure_temp_dir()
     assert str(ret) == str(p)
-    assert any("mkdir" in c for c in (cmd for cmd in called[0]))
+    assert ret.exists()
 
 
 def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path):
@@ -139,17 +138,25 @@ def test_create_systemd_service_and_write_config(monkeypatch, tmp_path):
 
     monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
 
+    # redirect component temp dir to test tmp_path to avoid /opt writes
+    monkeypatch.setattr(
+        SystemPaths,
+        "component_temp_dir",
+        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
+    )
+
     service_name = "svc"
     content = "[Unit]\nDescription=svc"
     comp.create_systemd_service(service_name, content, system_location=False)
-    # Expect tee and cp calls recorded
-    assert any("tee" in cmd for cmd in recorded)
+    # Expect copy calls recorded (we use sudo cp now)
     assert any("cp" in cmd for cmd in recorded)
 
     # test write_config_file
     recorded.clear()
     comp.write_config_file("cfg", str(tmp_path / "cfgfile"))
-    assert any("tee" in cmd for cmd in recorded)
+    # Expect copy and chmod recorded for config write
+    assert any("cp" in cmd for cmd in recorded)
+    assert any("chmod" in cmd for cmd in recorded)
 
 
 def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, tmp_path):

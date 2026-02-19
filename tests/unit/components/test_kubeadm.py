@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import yaml
 
 from kube_galaxy.pkg.components.kubeadm import Kubeadm
+from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
     ComponentConfig,
     InstallConfig,
@@ -16,7 +19,7 @@ class FakeCompleted:
         self.stdout = stdout
 
 
-def test_kubeadm_configure_writes_cluster_config(monkeypatch):
+def test_kubeadm_configure_writes_cluster_config(monkeypatch, tmp_path):
     # Build manifest with networking
     net = NetworkConfig(name="default", service_cidr="10.96.0.0/12", pod_cidr="192.168.0.0/16")
     manifest = Manifest(
@@ -76,8 +79,20 @@ def test_kubeadm_configure_writes_cluster_config(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.components.kubeadm.run", fake_run)
     monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
 
+    # redirect component temp dir to test tmp_path to avoid /opt writes
+    monkeypatch.setattr(
+        SystemPaths,
+        "component_temp_dir",
+        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
+    )
+
     comp.configure_hook()
 
     # After configure_hook, cluster config path should be set
     assert comp._cluster_config is not None
-    assert any(cmd[:2] == ["sudo", "tee"] and str(comp._cluster_config) in cmd for cmd in calls)
+    # The implementation may write the config via tee or copy; accept either
+    assert any(
+        (cmd[:2] == ["sudo", "tee"] or cmd[:2] == ["sudo", "cp"])
+        and str(comp._cluster_config) in cmd
+        for cmd in calls
+    )

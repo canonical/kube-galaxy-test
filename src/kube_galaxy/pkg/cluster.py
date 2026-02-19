@@ -4,6 +4,7 @@ from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.components import COMPONENTS, ComponentBase
+from kube_galaxy.pkg.literals import Commands
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig
 from kube_galaxy.pkg.utils.errors import ClusterError
@@ -352,9 +353,7 @@ def _cleanup_kube_galaxy_alternatives(force: bool) -> None:
                             try:
                                 run(
                                     [
-                                        "sudo",
-                                        "update-alternatives",
-                                        "--remove",
+                                        *Commands.UPDATE_ALTERNATIVES_REMOVE,
                                         binary.name,
                                         str(binary),
                                     ],
@@ -365,7 +364,7 @@ def _cleanup_kube_galaxy_alternatives(force: bool) -> None:
 
         # Remove the entire /opt/kube-galaxy directory
         try:
-            run(["sudo", "rm", "-rf", str(kube_galaxy_dir)], check=False)
+            run([*Commands.SUDO_RM_RF, str(kube_galaxy_dir)], check=False)
             info(f"  Removed {kube_galaxy_dir}")
         except Exception as e:
             if force:

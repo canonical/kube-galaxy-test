@@ -4,12 +4,11 @@ Kubelet component installation and management.
 Kubelet is the primary node agent running on each node.
 """
 
-from pathlib import Path
 from typing import ClassVar
 from urllib.request import urlopen
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
-from kube_galaxy.pkg.literals import URLs
+from kube_galaxy.pkg.literals import Commands, URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -48,36 +47,26 @@ class Kubelet(ComponentBase):
         service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubelet/kubelet.service"
         with urlopen(service_url) as response:
             service_content = response.read().decode("utf-8")
-
-        # Create systemd directories
-        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
-
-        # Write kubelet.service file
-        temp_service = Path(self.component_tmp_dir) / "kubelet.service"
         service_content = service_content.replace("/usr/bin/kubelet", self.install_path)
-        run(["sudo", "mkdir", "-p", str(temp_service.parent)], check=True)
-        run(["sudo", "tee", str(temp_service)], input=service_content, text=True, check=True)
-        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system"], check=True)
-        run(
-            ["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service"], check=True
-        )
+
+        self.create_systemd_service("kubelet", service_content)
 
     def bootstrap_hook(self) -> None:
         """
         Starts kubelet service and enables it to start on boot.
         """
-        run(["sudo", "systemctl", "daemon-reload"], check=True)
-        run(["sudo", "systemctl", "enable", "--now", "kubelet"], check=True)
+        run(Commands.SYSTEMCTL_DAEMON_RELOAD, check=True)
+        run([*Commands.SYSTEMCTL_ENABLE, "--now", "kubelet"], check=True)
 
     def verify_hook(self) -> None:
         """Verify kubelet is working correctly."""
         # Check kubelet systemctl status
-        run(["systemctl", "is-active", "kubelet"], check=True)
+        run([*Commands.SYSTEMCTL_IS_ACTIVE, "kubelet"], check=True)
 
     def stop_hook(self) -> None:
         """Stop the kubelet service."""
         try:
-            run(["sudo", "systemctl", "stop", "kubelet"], check=False)
+            run([*Commands.SYSTEMCTL_STOP, "kubelet"], check=False)
             info("Stopped kubelet service")
         except Exception as e:
             info(f"Failed to stop kubelet service: {e}")
