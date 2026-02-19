@@ -70,7 +70,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         _download_components(instances_list, configs, arch_info)
         _pre_install_components(instances_list, configs)
         _install_components(instances_list, configs, arch_info)
-        _configure_components(instances_list, configs)
+        _configure_components(instances_list, configs, arch_info)
         _bootstrap_components(instances_list, configs)
         _post_bootstrap_components(instances_list, configs)
         _verify_components(instances_list, configs)
@@ -201,14 +201,16 @@ def _install_components(
             raise
 
 
-def _configure_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
+def _configure_components(
+    instances: list[ComponentBase], configs: list[ComponentConfig], arch_info: ArchInfo
+) -> None:
     """Stage 4/8: Configure components (config files, settings)."""
     section("Stage 4/8: Configuring Components")
 
     for config, instance in zip(configs, instances, strict=True):
         info(f"  {config.name}: configuring...")
         try:
-            instance.configure_hook()
+            instance.configure_hook(arch_info.image)
         except Exception as exc:
             exception(f"  ✗ Configure failed for {config.name}", exc)
             raise

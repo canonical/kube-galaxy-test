@@ -39,7 +39,7 @@ class Kubelet(ComponentBase):
         info("    Disabling swap...")
         run(["sudo", "swapoff", "-a"], check=True)
 
-    def configure_hook(self) -> None:
+    def configure_hook(self, arch: str) -> None:
         """
         Configures kubelet systemd service to be ready to start by kubeadm.
 

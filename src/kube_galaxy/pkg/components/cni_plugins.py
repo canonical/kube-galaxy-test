@@ -72,7 +72,7 @@ class CNIPlugins(ComponentBase):
                     f" {self.config.installation.method}"
                 )
 
-    def configure_hook(self) -> None:
+    def configure_hook(self, arch: str) -> None:
         loopback_content = dedent("""
         {
           "cniVersion": "0.4.0",

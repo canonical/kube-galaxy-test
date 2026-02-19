@@ -225,14 +225,26 @@ class ComponentBase:
         """
         pass
 
-    def configure_hook(self) -> None:
+    def configure_hook(self, arch: str) -> None:
         """
         Configure the component (create config files, etc.).
 
         This hook runs in the CONFIGURE stage before BOOTSTRAP (sequential).
         Override to implement configuration logic.
         """
-        pass
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        match self.config.installation.method:
+            case InstallMethod.CONTAINER_IMAGE:
+                self.container_image_pull(arch)
+            case InstallMethod.BINARY | InstallMethod.BINARY_ARCHIVE | InstallMethod.NONE:
+                pass  # No default configuration needed for these methods
+            case _:
+                raise ComponentError(
+                    f"Unsupported configuration method for {self.config.name}: "
+                    f"{self.config.installation.method}"
+                )
 
     def verify_hook(self) -> None:
         """
@@ -410,6 +422,55 @@ class ComponentBase:
         download_file(url, binary_path)
 
         return binary_path
+
+    def container_image_pull(self, arch: str) -> None:
+        """
+        Pull container image for this component.
+
+        This is a placeholder for container image pull logic, which may involve
+        using 'ctr' or 'docker' commands to pull the specified image.
+        """
+
+        if ctr := shutil.which("ctr"):
+            repo = self.config.repo
+            release = self.config.release
+            source_format = self.config.installation.source_format
+
+            # Construct image from source_format template
+            image = source_format.format(repo=repo, release=release, arch=arch)
+
+            run([ctr, "-n", "k8s.io", "images", "pull", image], check=True)
+        else:
+            raise ComponentError("Container image pull requested but 'ctr' command not found")
+
+    def container_image_import(self, arch: str) -> None:
+        """
+        Pull container image for this component.
+
+        This is a placeholder for container image import logic, which involves
+        using 'ctr' or 'docker' commands to import the specified image.
+        """
+        if not self.extracted_dir or not self.extracted_dir.exists():
+            raise ComponentError(
+                f"{self.config.name} image archive not found. Run download hook first."
+            )
+
+        if ctr := shutil.which("ctr"):
+            repo = self.config.repo
+            release = self.config.release
+            source_format = self.config.installation.source_format
+
+            archive = self.extracted_dir / "image.tar"
+
+            # Construct image from source_format template
+            image = source_format.format(repo=repo, release=release, arch=arch)
+
+            # TODO: find the right way to read the metadata from the tar before importing, to get the correct image reference
+            which = run([ctr, "-n", "k8s.io", "images", "import", str(archive)], check=True, capture_output=True, text=True)
+            run([ctr, "-n", "k8s.io", "images", "tag", which.stdout.strip(), image], check=True)  # Tag the imported image
+        else:
+            raise ComponentError("Container image import requested but 'ctr' command not found")
+
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
         """
