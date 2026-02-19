@@ -12,7 +12,7 @@ from urllib.request import urlopen
 import yaml
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
-from kube_galaxy.pkg.literals import URLs
+from kube_galaxy.pkg.literals import Commands, URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -89,11 +89,16 @@ class Kubeadm(ComponentBase):
                 )
                 config["clusterName"] = self.manifest.name
         self._cluster_config = Path(self.component_tmp_dir) / "kubeadm-config.yaml"
-        run(["sudo", "mkdir", "-p", str(self._cluster_config.parent)], check=True)
+        run([*Commands.SUDO_MKDIR_P, str(self._cluster_config.parent)], check=True)
 
         # Write config to temp file via sudo
         config_content = yaml.safe_dump_all(configs)
-        run(["sudo", "tee", str(self._cluster_config)], input=config_content, text=True, check=True)
+        run(
+            [*Commands.SUDO_TEE, str(self._cluster_config)],
+            input=config_content,
+            text=True,
+            check=True,
+        )
 
     def bootstrap_hook(self) -> None:
         """
@@ -121,14 +126,14 @@ class Kubeadm(ComponentBase):
 
         # Copy admin config
         run(
-            ["sudo", "cp", "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
+            [*Commands.SUDO_CP, "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
             check=True,
         )
 
         # Set proper ownership
         owner = home.owner()
         group = home.group()
-        run(["sudo", "chown", f"{owner}:{group}", str(kube_dir / "config")], check=True)
+        run([*Commands.SUDO_CHOWN, f"{owner}:{group}", str(kube_dir / "config")], check=True)
 
     def verify_hook(self) -> None:
         """

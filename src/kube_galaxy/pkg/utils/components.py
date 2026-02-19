@@ -3,6 +3,7 @@ Utilities for component installation and management.
 """
 
 import hashlib
+import shutil
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -70,7 +71,6 @@ def install_binary(
     binary_path: Path,
     binary_name: str,
     component_name: str,
-    dest_dir: Path | None = None,
 ) -> str:
     """
     Install a binary to component directory and register with update-alternatives.
@@ -79,21 +79,18 @@ def install_binary(
         binary_path: Path to the binary
         binary_name: Name of the binary (e.g., 'containerd')
         component_name: Component name for directory structure
-        dest_dir: Optional override destination directory
 
     Raises:
         ComponentError: If installation fails
     """
+    # Use component-specific directory
+    dest_dir = SystemPaths.component_bin_dir(component_name)
     try:
-        # Use component-specific directory if not overridden
-        if dest_dir is None:
-            dest_dir = SystemPaths.component_bin_dir(component_name)
-
         # Create directory and install binary
-        run([*Commands.SUDO_MKDIR_P, str(dest_dir)], check=True)
+        dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = dest_dir / binary_name
-        run([*Commands.SUDO_CP, str(binary_path), str(dest_path)], check=True)
-        run([*Commands.SUDO_CHMOD, Permissions.EXECUTABLE, str(dest_path)], check=True)
+        shutil.copyfile(binary_path, dest_path)
+        dest_path.chmod(0o755)
 
         # Register with update-alternatives
         alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"

@@ -63,16 +63,21 @@ class Commands:
     """Common shell command patterns."""
 
     # sudo commands
-    SUDO: ClassVar[list[str]] = ["sudo"]
     SUDO_MKDIR_P: ClassVar[list[str]] = ["sudo", "mkdir", "-p"]
     SUDO_CP: ClassVar[list[str]] = ["sudo", "cp"]
     SUDO_RM_RF: ClassVar[list[str]] = ["sudo", "rm", "-rf"]
     SUDO_TEE: ClassVar[list[str]] = ["sudo", "tee"]
     SUDO_CHMOD: ClassVar[list[str]] = ["sudo", "chmod"]
+    SUDO_CHOWN: ClassVar[list[str]] = ["sudo", "chown"]
+
+    # apt commands
+    SUDO_APT_REMOVE: ClassVar[list[str]] = ["sudo", "apt", "remove"]
 
     # systemctl commands
     SYSTEMCTL_DAEMON_RELOAD: ClassVar[list[str]] = ["sudo", "systemctl", "daemon-reload"]
     SYSTEMCTL_ENABLE: ClassVar[list[str]] = ["sudo", "systemctl", "enable"]
+    SYSTEMCTL_DISABLE: ClassVar[list[str]] = ["sudo", "systemctl", "disable"]
+    SYSTEMCTL_IS_ACTIVE: ClassVar[list[str]] = ["sudo", "systemctl", "is-active"]
     SYSTEMCTL_START: ClassVar[list[str]] = ["sudo", "systemctl", "start"]
     SYSTEMCTL_STOP: ClassVar[list[str]] = ["sudo", "systemctl", "stop"]
     SYSTEMCTL_RESTART: ClassVar[list[str]] = ["sudo", "systemctl", "restart"]

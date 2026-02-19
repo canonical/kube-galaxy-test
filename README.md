@@ -21,13 +21,18 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
 
 ### Development Setup
 
-1. **Clone the repository**:
+1. **Install astral**:
+   ```bash
+   sudo snap install astral-uv --classic
+   ```
+
+2. **Clone the repository**:
    ```bash
    git clone https://github.com/canonical/kube-galaxy-test.git
    cd kube-galaxy-test
    ```
 
-2. **Create Python environment** (using `uv`):
+3. **Create Python environment** (using `uv`):
    ```bash
    uv venv
    source .venv/bin/activate
@@ -39,9 +44,9 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
    source .venv/bin/activate
    ```
 
-3. **Install kube-galaxy with dev dependencies**:
+4. **Install kube-galaxy with dev dependencies**:
    ```bash
-   uv tool install -e .
+   uv pip install -e .
    ```
 
 ### Basic Usage
@@ -56,12 +61,17 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
    kube-galaxy test-manifest manifests/baseline-k8s-1.35.yaml
    ```
 
-3. **Check project status**:
+3. **Setup the cluster**:
+   ```bash
+   kube-galaxy setup manifests/baseline-k8s-1.35.yaml
+   ```
+
+4. **Check project status**:
    ```bash
    kube-galaxy status
    ```
 
-4. **Run tests**:
+5. **Run tests**:
    ```bash
    # Run local validation tests
    kube-galaxy test local

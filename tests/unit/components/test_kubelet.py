@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from kube_galaxy.pkg.components.kubelet import Kubelet
+from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
     ComponentConfig,
     InstallConfig,
@@ -53,10 +54,19 @@ def test_kubelet_configure_calls_urlopen_and_tee(monkeypatch, tmp_path):
         lambda url: ExampleResp(b"ExecStart=/usr/bin/kubelet\n"),
     )
     monkeypatch.setattr("kube_galaxy.pkg.components.kubelet.run", fake_run)
+    # Patch the base module run used by create_systemd_service
+    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+
+    # redirect component temp dir to test tmp_path to avoid /opt writes
+    monkeypatch.setattr(
+        SystemPaths,
+        "component_temp_dir",
+        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
+    )
 
     # Call configure hook
     comp.configure_hook()
 
-    # Expect tee to be called to write temp service file
+    # Expect cp to be called to copy temp service file to system location
     temp_service = Path(comp.component_tmp_dir) / "kubelet.service"
-    assert any(cmd[:2] == ["sudo", "tee"] and str(temp_service) in cmd for cmd in calls)
+    assert any(cmd[:2] == ["sudo", "cp"] and str(temp_service) in cmd for cmd in calls)
