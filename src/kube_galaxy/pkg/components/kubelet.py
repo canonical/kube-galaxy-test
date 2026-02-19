@@ -38,7 +38,7 @@ class Kubelet(ComponentBase):
         This includes disabling swap and configuring kubelet service for kubeadm.
         """
         # Disable swap which is required for kubelet to work properly
-        info("  Disabling swap...")
+        info("    Disabling swap...")
         run(["sudo", "swapoff", "-a"], check=True)
 
     def configure_hook(self) -> None:

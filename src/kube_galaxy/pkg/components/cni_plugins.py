@@ -10,6 +10,7 @@ from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -55,6 +56,7 @@ class CNIPlugins(ComponentBase):
                 run([*Commands.SUDO_MKDIR_P, str(self.OPT_CNI_PLUGINS_DIR)], check=True)
                 for item in self.extracted_dir.iterdir():
                     if item.is_file() and item.stat().st_mode & 0o111:
+                        info(f"    Symlink {comp_name} binary: {item.name}")
                         run(
                             [
                                 *Commands.SUDO_SYMLINK,
@@ -101,6 +103,7 @@ class CNIPlugins(ComponentBase):
                     )
                 for item in self.extracted_dir.iterdir():
                     if item.is_file() and item.stat().st_mode & 0o111:
+                        info(f"    Removed {comp_name} binary: {item.name}")
                         run([*Commands.SUDO_RM_RF, str(self.OPT_CNI_PLUGINS_DIR / item.name)])
 
         # Remove component directory (binaries)

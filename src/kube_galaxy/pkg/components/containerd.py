@@ -8,7 +8,6 @@ from typing import ClassVar
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, Permissions
-from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
@@ -31,6 +30,7 @@ class Containerd(ComponentBase):
     INSTALL_TIMEOUT = 120  # 2 minutes (extract and copy)
     BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
     CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
+    BIN_PATH = "bin/*"  # Path inside archive where containerd binary is located
 
     def _get_pause_image(self) -> str:
         """
@@ -57,20 +57,6 @@ class Containerd(ComponentBase):
         """Remove any existing containerd installation to avoid conflicts."""
         info("  Removing existing containerd installation if present")
         run([*Commands.SUDO_APT_REMOVE, "-y", "containerd.io"], check=False)
-
-    def install_hook(self, arch: str) -> None:
-        """
-        Install containerd binary from extracted archive.
-
-        Requires download_hook to have completed first.
-        """
-        if not self.extracted_dir or not self.extracted_dir.exists():
-            raise ComponentError("containerd archive not downloaded. Run download hook first.")
-
-        if self.extracted_dir.name != "bin":
-            self.extracted_dir = self.extracted_dir / "bin"
-
-        return super().install_hook(arch)
 
     def configure_hook(self) -> None:
         """
@@ -202,4 +188,4 @@ WantedBy=multi-user.target
 
         # Clean up temporary extraction directory if it exists
         if self.extracted_dir and self.extracted_dir.exists():
-            self.remove_directories([str(self.extracted_dir.parent)])
+            self.remove_directories([str(self.extracted_dir)])

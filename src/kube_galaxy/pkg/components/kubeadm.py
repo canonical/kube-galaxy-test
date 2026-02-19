@@ -48,7 +48,7 @@ class Kubeadm(ComponentBase):
         This includes disabling swap and configuring kubelet service for kubeadm.
         """
         # Enable IP forwarding for kubeadm networking
-        info(" ipForward = 1")
+        info("    Setting net.ipv4.ip_forward = 1")
         run(["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"], check=True)
 
     def configure_hook(self) -> None:
