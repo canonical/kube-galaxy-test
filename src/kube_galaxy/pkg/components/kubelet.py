@@ -33,9 +33,7 @@ class Kubelet(ComponentBase):
 
     def _system_settings(self) -> None:
         """
-        Apply necessary system settings for kubeadm.
-
-        This includes disabling swap and configuring kubelet service for kubeadm.
+        Apply necessary system settings for kubelet.
         """
         # Disable swap which is required for kubelet to work properly
         info("    Disabling swap...")

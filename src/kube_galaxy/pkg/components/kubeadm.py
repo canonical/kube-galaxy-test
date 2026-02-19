@@ -44,8 +44,6 @@ class Kubeadm(ComponentBase):
     def _system_settings(self) -> None:
         """
         Apply necessary system settings for kubeadm.
-
-        This includes disabling swap and configuring kubelet service for kubeadm.
         """
         # Enable IP forwarding for kubeadm networking
         info("    Setting net.ipv4.ip_forward = 1")

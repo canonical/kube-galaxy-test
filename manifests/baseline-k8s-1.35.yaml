@@ -39,10 +39,11 @@ components:
     installation:
       method: "binary-archive"
       source_format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
+    use-spread: false
 
   - name: kubelet
     category: kubernetes/kubernetes
-    release: "1.36.0"
+    release: "1.35.0"
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary-archive"
@@ -52,7 +53,7 @@ components:
   # Kubernetes binaries
   - name: kubeadm
     category: kubernetes/kubernetes
-    release: "1.36.0"
+    release: "1.35.0"
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary-archive"
@@ -112,16 +113,6 @@ components:
     installation:
       method: "container-image"
       source_format: "registry.k8s.io/pause:3.10"
-    use-spread: false
-
-  # CNI plugins
-  - name: cni-plugins
-    category: container-networking
-    release: "1.8.0"
-    repo: "https://github.com/containernetworking/plugins"
-    installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
     use-spread: false
 
   # CoreDNS
