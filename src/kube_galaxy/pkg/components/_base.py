@@ -5,6 +5,7 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
+import shutil
 from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar
@@ -185,6 +186,11 @@ class ComponentBase:
                     installed = self.install_downloaded_binary(each, each.name)
                     if each.name == comp_name:
                         self.install_path = installed
+            case _:
+                raise ComponentError(
+                    f"Unsupported installation method for {comp_name}: "
+                    f"{self.config.installation.method}"
+                )
 
     def bootstrap_hook(self) -> None:
         """
@@ -304,10 +310,7 @@ class ComponentBase:
         """
         Remove the entire component directory.
         """
-        try:
-            run([*Commands.SUDO_RM_RF, self.component_dir], check=False)
-        except Exception:
-            pass  # Ignore errors during cleanup
+        shutil.rmtree(self.component_dir, ignore_errors=True)
 
     # Teardown hooks - all have default empty implementations
     # Override in subclass as needed
@@ -406,13 +409,12 @@ class ComponentBase:
         self.install_path = install_path
         return install_path
 
-    def download_and_extract_archive(self, arch: str, extract_dir: Path | None = None) -> Path:
+    def download_and_extract_archive(self, arch: str) -> Path:
         """
         Download and extract archive from config.
 
         Args:
             arch: Architecture string (e.g., 'amd64')
-            extract_dir: Custom extraction directory (optional)
 
         Returns:
             Path to extraction directory
@@ -437,7 +439,7 @@ class ComponentBase:
         download_file(url, archive_path)
 
         # Extract archive
-        extract_destination = extract_dir or (temp_dir / "extracted")
+        extract_destination = temp_dir / "extracted"
         extract_destination.mkdir(exist_ok=True)
         extract_archive(archive_path, extract_destination)
 

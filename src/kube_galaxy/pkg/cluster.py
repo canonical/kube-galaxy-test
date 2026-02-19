@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
-from kube_galaxy.pkg.components import COMPONENTS, ComponentBase
+from kube_galaxy.pkg.components import ComponentBase, find_component
 from kube_galaxy.pkg.literals import Commands
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig
@@ -61,7 +61,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         # Create all component instances
         instances: dict[str, ComponentBase] = {}
         for config in configs:
-            component_class = COMPONENTS.get(config.name, ComponentBase)
+            component_class = find_component(config.name)
             instance = component_class(instances, manifest, config)
             instances[config.name] = instance
 
@@ -132,7 +132,7 @@ def teardown_cluster(
         # Create all component instances
         instances: dict[str, ComponentBase] = {}
         for config in configs:
-            component_class = COMPONENTS.get(config.name, ComponentBase)
+            component_class = find_component(config.name)
             instance = component_class(instances, manifest, config)
             instances[config.name] = instance
 
