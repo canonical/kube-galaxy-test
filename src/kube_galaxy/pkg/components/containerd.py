@@ -5,63 +5,111 @@ Containerd is the container runtime used by Kubernetes clusters.
 """
 
 from pathlib import Path
+from typing import ClassVar
 
-from kube_galaxy.pkg.utils.components import (
-    download_file,
-    extract_archive,
-    install_binary,
-    remove_binary,
-)
+from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+@register_component
+class Containerd(ComponentBase):
     """
-    Install containerd binary.
+    Containerd container runtime component.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v2.0.6')
-        format: Installation format (Binary, Binary+Container)
-        arch: Architecture (amd64, arm64, etc.)
+    Handles downloading, installing, and starting the containerd
+    container runtime for Kubernetes.
     """
-    # Ensure version has 'v' prefix
-    if not release.startswith("v"):
-        release = f"v{release}"
 
-    # Construct download URL
-    filename = f"containerd-{release}.linux-{arch}.tar.gz"
-    url = f"{repo}/releases/download/{release}/{filename}"
+    # Component metadata
+    CATEGORY = "containerd"
+    DEPENDENCIES: ClassVar[list[str]] = ["runc"]
 
-    # Download to temporary directory
-    temp_dir = Path("/tmp/containerd-install")
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 300  # 5 minutes (containerd archive can be large)
+    INSTALL_TIMEOUT = 120  # 2 minutes (extract and copy)
+    BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
+    CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
 
-    archive_path = temp_dir / filename
-    download_file(url, archive_path)
+    def _get_pause_image(self) -> str:
+        """
+        Get pause image from pause component or use default.
 
-    # Extract archive
-    extract_dir = temp_dir / "extracted"
-    extract_dir.mkdir(exist_ok=True)
-    extract_archive(archive_path, extract_dir)
+        Checks if pause component is loaded in the instances dict
+        and uses its configuration for the sandbox_image.
 
-    # Install binary
-    binary_path = extract_dir / "bin" / "containerd"
-    if not binary_path.exists():
-        raise ComponentError(f"containerd binary not found in archive at {binary_path}")
+        Returns:
+            Pause image URL to use in containerd config
+        """
+        if pause := self.instances.get("pause"):
+            # Use source_format if it's a container image
+            if pause.config.installation.source_format:
+                return pause.config.installation.source_format
+            # Otherwise construct from release version
+            if pause.config.release:
+                return f"registry.k8s.io/pause:{pause.config.release}"
 
-    install_binary(binary_path, "containerd")
+        # Fallback to default if no pause component
+        return "registry.k8s.io/pause:3.9"
 
+    def pre_install_hook(self) -> None:
+        """Remove any existing containerd installation to avoid conflicts."""
+        info("  Removing existing containerd installation if present")
+        run(["sudo", "apt", "remove", "-y", "containerd.io"], check=False)
 
-def configure() -> None:
-    """
-    Configure containerd.
+    def install_hook(self, arch: str) -> None:
+        """
+        Install containerd binary from extracted archive.
 
-    Creates systemd service unit and default configuration.
-    """
-    # Create systemd service unit
-    systemd_unit = """[Unit]
+        Requires download_hook to have completed first.
+        """
+        if not self.extracted_dir or not self.extracted_dir.exists():
+            raise ComponentError("containerd archive not downloaded. Run download hook first.")
+
+        if self.extracted_dir.name != "bin":
+            self.extracted_dir = self.extracted_dir / "bin"
+
+        return super().install_hook(arch)
+
+    def configure_hook(self) -> None:
+        """
+        Configure containerd with proper Kubernetes-compatible settings.
+
+        Generates default config, sets SystemdCgroup=true (required for K8s),
+        configures pause image, and creates systemd service file.
+        """
+        # Generate default containerd config
+        result = run(
+            ["containerd", "config", "default"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        config_content = result.stdout
+
+        # Set SystemdCgroup = true (required for Kubernetes)
+        config_content = config_content.replace("SystemdCgroup = false", "SystemdCgroup = true")
+
+        # Configure pause image (sandbox_image) from pause component or default
+        pause_image = self._get_pause_image()
+        config_content = config_content.replace(
+            'sandbox_image = "registry.k8s.io/pause:3.8"',
+            f'sandbox_image = "{pause_image}"',
+        )
+
+        # Write containerd config to /etc/containerd/config.toml
+        run(["sudo", "mkdir", "-p", "/etc/containerd"], check=True)
+        temp_config = Path(self.component_tmp_dir) / "config.toml"
+        run(["sudo", "mkdir", "-p", str(temp_config.parent)], check=True)
+
+        # Write config content to temp file with proper permissions
+        run(["sudo", "tee", str(temp_config)], input=config_content, text=True, check=True)
+        run(["sudo", "cp", str(temp_config), "/etc/containerd/config.toml"], check=True)
+        run(["sudo", "chmod", "644", "/etc/containerd/config.toml"], check=True)
+
+        # Create systemd service unit
+        systemd_unit = """[Unit]
 Description=containerd container runtime
 Documentation=https://containerd.io
 After=network.target local-fs.target
@@ -81,33 +129,92 @@ LimitNPROC=infinity
 WantedBy=multi-user.target
 """
 
-    unit_path = Path("/etc/systemd/system/containerd.service")
-    unit_path.parent.mkdir(parents=True, exist_ok=True)
-    unit_path.write_text(systemd_unit)
+        # Write to temporary file first, then copy with sudo
+        temp_unit = Path(self.component_tmp_dir) / "containerd.service"
 
-    # Reload systemd and enable service
-    run(["systemctl", "daemon-reload"])
-    run(["systemctl", "enable", "containerd"])
-    run(["systemctl", "start", "containerd"])
+        # Write service content to temp file with proper permissions
+        run(["sudo", "tee", str(temp_unit)], input=systemd_unit, text=True, check=True)
+        run(["sudo", "mkdir", "-p", "/etc/systemd/system"], check=True)
+        run(["sudo", "cp", str(temp_unit), "/etc/systemd/system/containerd.service"], check=True)
 
+        # Reload systemd and enable service
+        run(["sudo", "systemctl", "daemon-reload"], check=True)
+        run(["sudo", "systemctl", "enable", "containerd"], check=True)
 
-def remove() -> None:
-    """
-    Remove containerd.
+    def bootstrap_hook(self) -> None:
+        """
+        Start containerd service.
+        """
+        run(["sudo", "systemctl", "start", "containerd"], check=True)
 
-    Stops service and removes binary.
-    """
-    try:
-        run(["systemctl", "stop", "containerd"], check=False)
-        run(["systemctl", "disable", "containerd"], check=False)
-    except Exception:
-        pass
+    def verify_hook(self) -> None:
+        """
+        Verify containerd is running and functional.
 
-    remove_binary("containerd")
+        Checks service status and command availability.
+        """
+        # Check service is active
+        run(["sudo", "systemctl", "is-active", "containerd"], check=True)
 
-    # Remove systemd unit
-    unit_path = Path("/etc/systemd/system/containerd.service")
-    if unit_path.exists():
-        unit_path.unlink()
+        # Check containerd command works
+        run(["containerd", "--version"], check=True)
 
-    run(["systemctl", "daemon-reload"], check=False)
+    def stop_hook(self) -> None:
+        """
+        Stop the containerd service and remove containers/images.
+
+        This is a destructive process that removes all container runtime data.
+        """
+        try:
+            # Stop containerd service
+            run(["sudo", "systemctl", "stop", "containerd"], check=False)
+            info("Stopped containerd service")
+
+            # TODO: Add crictl commands to remove containers and images
+            # crictl rm --all
+            # crictl rmi --all
+            # Note: crictl may not be available during teardown
+
+        except Exception as e:
+            info(f"Failed to stop containerd service: {e}")
+
+    def delete_hook(self) -> None:
+        """
+        Remove containerd alternatives, binaries, and configuration files.
+        """
+        # Remove update-alternatives entries for this component
+        self.remove_component_alternatives()
+
+        # Remove component directory (binaries)
+        self.cleanup_component_dir()
+
+        # Remove containerd configuration files
+        config_files = [
+            "/etc/containerd/config.toml",
+            "/etc/systemd/system/containerd.service",
+        ]
+        self.remove_config_files(config_files)
+
+    def post_delete_hook(self) -> None:
+        """
+        Clean up containerd data directories and disable systemd service.
+        """
+        # Disable and reload systemd if service still exists
+        try:
+            run(["sudo", "systemctl", "disable", "containerd"], check=False)
+            run(["sudo", "systemctl", "daemon-reload"], check=False)
+            info("Disabled containerd service")
+        except Exception:
+            pass
+
+        # Remove containerd data directories (destructive cleanup)
+        containerd_dirs = [
+            "/var/lib/containerd",
+            "/run/containerd",
+            "/etc/containerd",
+        ]
+        self.remove_directories(containerd_dirs)
+
+        # Clean up temporary extraction directory if it exists
+        if self.extracted_dir and self.extracted_dir.exists():
+            self.remove_directories([str(self.extracted_dir.parent)])

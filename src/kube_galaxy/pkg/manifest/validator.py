@@ -1,6 +1,6 @@
 """Manifest validation and utilities."""
 
-from kube_galaxy.pkg.manifest.models import Component, Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 
 
 def validate_manifest(manifest: Manifest) -> None:
@@ -25,26 +25,26 @@ def validate_manifest(manifest: Manifest) -> None:
         raise ValueError("Worker node count cannot be negative")
 
 
-def get_components_with_spread(manifest: Manifest) -> list[Component]:
+def get_components_with_spread(manifest: Manifest) -> list[ComponentConfig]:
     """Get all components marked with use_spread=true.
 
     Args:
         manifest: Manifest to query
 
     Returns:
-        List of components with spread tests enabled
+        List of component configs with spread tests enabled
     """
     return [comp for comp in manifest.components if comp.use_spread]
 
 
-def get_component(manifest: Manifest, name: str) -> Component | None:
-    """Get component by name from manifest.
+def get_component(manifest: Manifest, name: str) -> ComponentConfig | None:
+    """Get component config by name from manifest.
 
     Args:
         manifest: Manifest to search
-        name: Component name
+        name: Component config name
 
     Returns:
-        Component if found, None otherwise
+        ComponentConfig if found, None otherwise
     """
     return manifest.get_component(name)

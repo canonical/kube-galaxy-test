@@ -5,93 +5,89 @@ Kubelet is the primary node agent running on each node.
 """
 
 from pathlib import Path
+from typing import ClassVar
+from urllib.request import urlopen
 
-from kube_galaxy.pkg.utils.components import (
-    download_file,
-    install_binary,
-    remove_binary,
-)
+from kube_galaxy.pkg.components import ComponentBase, register_component
+from kube_galaxy.pkg.literals import URLs
+from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+@register_component
+class Kubelet(ComponentBase):
     """
-    Install kubelet binary.
+    Kubelet component for Kubernetes nodes.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.33.4')
-        format: Installation format (Binary)
-        arch: Architecture (amd64, arm64, etc.)
+    This component handles kubelet installation and configuration.
     """
-    # Ensure version has 'v' prefix
-    if not release.startswith("v"):
-        release = f"v{release}"
 
-    # Construct download URL
-    filename = "kubelet"
-    url = f"{repo}/releases/download/{release}/bin/linux/{arch}/{filename}"
+    # Component metadata
+    CATEGORY = "kubernetes/kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = ["containerd"]
 
-    # Download binary
-    temp_dir = Path("/tmp/kubelet-install")
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 180  # 3 minutes
+    INSTALL_TIMEOUT = 120  # 2 minutes
+    CONFIGURE_TIMEOUT = 120  # 2 minutes
+    VERIFY_TIMEOUT = 120  # 2 minutes
 
-    binary_path = temp_dir / "kubelet"
-    download_file(url, binary_path)
+    def configure_hook(self) -> None:
+        """
+        Configures kubelet systemd service to be ready to start by kubeadm.
 
-    # Install binary
-    install_binary(binary_path, "kubelet")
+        Configure the kubelet.service based on the Kubernetes release repository,
+        replaces /usr/bin with the actual kubelet installation path, and creates
+        the systemd service file and service.d directory.
+        """
+        if not self.config:
+            raise ComponentError("Config required for configuration")
 
+        # Download kubelet.service from Kubernetes release repository
+        service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubelet/kubelet.service"
+        with urlopen(service_url) as response:
+            service_content = response.read().decode("utf-8")
 
-def configure() -> None:
-    """
-    Configure kubelet.
+        # Create systemd directories
+        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system/kubelet.service.d"], check=True)
 
-    Creates systemd service unit for kubelet.
-    """
-    systemd_unit = """[Unit]
-Description=kubelet: The Kubernetes Node Agent
-Documentation=https://kubernetes.io/docs/
-After=containerd.service
+        # Write kubelet.service file
+        temp_service = Path(self.component_tmp_dir) / "kubelet.service"
+        service_content = service_content.replace("/usr/bin/kubelet", self.install_path)
+        run(["sudo", "mkdir", "-p", str(temp_service.parent)], check=True)
+        run(["sudo", "tee", str(temp_service)], input=service_content, text=True, check=True)
+        run(["sudo", "mkdir", "-p", "/usr/lib/systemd/system"], check=True)
+        run(
+            ["sudo", "cp", str(temp_service), "/usr/lib/systemd/system/kubelet.service"], check=True
+        )
 
-[Service]
-ExecStart=/usr/local/bin/kubelet \\
-  --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf \\
-  --kubeconfig=/etc/kubernetes/kubelet.conf \\
-  --config=/etc/kubernetes/kubelet-config.yaml \\
-  --container-runtime-endpoint=unix:///var/run/containerd/containerd.sock
-Restart=on-failure
-RestartSec=5
+    def bootstrap_hook(self) -> None:
+        """
+        Starts kubelet service and enables it to start on boot.
+        """
+        run(["sudo", "systemctl", "daemon-reload"], check=True)
+        run(["sudo", "systemctl", "enable", "--now", "kubelet"], check=True)
 
-[Install]
-WantedBy=multi-user.target
-"""
+    def verify_hook(self) -> None:
+        """Verify kubelet is working correctly."""
+        # Check kubelet systemctl status
+        run(["systemctl", "is-active", "kubelet"], check=True)
 
-    unit_path = Path("/etc/systemd/system/kubelet.service")
-    unit_path.parent.mkdir(parents=True, exist_ok=True)
-    unit_path.write_text(systemd_unit)
+    def stop_hook(self) -> None:
+        """Stop the kubelet service."""
+        try:
+            run(["sudo", "systemctl", "stop", "kubelet"], check=False)
+            info("Stopped kubelet service")
+        except Exception as e:
+            info(f"Failed to stop kubelet service: {e}")
 
-    # Reload systemd
-    run(["systemctl", "daemon-reload"], check=False)
+    def delete_hook(self) -> None:
+        """Remove kubelet binary and configuration."""
+        # Remove kubelet binary
+        self.remove_installed_binary()
 
-
-def remove() -> None:
-    """
-    Remove kubelet.
-
-    Stops service and removes binary.
-    """
-    try:
-        run(["systemctl", "stop", "kubelet"], check=False)
-        run(["systemctl", "disable", "kubelet"], check=False)
-    except Exception:
-        pass
-
-    remove_binary("kubelet")
-
-    # Remove systemd unit
-    unit_path = Path("/etc/systemd/system/kubelet.service")
-    if unit_path.exists():
-        unit_path.unlink()
-
-    run(["systemctl", "daemon-reload"], check=False)
+    def post_delete_hook(self) -> None:
+        """Clean up kubelet data directory and remaining files."""
+        # Remove kubelet data directory
+        self.remove_directories(["/var/lib/kubelet"])

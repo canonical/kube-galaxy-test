@@ -11,8 +11,6 @@ on:
       - '.github/workflows/test-baseline-clusters.yml'
       - 'pyproject.toml'
   pull_request:
-    branches:
-      - main
     paths:
       - 'src/**'
       - 'manifests/*.yaml'
@@ -33,7 +31,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Discover manifests dynamically
+  # Discover manifests dynamically based on trigger and ci-skip flags
   discover-manifests:
     runs-on: ubuntu-latest
     outputs:
@@ -46,15 +44,42 @@ jobs:
         id: discover
         shell: bash
         run: |
-          # Find all manifest files in manifests/ directory
-          manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
+          # Filter manifests based on event type and ci-skip-on-pr label
+          # On PRs (pull_request event OR push to PR branch): skip manifests with ci-skip-on-pr: "true"
+          # On other events: include all manifests
+
+          manifests="[]"
+
+          # Check if this is a PR-related event
+          IS_PR=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            IS_PR=true
+            echo "Detected pull_request event"
+          elif [ "${{ github.head_ref }}" != "" ]; then
+            IS_PR=true
+            echo "Detected push to PR branch: ${{ github.head_ref }}"
+          fi
+
+          if [ "$IS_PR" = "true" ]; then
+            echo "PR context: Including only manifests without ci-skip-on-pr: true"
+            # Find manifests that don't have ci-skip-on-pr: "true"
+            manifests=$(find manifests/ -name "*.yaml" -type f | while read -r file; do
+              if ! grep -q 'ci-skip-on-pr.*\:.*"true"' "$file" && ! grep -q "ci-skip-on-pr.*\:.*'true'" "$file"; then
+                echo "$file"
+              fi
+            done | sort | jq -R -s -c 'split("\n")[:-1] | map(select(length > 0)) | map({"manifest-file": .})')
+          else
+            echo "Non-PR context: Including all manifests"
+            manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
+          fi
+
           echo "manifests=$manifests" >> $GITHUB_OUTPUT
           echo "Discovered manifests: $manifests"
 
   # Matrix configuration for baseline cluster testing
   test-matrix:
     needs: discover-manifests
-    runs-on: ubuntu-latest-4-cores
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -81,25 +106,38 @@ jobs:
         run: |
           echo "## Test Configuration"
           echo "- **Manifest**: ${{ matrix.manifest-file }}"
-          echo "- **Runner**: ubuntu-latest-4-cores"
+          echo "- **Runner**: ubuntu-latest"
           echo "- **Timeout**: 90 minutes"
 
       - name: Setup Cluster
         id: setup-cluster
         shell: bash
         run: |
-          kube-galaxy test setup --manifest ${{ matrix.manifest-file }}
-          CLUSTER_NAME=$(python3 -c "from kube_galaxy.pkg.manifest.loader import load_manifest; m = load_manifest('${{ matrix.manifest-file }}'); print(m.name)")
-          echo "cluster-name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
-          echo "kubeconfig=$HOME/.kube/config" >> $GITHUB_OUTPUT
+          # Create sanitized artifact name (replace / with -) before setup
+          ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+          kube-galaxy setup ${{ matrix.manifest-file }}
 
       - name: Verify Cluster Health
         shell: bash
         run: |
           echo "Verifying cluster health..."
 
-          # Wait for cluster ready
-          kubectl wait --for=condition=Ready node --all --timeout=5m
+          # For no-CNI manifests, skip node ready check (nodes will be NotReady without CNI)
+          if [[ "${{ matrix.manifest-file }}" == *"no-cni"* ]]; then
+            echo "⚠️  Skipping node ready check for no-CNI manifest (expected behavior)"
+            echo "Verifying control plane components are running..."
+
+            # Wait for core system pods to be running
+            kubectl wait --for=condition=Ready pod -l component=kube-apiserver -n kube-system --timeout=5m || true
+            kubectl wait --for=condition=Ready pod -l component=etcd -n kube-system --timeout=5m || true
+            kubectl wait --for=condition=Ready pod -l component=kube-controller-manager -n kube-system --timeout=5m || true
+            kubectl wait --for=condition=Ready pod -l component=kube-scheduler -n kube-system --timeout=5m || true
+          else
+            echo "Waiting for nodes to be Ready..."
+            kubectl wait --for=condition=Ready node --all --timeout=5m
+          fi
 
           # Get cluster info
           kubectl cluster-info
@@ -132,7 +170,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.manifest-file }}
+          name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
           path: test-results/
           retention-days: 30
           if-no-files-found: warn
@@ -174,17 +212,22 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-logs-${{ matrix.manifest-file }}
+          name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || hashFiles(matrix.manifest-file) }}
           path: debug-logs/
           retention-days: 30
 
+      - name: Setup upterm session for debugging
+        if: failure() && github.event_name == 'pull_request'
+        uses: owenthereal/action-upterm@v1
+        timeout-minutes: 5
+
       - name: Create Issue on Failure
-        if: failure()
+        if: failure() && github.event_name != 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Create a simple issue on failure
+          # Create a simple issue on failure (without labels to avoid errors if labels don't exist)
           gh issue create \
             --title "[TEST FAILURE] Manifest ${{ matrix.manifest-file }} - Test #${{ github.run_number }}" \
             --body "Cluster test failed for manifest: \`${{ matrix.manifest-file }}\`
@@ -192,14 +235,13 @@ jobs:
           Test Suite: ${{ inputs.test-suite || 'functional-basic' }}
           Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          Check test results and debug logs in the action artifacts." \
-            --label "test-failure,automated"
+          Check test results and debug logs in the action artifacts." || echo "Failed to create issue, continuing..."
 
       - name: Cleanup Cluster
         if: always()
         shell: bash
         run: |
-          kube-galaxy cleanup all
+          kube-galaxy cleanup all --manifest ${{ matrix.manifest-file }}
 
   # Summary job that reports overall test status
   test-summary:

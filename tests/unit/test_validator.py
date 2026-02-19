@@ -2,6 +2,7 @@
 
 import pytest
 
+from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import Manifest, NodeConfig
 from kube_galaxy.pkg.manifest.validator import (
     get_component,
@@ -12,8 +13,6 @@ from kube_galaxy.pkg.manifest.validator import (
 
 def test_validate_manifest_valid(sample_manifest_file):
     """Test validating a valid manifest."""
-    from kube_galaxy.pkg.manifest.loader import load_manifest
-
     manifest = load_manifest(sample_manifest_file)
     # Should not raise
     validate_manifest(manifest)
@@ -73,8 +72,6 @@ def test_validate_manifest_negative_workers():
 
 def test_get_components_with_spread(sample_manifest_file):
     """Test getting components with spread enabled."""
-    from kube_galaxy.pkg.manifest.loader import load_manifest
-
     manifest = load_manifest(sample_manifest_file)
     spread_components = get_components_with_spread(manifest)
 
@@ -85,8 +82,6 @@ def test_get_components_with_spread(sample_manifest_file):
 
 def test_get_component_by_name(sample_manifest_file):
     """Test getting component by name."""
-    from kube_galaxy.pkg.manifest.loader import load_manifest
-
     manifest = load_manifest(sample_manifest_file)
     component = get_component(manifest, "containerd")
 
@@ -97,8 +92,6 @@ def test_get_component_by_name(sample_manifest_file):
 
 def test_get_component_not_found(sample_manifest_file):
     """Test getting nonexistent component."""
-    from kube_galaxy.pkg.manifest.loader import load_manifest
-
     manifest = load_manifest(sample_manifest_file)
     component = get_component(manifest, "nonexistent")
 

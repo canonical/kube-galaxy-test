@@ -50,13 +50,14 @@ def validate_cmd(
 @app.command(name="test")
 def test_cmd(
     target: str = typer.Argument("local", help="What to test: local, spread, or setup"),
+    manifest: str = typer.Option(None, "--manifest", "-m", help="Path to manifest file"),
 ) -> None:
     """Run tests or manage test clusters.
 
     Examples:
         kube-galaxy test local
         kube-galaxy test spread
-        kube-galaxy test setup
+        kube-galaxy test setup --manifest manifests/baseline-k8s-1.35.yaml
     """
     match target:
         case "local":
@@ -64,7 +65,7 @@ def test_cmd(
         case "spread":
             test.spread()
         case "setup":
-            test.setup()
+            test.setup(manifest)
         case _:
             typer.echo(f"Unknown test target: {target}")
             raise typer.Exit(code=1)
@@ -85,30 +86,42 @@ def test_manifest_cmd(
 @app.command(name="cleanup")
 def cleanup_cmd(
     target: str = typer.Argument("all", help="What to cleanup: files, clusters, or all"),
+    manifest: str = typer.Option(
+        None, "--manifest", "-m", help="Path to manifest file for cluster cleanup"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Continue cleanup even if errors occur"
+    ),
 ) -> None:
     """Clean up temporary files and test clusters.
 
     Examples:
         kube-galaxy cleanup files
-        kube-galaxy cleanup clusters
-        kube-galaxy cleanup all
+        kube-galaxy cleanup clusters --manifest manifests/baseline-k8s-1.35.yaml
+        kube-galaxy cleanup all --manifest manifests/baseline-k8s-1.35.yaml --force
     """
     match target:
         case "files":
             cleanup.cleanup_files()
         case "clusters":
-            cleanup.cleanup_clusters()
+            cleanup.cleanup_clusters(manifest, force)
         case "all":
-            cleanup.cleanup_all()
+            cleanup.cleanup_all(manifest, force)
         case _:
             typer.echo(f"Unknown cleanup target: {target}")
             raise typer.Exit(code=1)
 
 
 @app.command(name="setup")
-def setup_cmd() -> None:
-    """Initialize project setup - create necessary directories."""
-    setup.setup()
+def setup_cmd(
+    manifest: str = typer.Argument(..., help="Path to manifest file"),
+) -> None:
+    """Provision a cluster from a manifest file.
+
+    Example:
+        kube-galaxy setup manifests/baseline-k8s-1.35.yaml
+    """
+    setup.setup(manifest)
 
 
 @app.command(name="status")

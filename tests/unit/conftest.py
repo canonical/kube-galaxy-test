@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+# Ensure component modules are imported during tests so coverage includes them
+import kube_galaxy.pkg.components  # noqa: F401
+
 
 @pytest.fixture
 def tmp_manifest_dir():

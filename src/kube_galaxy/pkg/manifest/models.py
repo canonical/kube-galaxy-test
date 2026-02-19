@@ -1,18 +1,45 @@
 """Manifest data models for kube-galaxy."""
 
 from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Any
+
+
+class InstallMethod(StrEnum):
+    """Installation method for components."""
+
+    BINARY = "binary"  # Direct binary download and install
+    BINARY_ARCHIVE = "binary-archive"  # Binary in tar/zip/xz archive from releases
+    CONTAINER_IMAGE = "container-image"  # Container image from registry
+    HELM_CHART = "helm-chart"  # Helm chart installation
+    POD_MANIFEST = "pod-manifest"  # Kubernetes manifest deployment
 
 
 @dataclass
-class Component:
-    """Kubernetes component specification."""
+class InstallConfig:
+    """Kubernetes component installation configuration."""
+
+    method: InstallMethod  # Installation method
+    source_format: str  # e.g., format string URL or path to binary, chart, or manifest
+
+
+@dataclass
+class ComponentConfig:
+    """Kubernetes component configuration from manifest YAML."""
 
     name: str
     category: str
     release: str
     repo: str
-    format: str  # Binary, Container, or Binary+Container
+    installation: InstallConfig
     use_spread: bool = False
+
+    # Component lifecycle configuration
+    dependencies: list[str] = field(default_factory=list)  # Must install after these components
+
+    # Hook configuration overrides
+    skip_hooks: list[str] = field(default_factory=list)  # Hooks to skip (e.g., ["bootstrap"])
+    hook_config: dict[str, Any] = field(default_factory=dict)  # Hook-specific configuration
 
 
 @dataclass
@@ -40,11 +67,11 @@ class Manifest:
     description: str
     kubernetes_version: str
     nodes: NodeConfig
-    components: list[Component] = field(default_factory=list)
+    components: list[ComponentConfig] = field(default_factory=list)
     networking: list[NetworkConfig] = field(default_factory=list)
 
-    def get_component(self, name: str) -> Component | None:
-        """Get component by name."""
+    def get_component(self, name: str) -> ComponentConfig | None:
+        """Get component config by name."""
         for component in self.components:
             if component.name == name:
                 return component

@@ -1,21 +1,32 @@
 """Unit tests for manifest models."""
 
-from kube_galaxy.pkg.manifest.models import Component, Manifest, NetworkConfig, NodeConfig
+from kube_galaxy.pkg.manifest.models import (
+    ComponentConfig,
+    InstallConfig,
+    InstallMethod,
+    Manifest,
+    NetworkConfig,
+    NodeConfig,
+)
 
 
 def test_component_creation():
-    """Test component dataclass creation."""
-    comp = Component(
+    """Test component config dataclass creation."""
+    installation = InstallConfig(
+        method=InstallMethod.BINARY_ARCHIVE,
+        source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+    )
+    config = ComponentConfig(
         name="test-comp",
         category="test",
         release="1.0.0",
         repo="https://github.com/test/repo",
-        format="Binary",
+        installation=installation,
         use_spread=True,
     )
-    assert comp.name == "test-comp"
-    assert comp.use_spread is True
-    assert comp.format == "Binary"
+    assert config.name == "test-comp"
+    assert config.use_spread is True
+    assert config.installation.method == InstallMethod.BINARY_ARCHIVE
 
 
 def test_node_config_defaults():
@@ -46,13 +57,17 @@ def test_network_config_creation():
 def test_manifest_creation():
     """Test manifest dataclass creation."""
     nodes = NodeConfig(control_plane=1, worker=2)
+    installation = InstallConfig(
+        method=InstallMethod.BINARY_ARCHIVE,
+        source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+    )
     components = [
-        Component(
+        ComponentConfig(
             name="test",
             category="test",
             release="1.0.0",
             repo="https://github.com/test/repo",
-            format="Binary",
+            installation=installation,
         )
     ]
     networking = [
@@ -75,20 +90,24 @@ def test_manifest_creation():
 
 
 def test_manifest_get_component():
-    """Test getting component by name from manifest."""
-    comp1 = Component(
+    """Test getting component config by name from manifest."""
+    installation = InstallConfig(
+        method=InstallMethod.BINARY_ARCHIVE,
+        source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+    )
+    comp1 = ComponentConfig(
         name="comp1",
         category="test",
         release="1.0.0",
         repo="https://github.com/test/repo1",
-        format="Binary",
+        installation=installation,
     )
-    comp2 = Component(
+    comp2 = ComponentConfig(
         name="comp2",
         category="test",
         release="1.0.0",
         repo="https://github.com/test/repo2",
-        format="Binary",
+        installation=installation,
     )
 
     manifest = Manifest(

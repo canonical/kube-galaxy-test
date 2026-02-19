@@ -52,7 +52,7 @@ build = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=src/kube_galaxy --cov-report=term-missing"
+addopts = "-v --cov=kube_galaxy --cov-report=term-missing"
 
 [tool.mypy]
 python_version = "3.12"
@@ -65,7 +65,7 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "TID", "RUF"]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "TID", "RUF", "PLC0415"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kube_galaxy"]

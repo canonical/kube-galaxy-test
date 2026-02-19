@@ -3,11 +3,14 @@ Utilities for component installation and management.
 """
 
 import hashlib
-import shutil
+import tarfile
+import urllib.request
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import get_arch_info
+from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.shell import run
 
 
 def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> None:
@@ -23,8 +26,6 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
         ComponentError: If download fails or checksum mismatch
     """
     try:
-        import urllib.request
-
         urllib.request.urlretrieve(url, dest)
 
         if verify_sha256:
@@ -59,8 +60,6 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> None:
         ComponentError: If extraction fails
     """
     try:
-        import tarfile
-
         with tarfile.open(archive_path) as tar:
             tar.extractall(dest_dir)
     except Exception as e:
@@ -70,29 +69,50 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> None:
 def install_binary(
     binary_path: Path,
     binary_name: str,
-    dest_dir: Path = Path("/usr/local/bin"),
-) -> None:
+    component_name: str,
+    dest_dir: Path | None = None,
+) -> str:
     """
-    Install a binary to a directory and make it executable.
+    Install a binary to component directory and register with update-alternatives.
 
     Args:
         binary_path: Path to the binary
         binary_name: Name of the binary (e.g., 'containerd')
-        dest_dir: Destination directory (default: /usr/local/bin)
+        component_name: Component name for directory structure
+        dest_dir: Optional override destination directory
 
     Raises:
         ComponentError: If installation fails
     """
     try:
-        dest_dir.mkdir(parents=True, exist_ok=True)
+        # Use component-specific directory if not overridden
+        if dest_dir is None:
+            dest_dir = SystemPaths.component_bin_dir(component_name)
+
+        # Create directory and install binary
+        run([*Commands.SUDO_MKDIR_P, str(dest_dir)], check=True)
         dest_path = dest_dir / binary_name
-        shutil.copy2(binary_path, dest_path)
-        dest_path.chmod(0o755)
+        run([*Commands.SUDO_CP, str(binary_path), str(dest_path)], check=True)
+        run([*Commands.SUDO_CHMOD, Permissions.EXECUTABLE, str(dest_path)], check=True)
+
+        # Register with update-alternatives
+        alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
+        run(
+            [
+                *Commands.UPDATE_ALTERNATIVES_INSTALL,
+                alternative_path,
+                binary_name,
+                str(dest_path),
+                Permissions.ALTERNATIVES_PRIORITY,
+            ],
+            check=True,
+        )
+        return alternative_path
     except Exception as e:
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
 
 
-def remove_binary(binary_name: str, dest_dir: Path = Path("/usr/local/bin")) -> None:
+def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_BIN)) -> None:
     """
     Remove a binary from a directory.
 
@@ -129,4 +149,4 @@ def get_github_release_url(
     """
     arch_info = get_arch_info()
     filename = filename_pattern.format(arch=arch_info.k8s)
-    return f"https://github.com/{repo}/releases/download/{release}/{filename}"
+    return URLs.GITHUB_RELEASES_PATTERN.format(repo=repo, release=release, filename=filename)

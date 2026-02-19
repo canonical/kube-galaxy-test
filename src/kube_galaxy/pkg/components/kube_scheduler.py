@@ -4,36 +4,25 @@ Kube-scheduler component installation and management.
 Kube-scheduler schedules pods to nodes.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components import ComponentBase, register_component
+
+
+@register_component
+class KubeScheduler(ComponentBase):
     """
-    Install kube-scheduler container.
+    Kube-Scheduler component for pod scheduling.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.33.4')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: Container-based components are pulled by kubelet during cluster bootstrap.
-    This install function serves as a placeholder for consistency.
+    This component handles pod scheduling to nodes.
     """
-    pass
 
+    # Component metadata
+    CATEGORY = "kubernetes/kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = []
 
-def configure() -> None:
-    """
-    Configure kube-scheduler.
-
-    Configuration happens through kubeadm and cluster manifests.
-    """
-    pass
-
-
-def remove() -> None:
-    """
-    Remove kube-scheduler.
-
-    Container cleanup is handled by kubeadm reset.
-    """
-    pass
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes

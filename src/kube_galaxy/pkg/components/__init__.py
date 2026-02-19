@@ -1,79 +1,33 @@
 """
 Component installation and management modules.
 
-Each component in the Kubernetes cluster has its own module with:
-- install(): Download and install the component
-- configure(): Post-install configuration
-- remove(): Cleanup and removal
+Components inherit from ComponentBase and override the lifecycle hooks they need.
 """
 
-import importlib
+import importlib as _importlib
+import pkgutil as _pkgutil
+
+from kube_galaxy.pkg.components._base import ComponentBase
+
+__all__ = ["COMPONENTS", "ComponentBase", "register_component"]
+
+# Simple mapping of component names to classes
+COMPONENTS: dict[str, type[ComponentBase]] = {}
 
 
-def get_component_module(component_name: str):
-    """
-    Dynamically import and return the component module.
-
+def register_component(cls: type[ComponentBase]) -> type[ComponentBase]:
+    """Decorator to register a component class in the COMPONENTS registry
     Args:
-        component_name: Component identifier (e.g., 'containerd', 'etcd')
-
+        cls: The component class to register.
     Returns:
-        The component module
-
-    Raises:
-        ImportError: If component module doesn't exist
+        The original class, unmodified
     """
-    # Normalize component name: replace hyphens with underscores
-    module_name = component_name.replace("-", "_")
-    try:
-        return importlib.import_module(f"kube_galaxy.pkg.components.{module_name}")
-    except ImportError as e:
-        raise ImportError(
-            f"Component '{component_name}' not found. "
-            f"Expected module: kube_galaxy.pkg.components.{module_name}"
-        ) from e
+    COMPONENTS[cls.__name__.lower()] = cls
+    return cls
 
 
-def install_component(
-    component_name: str,
-    repo: str,
-    release: str,
-    format: str,
-    arch: str,
-) -> None:
-    """
-    Install a component.
+# Import all component modules so they execute registration side-effects
 
-    Args:
-        component_name: Component identifier
-        repo: Repository URL
-        release: Release/version tag
-        format: Installation format (Binary, Container, Binary+Container)
-        arch: Architecture (amd64, arm64, etc.)
-    """
-    module = get_component_module(component_name)
-    module.install(repo=repo, release=release, format=format, arch=arch)
-
-
-def configure_component(component_name: str) -> None:
-    """
-    Configure a component after installation.
-
-    Args:
-        component_name: Component identifier
-    """
-    module = get_component_module(component_name)
-    if hasattr(module, "configure"):
-        module.configure()
-
-
-def remove_component(component_name: str) -> None:
-    """
-    Remove a component.
-
-    Args:
-        component_name: Component identifier
-    """
-    module = get_component_module(component_name)
-    if hasattr(module, "remove"):
-        module.remove()
+for _finder, modname, _ispkg in _pkgutil.iter_modules(__path__):
+    if not modname.startswith("_"):  # Skip private modules
+        _importlib.import_module(f"{__name__}.{modname}")

@@ -4,36 +4,25 @@ Kube-proxy component installation and management.
 Kube-proxy handles Kubernetes service networking.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components import ComponentBase, register_component
+
+
+@register_component
+class KubeProxy(ComponentBase):
     """
-    Install kube-proxy container.
+    Kube-Proxy component for service networking.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., 'v1.33.4')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: Container-based components are pulled by kubelet during cluster bootstrap.
-    This install function serves as a placeholder for consistency.
+    This component handles service networking and load balancing.
     """
-    pass
 
+    # Component metadata
+    CATEGORY = "kubernetes/kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = []
 
-def configure() -> None:
-    """
-    Configure kube-proxy.
-
-    Configuration happens through kubeadm and cluster manifests.
-    """
-    pass
-
-
-def remove() -> None:
-    """
-    Remove kube-proxy.
-
-    Container cleanup is handled by kubeadm reset.
-    """
-    pass
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes

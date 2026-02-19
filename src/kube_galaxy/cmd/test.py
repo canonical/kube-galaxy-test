@@ -6,10 +6,11 @@ from pathlib import Path
 
 import typer
 
-from kube_galaxy.pkg.cluster.setup import setup_cluster
+from kube_galaxy.cmd.validate import validate_manifests_cmd
+from kube_galaxy.pkg.cluster import setup_cluster
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.testing.spread import collect_test_results, run_spread_tests
-from kube_galaxy.pkg.utils.logging import error, info, section, success
+from kube_galaxy.pkg.utils.logging import error, exception, info, section, success
 
 
 def local() -> None:
@@ -22,18 +23,13 @@ def local() -> None:
         if not shutil.which("spread"):
             error("spread not found")
             raise typer.Exit(code=1)
-        if not shutil.which("yq"):
-            error("yq not found")
-            raise typer.Exit(code=1)
         success("Required tools are available")
     except Exception as e:
-        error(f"Tool check failed: {e}")
+        exception("Tool check failed", e)
         raise typer.Exit(code=1) from e
 
     # Validate manifests
     info("")
-    from kube_galaxy.cmd.validate import validate_manifests_cmd
-
     validate_manifests_cmd()
 
     success("All local tests passed!")
@@ -83,26 +79,34 @@ def spread() -> None:
         success("Spread tests completed")
 
     except Exception as e:
-        error(f"Spread tests failed: {e}")
+        exception("Spread tests failed", e)
         raise typer.Exit(code=1) from e
 
 
-def setup() -> None:
+def setup(manifest_path: str | None = None) -> None:
     """Set up cluster from manifest."""
     section("Setting Up Cluster")
 
-    # Find baseline manifest
-    manifests = list(Path("manifests").glob("*.yaml"))
-    if not manifests:
-        error("No manifest files found")
-        raise typer.Exit(code=1)
-    manifest_file = str(manifests[0])
+    # Use provided manifest or find baseline manifest
+    if manifest_path:
+        manifest_file = manifest_path
+        if not Path(manifest_file).exists():
+            error(f"Manifest file does not exist: {manifest_file}")
+            raise typer.Exit(code=1)
+    else:
+        manifests = list(Path("manifests").glob("*.yaml"))
+        if not manifests:
+            error("No manifest files found")
+            raise typer.Exit(code=1)
+        manifest_file = str(manifests[0])
+
+    info(f"Using manifest: {manifest_file}")
 
     try:
         setup_cluster(manifest_file, work_dir=".", debug=False)
         success("Cluster setup completed")
     except Exception as e:
-        error(f"Cluster setup failed: {e}")
+        exception("Cluster setup failed", e)
         raise typer.Exit(code=1) from e
 
 
@@ -135,5 +139,5 @@ def manifest(manifest_path: str) -> None:
         success("Manifest is valid!")
 
     except Exception as e:
-        error(f"Failed to inspect manifest: {e}")
+        exception("Failed to inspect manifest", e)
         raise typer.Exit(code=1) from e

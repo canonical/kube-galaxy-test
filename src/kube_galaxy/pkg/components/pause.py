@@ -4,36 +4,25 @@ Pause component installation and management.
 The pause container is used for infrastructure.
 """
 
+from typing import ClassVar
 
-def install(repo: str, release: str, format: str, arch: str) -> None:
+from kube_galaxy.pkg.components import ComponentBase, register_component
+
+
+@register_component
+class Pause(ComponentBase):
     """
-    Install pause container.
+    Pause component for Kubernetes infrastructure.
 
-    Args:
-        repo: GitHub repository URL
-        release: Release tag (e.g., '3.10.0')
-        format: Installation format (Container)
-        arch: Architecture (amd64, arm64, etc.)
-
-    Note: Container-based components are pulled by kubelet during cluster bootstrap.
-    This install function serves as a placeholder for consistency.
+    This component handles the pause container deployment.
     """
-    pass
 
+    # Component metadata
+    CATEGORY = "kubernetes/kubernetes"
+    DEPENDENCIES: ClassVar[list[str]] = []
 
-def configure() -> None:
-    """
-    Configure pause container.
-
-    Configuration happens through kubeadm and cluster manifests.
-    """
-    pass
-
-
-def remove() -> None:
-    """
-    Remove pause container.
-
-    Container cleanup is handled by kubeadm reset.
-    """
-    pass
+    # Timeout configuration (in seconds)
+    DOWNLOAD_TIMEOUT = 120  # 2 minutes
+    INSTALL_TIMEOUT = 60  # 1 minute
+    CONFIGURE_TIMEOUT = 60  # 1 minute
+    VERIFY_TIMEOUT = 120  # 2 minutes

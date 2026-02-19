@@ -16,7 +16,6 @@ def status() -> None:
     deps = {
         "kubectl": check_command("kubectl"),
         "kubeadm": check_command("kubeadm"),
-        "yq": check_command("yq"),
         "spread": check_command("spread"),
     }
     print_dict(deps)
