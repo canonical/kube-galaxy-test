@@ -220,6 +220,8 @@ jobs:
         if: failure() && github.event_name == 'pull_request'
         uses: owenthereal/action-upterm@v1
         timeout-minutes: 5
+        with:
+          limit-access-to-actor: true
 
       - name: Create Issue on Failure
         if: failure() && github.event_name != 'pull_request'

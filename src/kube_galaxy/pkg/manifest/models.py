@@ -11,8 +11,7 @@ class InstallMethod(StrEnum):
     BINARY = "binary"  # Direct binary download and install
     BINARY_ARCHIVE = "binary-archive"  # Binary in tar/zip/xz archive from releases
     CONTAINER_IMAGE = "container-image"  # Container image from registry
-    HELM_CHART = "helm-chart"  # Helm chart installation
-    POD_MANIFEST = "pod-manifest"  # Kubernetes manifest deployment
+    NONE = "none"  # No installation, component has no installable artifacts
 
 
 @dataclass

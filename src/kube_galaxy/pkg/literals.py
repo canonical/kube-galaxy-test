@@ -69,6 +69,7 @@ class Commands:
     SUDO_TEE: ClassVar[list[str]] = ["sudo", "tee"]
     SUDO_CHMOD: ClassVar[list[str]] = ["sudo", "chmod"]
     SUDO_CHOWN: ClassVar[list[str]] = ["sudo", "chown"]
+    SUDO_SYMLINK: ClassVar[list[str]] = ["sudo", "ln", "-s"]
 
     # apt commands
     SUDO_APT_REMOVE: ClassVar[list[str]] = ["sudo", "apt", "remove"]

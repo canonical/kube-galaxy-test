@@ -9,7 +9,6 @@ from urllib.request import urlopen
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, URLs
-from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
@@ -32,6 +31,14 @@ class Kubelet(ComponentBase):
     CONFIGURE_TIMEOUT = 120  # 2 minutes
     VERIFY_TIMEOUT = 120  # 2 minutes
 
+    def _system_settings(self) -> None:
+        """
+        Apply necessary system settings for kubelet.
+        """
+        # Disable swap which is required for kubelet to work properly
+        info("    Disabling swap...")
+        run(["sudo", "swapoff", "-a"], check=True)
+
     def configure_hook(self) -> None:
         """
         Configures kubelet systemd service to be ready to start by kubeadm.
@@ -40,8 +47,7 @@ class Kubelet(ComponentBase):
         replaces /usr/bin with the actual kubelet installation path, and creates
         the systemd service file and service.d directory.
         """
-        if not self.config:
-            raise ComponentError("Config required for configuration")
+        self._system_settings()
 
         # Download kubelet.service from Kubernetes release repository
         service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubelet/kubelet.service"

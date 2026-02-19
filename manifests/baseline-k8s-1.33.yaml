@@ -31,23 +31,33 @@ components:
       source_format: "{repo}/releases/download/v{release}/runc.{arch}"
     use-spread: false
 
-  # Kubernetes binaries
-  - name: kubeadm
-    category: kubernetes/kubernetes
-    release: "1.33.4"
-    repo: "https://github.com/kubernetes/kubernetes"
+  # cni-plugins
+  - name: cni-plugins
+    category: container-networking
+    release: "1.6.2"
+    repo: "https://github.com/containernetworking/plugins"
     installation:
       method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubeadm"
+      source_format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
     use-spread: false
 
   - name: kubelet
     category: kubernetes/kubernetes
-    release: "1.33.4"
+    release: "1.33.0"
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary-archive"
       source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubelet"
+    use-spread: false
+
+  # Kubernetes binaries
+  - name: kubeadm
+    category: kubernetes/kubernetes
+    release: "1.33.0"
+    repo: "https://github.com/kubernetes/kubernetes"
+    installation:
+      method: "binary-archive"
+      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubeadm"
     use-spread: false
 
   - name: kubectl
@@ -103,16 +113,6 @@ components:
     installation:
       method: "container-image"
       source_format: "registry.k8s.io/pause:3.10"
-    use-spread: false
-
-  # CNI plugins
-  - name: cni-plugins
-    category: container-networking
-    release: "1.6.2"
-    repo: "https://github.com/containernetworking/plugins"
-    installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
     use-spread: false
 
   # CoreDNS

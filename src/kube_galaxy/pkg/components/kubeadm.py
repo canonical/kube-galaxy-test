@@ -41,14 +41,21 @@ class Kubeadm(ComponentBase):
 
     _cluster_config: Path | None = None
 
+    def _system_settings(self) -> None:
+        """
+        Apply necessary system settings for kubeadm.
+        """
+        # Enable IP forwarding for kubeadm networking
+        info("    Setting net.ipv4.ip_forward = 1")
+        run(["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"], check=True)
+
     def configure_hook(self) -> None:
         """
         Configure system for kubeadm.
 
         Disables swap which is required for kubelet/kubeadm to work properly.
         """
-        info("  Disabling swap...")
-        run(["sudo", "swapoff", "-a"], check=True)
+        self._system_settings()
 
         # Configure kubeadm.service based on Kubernetes release repository
         info("  Installing kubelet configs")

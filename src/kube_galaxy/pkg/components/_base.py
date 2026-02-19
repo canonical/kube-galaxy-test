@@ -5,6 +5,7 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
+import shutil
 from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar
@@ -72,6 +73,7 @@ class ComponentBase:
     # Component metadata - override in subclass
     CATEGORY: str = ""
     DEPENDENCIES: ClassVar[list[str]] = []
+    BIN_PATH = "./*"  # Default path inside archive where binaries are located
 
     def __init__(
         self,
@@ -92,7 +94,6 @@ class ComponentBase:
         self.config = config
         self.install_path: str | None = None
         self.binary_path: Path | None = None
-        self.extracted_dir: Path | None = None
 
     @property
     def name(self) -> str:
@@ -142,7 +143,17 @@ class ComponentBase:
             case InstallMethod.BINARY:
                 self.binary_path = self.download_binary_from_config(arch, comp_name)
             case InstallMethod.BINARY_ARCHIVE:
-                self.extracted_dir = self.download_and_extract_archive(arch)
+                self.download_and_extract_archive(arch)
+            case InstallMethod.CONTAINER_IMAGE:
+                # TODO: Implement container image pull logic
+                pass
+            case InstallMethod.NONE:
+                pass
+            case _:
+                raise ComponentError(
+                    f"Unsupported installation method for {comp_name}: "
+                    f"{self.config.installation.method}"
+                )
 
     def pre_install_hook(self) -> None:
         """
@@ -181,10 +192,20 @@ class ComponentBase:
                     raise ComponentError(
                         f"{comp_name} archive not downloaded. Run download hook first."
                     )
-                for each in self.extracted_dir.glob("*"):
+                for each in self.extracted_dir.glob(self.BIN_PATH):
                     installed = self.install_downloaded_binary(each, each.name)
                     if each.name == comp_name:
                         self.install_path = installed
+            case InstallMethod.CONTAINER_IMAGE:
+                # TODO: Implement container image install logic
+                pass
+            case InstallMethod.NONE:
+                pass
+            case _:
+                raise ComponentError(
+                    f"Unsupported installation method for {comp_name}: "
+                    f"{self.config.installation.method}"
+                )
 
     def bootstrap_hook(self) -> None:
         """
@@ -261,6 +282,15 @@ class ComponentBase:
         """
         return str(SystemPaths.component_temp_dir(self.name))
 
+    @property
+    def extracted_dir(self) -> Path | None:
+        """Get the extracted directory for this component."""
+        if not self.config:
+            raise ComponentError("Component config required for extracted directory")
+        if self.config.installation.method != InstallMethod.BINARY_ARCHIVE:
+            return None
+        return Path(self.component_tmp_dir) / "extracted"
+
     def register_alternative(self, binary_name: str, binary_path: str) -> None:
         """
         Register a binary with update-alternatives.
@@ -304,10 +334,7 @@ class ComponentBase:
         """
         Remove the entire component directory.
         """
-        try:
-            run([*Commands.SUDO_RM_RF, self.component_dir], check=False)
-        except Exception:
-            pass  # Ignore errors during cleanup
+        shutil.rmtree(self.component_dir, ignore_errors=True)
 
     # Teardown hooks - all have default empty implementations
     # Override in subclass as needed
@@ -406,13 +433,12 @@ class ComponentBase:
         self.install_path = install_path
         return install_path
 
-    def download_and_extract_archive(self, arch: str, extract_dir: Path | None = None) -> Path:
+    def download_and_extract_archive(self, arch: str) -> Path:
         """
         Download and extract archive from config.
 
         Args:
             arch: Architecture string (e.g., 'amd64')
-            extract_dir: Custom extraction directory (optional)
 
         Returns:
             Path to extraction directory
@@ -422,6 +448,8 @@ class ComponentBase:
         """
         if not self.config:
             raise ComponentError("Component config required for download")
+        if not self.extracted_dir:
+            raise ComponentError("Extracted directory not defined for this component")
 
         repo = self.config.repo
         release = self.config.release
@@ -437,11 +465,10 @@ class ComponentBase:
         download_file(url, archive_path)
 
         # Extract archive
-        extract_destination = extract_dir or (temp_dir / "extracted")
-        extract_destination.mkdir(exist_ok=True)
-        extract_archive(archive_path, extract_destination)
+        self.extracted_dir.mkdir(exist_ok=True)
+        extract_archive(archive_path, self.extracted_dir)
 
-        return extract_destination
+        return self.extracted_dir
 
     def start_systemd_service(self, service_name: str) -> None:
         """
@@ -601,13 +628,11 @@ class ComponentBase:
         """
         name = component_name or self.name
         for config_path in config_files:
-            config_file = Path(config_path)
-            if config_file.exists():
-                try:
-                    run([*Commands.SUDO_RM_RF, str(config_file)], check=False)
-                    info(f"Removed {name} config: {config_file}")
-                except Exception as e:
-                    info(f"Failed to remove {config_file}: {e}")
+            try:
+                run([*Commands.SUDO_RM_RF, str(config_path)])
+                info(f"Removed {name} config: {config_path}")
+            except Exception as e:
+                info(f"Failed to remove {config_path}: {e}")
 
     def remove_installed_binary(self) -> None:
         """

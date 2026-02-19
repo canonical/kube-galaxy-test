@@ -9,7 +9,7 @@ import pkgutil as _pkgutil
 
 from kube_galaxy.pkg.components._base import ComponentBase
 
-__all__ = ["COMPONENTS", "ComponentBase", "register_component"]
+__all__ = ["ComponentBase", "find_component", "register_component"]
 
 # Simple mapping of component names to classes
 COMPONENTS: dict[str, type[ComponentBase]] = {}
@@ -24,6 +24,17 @@ def register_component(cls: type[ComponentBase]) -> type[ComponentBase]:
     """
     COMPONENTS[cls.__name__.lower()] = cls
     return cls
+
+
+def find_component(name: str) -> type[ComponentBase]:
+    """Find a registered component class by name
+    Args:
+        name: The name of the component to find (case-insensitive)
+    Returns:
+        The component class if found, or ComponentBase if not found
+    """
+    remove = str.maketrans({".": "", "-": "", "_": ""})
+    return COMPONENTS.get(name.lower().translate(remove)) or ComponentBase
 
 
 # Import all component modules so they execute registration side-effects
