@@ -181,4 +181,5 @@ After validating that the core cluster components work:
 
 - [Kubernetes CNI Documentation](https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/)
 - [kubeadm Installation Guide](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/)
+<!-- wokeignore:rule=master -->
 - [CNI Specification](https://github.com/containernetworking/cni/blob/master/SPEC.md)

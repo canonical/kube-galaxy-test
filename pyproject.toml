@@ -52,7 +52,7 @@ build = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --cov=src/kube_galaxy --cov-report=term-missing"
+addopts = "-v --cov=kube_galaxy --cov-report=term-missing"
 
 [tool.mypy]
 python_version = "3.12"

@@ -2,7 +2,9 @@
 
 ## Overview
 
-Kubernetes Galaxy Test is a scalable, multiarch testing infrastructure for Kubernetes components. It separates concerns into distinct phases: cluster provisioning, component installation, and test execution.
+Kubernetes Galaxy Test is a scalable, multiarch testing infrastructure for
+Kubernetes components. It separates concerns into distinct phases:
+cluster provisioning, component installation, and test execution.
 
 ## Design Principles
 
@@ -21,7 +23,7 @@ Kubernetes Galaxy Test is a scalable, multiarch testing infrastructure for Kuber
 ### 3. Simple Manifest Format
 - Manifests use simple YAML (no Kubernetes resource types)
 - Manifests declare what to install, not how to install it
-- Installation details remain in component repositories
+- Complex Installation details can be defined as a component plugin
 - Manifests can be validated without running anything
 
 ### 4. Separation of Concerns
@@ -46,13 +48,14 @@ Kubernetes Galaxy Test is a scalable, multiarch testing infrastructure for Kuber
 ┌──────────────▼──────────────────────────────────────┐
 │ 3. Install Components (setup-cluster)              │
 │    For each component:                              │
-│    • Clone repo at specified release                │
+│    • Download component from specified release     │
+|    * Install and configure component               |
 │    • Execute with ARCH, K_ARCH, RELEASE info       │
 └──────────────┬──────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────┐
 │ 4. Initialize Kubernetes Cluster                    │
-│    • Run kubeadm init with manifest networking config
+│    • Cluster with manifest networking config        |
 │    • Deploy CNI plugin                              │
 │    • Verify cluster health                          │
 └──────────────┬──────────────────────────────────────┘
@@ -79,53 +82,8 @@ A component repository providing custom installation must have `spread.yaml`:
 
 ```
 my-component/
-├── spread.yaml           # Required: install + optionally test definitions
+├── spread.yaml           # Required: optional test definitions
 ├── src/                  # Source code
-├── build.sh              # Build script
-└── install.sh            # Install script (called from spread.yaml)
-```
-
-### spread.yaml Format
-
-```yaml
-project: my-component
-version: "1"
-
-# Optional: Run once before any tests/installs
-prepare: |
-  # Setup commands
-
-# Required: Installation instructions
-# Receives: $ARCH, $K_ARCH, $COMPONENT_RELEASE, $COMPONENT_REPO
-install: |
-  #!/bin/bash
-  set -e
-  # Installation commands
-  # Example: compile from source or download binaries for $K_ARCH
-
-# Optional: Component tests
-# Only executed if use-spread: true in cluster manifest
-execute: |
-  # Test commands
-
-# Optional: Cleanup after tests
-restore: |
-  # Cleanup commands
-```
-
-## Multiarch Implementation
-
-### Runtime Architecture Detection
-
-```bash
-ARCH=$(uname -m)  # Linux uname: x86_64, aarch64, riscv64, etc.
-
-# Map to Kubernetes names
-case "$ARCH" in
-  x86_64) K_ARCH="amd64" ;;
-  aarch64) K_ARCH="arm64" ;;
-  riscv64) K_ARCH="riscv64" ;;
-esac
 ```
 
 ### Component Awareness
@@ -147,7 +105,7 @@ Components use this to download/build for the correct architecture.
 1. Detect system properties (architecture)
 2. Install base dependencies
 3. Parse manifest
-4. Clone and install each component
+4. install and configure each component
 5. Initialize Kubernetes with kubeadm
 6. Configure networking
 7. Verify cluster health

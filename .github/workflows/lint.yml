@@ -21,7 +21,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ruff:
+  call-inclusive-naming-check:
+    name: Inclusive Naming
+    uses: canonical/inclusive-naming/.github/workflows/woke.yaml@main
+    with:
+      fail-on-error: "true"
+  linting:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
