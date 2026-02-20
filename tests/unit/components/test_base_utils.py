@@ -63,7 +63,7 @@ def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path):
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
 
-    p = comp.download_binary_from_config("amd64", "mybin")
+    p = comp.download_filename_from_config("amd64", "mybin")
     assert calls, "download_file was not called"
     assert p.exists()
 

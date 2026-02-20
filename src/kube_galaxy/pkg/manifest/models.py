@@ -11,6 +11,7 @@ class InstallMethod(StrEnum):
     BINARY = "binary"  # Direct binary download and install
     BINARY_ARCHIVE = "binary-archive"  # Binary in tar/zip/xz archive from releases
     CONTAINER_IMAGE = "container-image"  # Container image from registry
+    CONTAINER_IMAGE_ARCHIVE = "container-image-archive"  # Container image in tar archive
     NONE = "none"  # No installation, component has no installable artifacts
 
 

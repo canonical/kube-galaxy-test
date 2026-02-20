@@ -5,10 +5,13 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
+import bz2
+import gzip
+import lzma
 import shutil
 from collections.abc import Iterable
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, LiteralString, cast
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.components._constants import (
@@ -16,7 +19,6 @@ from kube_galaxy.pkg.components._constants import (
     DEFAULT_CONFIGURE_TIMEOUT,
     DEFAULT_DOWNLOAD_TIMEOUT,
     DEFAULT_INSTALL_TIMEOUT,
-    DEFAULT_POST_BOOTSTRAP_TIMEOUT,
     DEFAULT_PRE_INSTALL_TIMEOUT,
     DEFAULT_TEST_TIMEOUT,
     DEFAULT_VERIFY_TIMEOUT,
@@ -46,13 +48,12 @@ class ComponentBase:
     3. install_hook() - Install the component
     4. configure_hook() - Configure component (config files, settings)
     5. bootstrap_hook() - Initialize/start the component
-    6. post_bootstrap_hook() - Post-initialization tasks
-    7. verify_hook() - Verify component is working
+    6. verify_hook() - Verify component is working
 
     Teardown Hooks (run in reverse dependency order):
-    9. stop_hook() - Stop services and processes
-    10. delete_hook() - Remove binaries and configurations
-    11. post_delete_hook() - Clean up remaining files, images, etc.
+    7. stop_hook() - Stop services and processes
+    8. delete_hook() - Remove binaries and configurations
+    9. post_delete_hook() - Clean up remaining files, images, etc.
 
     Each hook can be overridden. If not overridden, the default (empty)
     implementation is used and effectively skips that stage.
@@ -66,7 +67,6 @@ class ComponentBase:
     INSTALL_TIMEOUT = DEFAULT_INSTALL_TIMEOUT
     CONFIGURE_TIMEOUT = DEFAULT_CONFIGURE_TIMEOUT
     BOOTSTRAP_TIMEOUT = DEFAULT_BOOTSTRAP_TIMEOUT
-    POST_BOOTSTRAP_TIMEOUT = DEFAULT_POST_BOOTSTRAP_TIMEOUT
     VERIFY_TIMEOUT = DEFAULT_VERIFY_TIMEOUT
     TEST_TIMEOUT = DEFAULT_TEST_TIMEOUT
 
@@ -74,6 +74,8 @@ class ComponentBase:
     CATEGORY: str = ""
     DEPENDENCIES: ClassVar[list[str]] = []
     BIN_PATH = "./*"  # Default path inside archive where binaries are located
+
+    LOCAL_REGISTRY: LiteralString = "registry.k8s.io"
 
     def __init__(
         self,
@@ -95,8 +97,12 @@ class ComponentBase:
         self.config = config
         # Allow tests and callers to omit arch_info; default to detected arch
         self.arch_info = arch_info or get_arch_info()
-        self.install_path: str | None = None
-        self.binary_path: Path | None = None
+        # for InstallMethod Binary or BinaryArchive
+        self.binary_path: Path | None = None  # path to downloaded binary (before installation)
+        self.install_path: str | None = None  # path to root installed bin
+        # for InstallMethod Image or ImageArchive
+        self.image_repository: str | None = None
+        self.image_tag: str | None = None
 
     @property
     def name(self) -> str:
@@ -109,6 +115,31 @@ class ComponentBase:
         if self.config and self.config.name:
             return self.config.name
         raise ComponentError("Component name not found in config")
+
+    @property
+    def is_cluster_manager(self) -> bool:
+        """
+        Check if this component is a cluster manager.
+
+        Returns:
+            True if this component is responsible for cluster lifecycle management (e.g., kubeadm)
+        """
+        return isinstance(self, ClusterComponentBase)
+
+    def get_cluster_manager(self) -> "ClusterComponentBase":
+        """
+        Get the cluster manager component instance.
+
+        Returns:
+            The instance of the cluster manager component
+
+        Raises:
+            ComponentError: If no cluster manager is found in instances
+        """
+        for instance in self.instances.values():
+            if instance.is_cluster_manager:
+                return cast("ClusterComponentBase", instance)
+        raise ComponentError("No cluster manager component found in instances")
 
     def _which(self, component: str) -> str:
         """
@@ -142,12 +173,13 @@ class ComponentBase:
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY:
-                self.binary_path = self.download_binary_from_config(arch, comp_name)
+                self.binary_path = self.download_filename_from_config(arch, comp_name)
             case InstallMethod.BINARY_ARCHIVE:
                 self.download_and_extract_archive(arch)
+            case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
+                self.download_image_archive(arch)
             case InstallMethod.CONTAINER_IMAGE:
-                # TODO: Implement container image pull logic
-                pass
+                self.container_format_repo_and_tag(arch)
             case InstallMethod.NONE:
                 pass
             case _:
@@ -214,15 +246,6 @@ class ComponentBase:
         """
         pass
 
-    def post_bootstrap_hook(self) -> None:
-        """
-        Post-initialization tasks.
-
-        This hook runs in the POST_BOOTSTRAP stage (sequential).
-        Override to implement post-init configuration.
-        """
-        pass
-
     def configure_hook(self) -> None:
         """
         Configure the component (create config files, etc.).
@@ -230,20 +253,7 @@ class ComponentBase:
         This hook runs in the CONFIGURE stage before BOOTSTRAP (sequential).
         Override to implement configuration logic.
         """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        match self.config.installation.method:
-            case InstallMethod.CONTAINER_IMAGE:
-                arch = self.arch_info.image
-                self.container_image_pull(arch)
-            case InstallMethod.BINARY | InstallMethod.BINARY_ARCHIVE | InstallMethod.NONE:
-                pass  # No default configuration needed for these methods
-            case _:
-                raise ComponentError(
-                    f"Unsupported configuration method for {self.config.name}: "
-                    f"{self.config.installation.method}"
-                )
+        pass
 
     def verify_hook(self) -> None:
         """
@@ -381,16 +391,16 @@ class ComponentBase:
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
-    def download_binary_from_config(self, arch: str, binary_name: str | None = None) -> Path:
+    def download_filename_from_config(self, arch: str, filename: str | None = None) -> Path:
         """
         Download binary using component config source_format.
 
         Args:
             arch: Architecture string for URL template
-            binary_name: Optional override for binary filename
+            filename: Optional override for filename
 
         Returns:
-            Path to downloaded binary
+            Path to downloaded filename
 
         Raises:
             ComponentError: If download fails or config missing
@@ -404,70 +414,63 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         url = source_format.format(repo=repo, release=release, arch=arch)
-        filename = binary_name or url.split("/")[-1]
+        filename = filename or url.split("/")[-1]
 
         # Download to secure temporary directory
         temp_dir = self.ensure_temp_dir()
-        binary_path = temp_dir / filename
-        download_file(url, binary_path)
+        filepath = temp_dir / filename
+        download_file(url, filepath)
 
-        return binary_path
+        return filepath
 
-    def container_image_pull(self, arch: str) -> None:
+    def download_and_extract_archive(self, arch: str) -> Path:
         """
-        Pull container image for this component.
+        Download and extract archive from config.
 
-        This is a placeholder for container image pull logic, which may involve
+        Args:
+            arch: Architecture string (e.g., 'amd64')
+
+        Returns:
+            Path to extraction directory
+
+        Raises:
+            ComponentError: If download or extraction fails
+        """
+        archive_path = self.download_filename_from_config(arch)
+        if not self.extracted_dir:
+            raise ComponentError("Extracted directory not defined for this component")
+
+        # Extract archive
+        self.extracted_dir.mkdir(exist_ok=True)
+        extract_archive(archive_path, self.extracted_dir)
+
+        return self.extracted_dir
+
+    def download_image_archive(self, arch: str) -> None:
+        """
+        Download container image archive for this component.
+
+        This is a placeholder for container image archive download logic, which may involve
         using 'ctr' or 'docker' commands to pull the specified image.
         """
+        file_path = self.download_filename_from_config(arch)
+        if not self.extracted_dir:
+            raise ComponentError("Extracted directory not defined for this component")
 
-        if ctr := shutil.which("ctr"):
-            repo = self.config.repo
-            release = self.config.release
-            source_format = self.config.installation.source_format
-
-            # Construct image from source_format template
-            image = source_format.format(repo=repo, release=release, arch=arch)
-
-            run([ctr, "-n", "k8s.io", "images", "pull", image], check=True)
-        else:
-            raise ComponentError("Container image pull requested but 'ctr' command not found")
-
-    def container_image_import(self, arch: str) -> None:
-        """
-        Pull container image for this component.
-
-        This is a placeholder for container image import logic, which involves
-        using 'ctr' or 'docker' commands to import the specified image.
-        """
-        if not self.extracted_dir or not self.extracted_dir.exists():
-            raise ComponentError(
-                f"{self.config.name} image archive not found. Run download hook first."
-            )
-
-        if ctr := shutil.which("ctr"):
-            repo = self.config.repo
-            release = self.config.release
-            source_format = self.config.installation.source_format
-
-            archive = self.extracted_dir / "image.tar"
-
-            # Construct image from source_format template
-            image = source_format.format(repo=repo, release=release, arch=arch)
-
-            # TODO: find the right way to read the metadata from the tar
-            # before importing, to get the correct image reference
-            which = run(
-                [ctr, "-n", "k8s.io", "images", "import", str(archive)],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            run(
-                [ctr, "-n", "k8s.io", "images", "tag", which.stdout.strip(), image], check=True
-            )  # Tag the imported image
-        else:
-            raise ComponentError("Container image import requested but 'ctr' command not found")
+        # Extract if compressed archive; otherwise, assume it's a tar file containing the image
+        self.extracted_dir.mkdir(exist_ok=True)
+        image_tar = self.extracted_dir / "image.tar"
+        if file_path.suffix == ".tar":
+            file_path.rename(image_tar)
+        elif file_path.suffixes == [".tar", ".gz"] or file_path.suffixes == [".tgz"]:
+            with gzip.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+        elif file_path.suffixes == [".tar", ".bz2"]:
+            with bz2.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+        elif file_path.suffixes == [".tar", ".xz"] or file_path.suffixes == [".txz"]:
+            with lzma.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
+                shutil.copyfileobj(src, dst)
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
         """
@@ -487,14 +490,14 @@ class ComponentBase:
             raise ComponentError(f"{self.name} binary not found at {binary_path}")
 
         name = binary_name or self.name
-        install_path = install_binary(binary_path, name, self.name)
-        self.install_path = install_path
-        return install_path
+        self.install_path = install_binary(binary_path, name, self.name)
+        return self.install_path
 
-    def download_and_extract_archive(self, arch: str) -> Path:
+    def container_format_repo_and_tag(self, arch: str) -> None:
         """
-        Download and extract archive from config.
+        Format container image repository and tag from config.
 
+        Sets self.image_repository and self.image_tag based on config values.
         Args:
             arch: Architecture string (e.g., 'amd64')
 
@@ -503,30 +506,22 @@ class ComponentBase:
 
         Raises:
             ComponentError: If download or extraction fails
+
         """
         if not self.config:
-            raise ComponentError("Component config required for download")
-        if not self.extracted_dir:
-            raise ComponentError("Extracted directory not defined for this component")
+            raise ComponentError("Component config required for container image formatting")
 
         repo = self.config.repo
         release = self.config.release
         source_format = self.config.installation.source_format
 
         # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
-        filename = url.split("/")[-1]
-
-        # Download to temp directory
-        temp_dir = self.ensure_temp_dir()
-        archive_path = temp_dir / filename
-        download_file(url, archive_path)
-
-        # Extract archive
-        self.extracted_dir.mkdir(exist_ok=True)
-        extract_archive(archive_path, self.extracted_dir)
-
-        return self.extracted_dir
+        full = source_format.format(repo=repo, release=release, arch=arch)
+        split = full.rsplit(":", 1)
+        if len(split) != 2:
+            raise ComponentError(f"Invalid container image format: {full}")
+        self.image_repository, self.image_tag = split
+        info(f"  Formatted container image: {self.image_repository}:{self.image_tag}")
 
     def start_systemd_service(self, service_name: str) -> None:
         """
@@ -699,3 +694,23 @@ class ComponentBase:
         if self.install_path and Path(self.install_path).exists():
             Path(self.install_path).unlink()
             info(f"Removed {self.name} binary: {self.install_path}")
+
+
+class ClusterComponentBase(ComponentBase):
+    """
+    Base class for cluster components.
+
+    kubeadm, kind, and other cluster lifecycle managers should inherit from this class.
+    """
+
+    def find_image_retag(self, image: str) -> str:
+        """
+        Find the retagged image name for a given image.
+
+        Args:
+            image: Original image name
+
+        Returns:
+            Retagged image name
+        """
+        return ""

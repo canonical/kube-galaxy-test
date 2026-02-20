@@ -74,6 +74,9 @@ class Commands:
     # apt commands
     SUDO_APT_REMOVE: ClassVar[list[str]] = ["sudo", "apt", "remove"]
 
+    # ctr images
+    SUDO_CTR_IMAGES: ClassVar[list[str]] = ["sudo", "ctr", "-n", "k8s.io", "images"]
+
     # systemctl commands
     SYSTEMCTL_DAEMON_RELOAD: ClassVar[list[str]] = ["sudo", "systemctl", "daemon-reload"]
     SYSTEMCTL_ENABLE: ClassVar[list[str]] = ["sudo", "systemctl", "enable"]

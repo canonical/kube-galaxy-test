@@ -30,9 +30,7 @@ def test_components_registered_from_modules() -> None:
 
             # only consider classes defined in this module and subclassing ComponentBase
             if inspect.getmodule(obj) is module and issubclass(obj, ComponentBase):
-                key = obj.__name__.lower()
-                assert key in COMPONENTS, f"{obj!r} not registered as {key}"
-                assert COMPONENTS[key] is obj
+                assert obj in COMPONENTS.values(), f"{obj!r} not registered in COMPONENTS"
 
 
 def test_register_component_decorator_registers_and_cleans_up() -> None:
@@ -42,12 +40,12 @@ def test_register_component_decorator_registers_and_cleans_up() -> None:
     polluting global state for other tests.
     """
 
-    @register_component
+    @register_component("test-test-component")
     class TempTestComponent(ComponentBase):
         pass
 
     try:
-        assert "temptestcomponent" in COMPONENTS
-        assert COMPONENTS["temptestcomponent"] is TempTestComponent
+        assert "test-test-component" in COMPONENTS
+        assert COMPONENTS["test-test-component"] is TempTestComponent
     finally:
-        COMPONENTS.pop("temptestcomponent", None)
+        COMPONENTS.pop("test-test-component", None)

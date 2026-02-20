@@ -67,12 +67,17 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
 
         # Execute 8-stage lifecycle
         instances_list = list(instances.values())
+        cluster_managers = sum(1 for inst in instances_list if inst.is_cluster_manager)
+        if cluster_managers != 1:
+            raise ClusterError(
+                f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
+            )
+
         _download_components(instances_list, configs)
         _pre_install_components(instances_list, configs)
         _install_components(instances_list, configs)
         _configure_components(instances_list, configs)
         _bootstrap_components(instances_list, configs)
-        _post_bootstrap_components(instances_list, configs)
         _verify_components(instances_list, configs)
 
         section("Cluster Setup Complete!")
@@ -219,21 +224,6 @@ def _bootstrap_components(instances: list[ComponentBase], configs: list[Componen
             instance.bootstrap_hook()
         except Exception as exc:
             exception(f"  ✗ Bootstrap failed for {config.name}", exc)
-            raise
-
-
-def _post_bootstrap_components(
-    instances: list[ComponentBase], configs: list[ComponentConfig]
-) -> None:
-    """Stage 6/8: Post-bootstrap tasks (kubeconfig setup, etc.)."""
-    section("Stage 6/8: Post-bootstrap Tasks")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: post-bootstrap...")
-        try:
-            instance.post_bootstrap_hook()
-        except Exception as exc:
-            exception(f"  ✗ Post-bootstrap failed for {config.name}", exc)
             raise
 
 

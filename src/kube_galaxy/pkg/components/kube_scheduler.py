@@ -9,7 +9,7 @@ from typing import ClassVar
 from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
-@register_component
+@register_component("kube-scheduler")
 class KubeScheduler(ComponentBase):
     """
     Kube-Scheduler component for pod scheduling.

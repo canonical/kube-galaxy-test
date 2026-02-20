@@ -9,7 +9,7 @@ from typing import ClassVar
 from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
-@register_component
+@register_component("etcd")
 class Etcd(ComponentBase):
     """
     Etcd component for Kubernetes datastore.

@@ -112,17 +112,17 @@ components:
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/pause:3.10"
+      source_format: "registry.k8s.io/pause:{release}"
     use-spread: false
 
   # etcd - required for cluster state
   - name: etcd
     category: etcd
-    release: "3.5.26"
+    release: "3.6.6-0"
     repo: "https://github.com/etcd-io/etcd"
     installation:
       method: "container-image"
-      source_format: "quay.io/coreos/etcd:v{release}"
+      source_format: "registry.k8s.io/etcd:{release}"
     use-spread: false
 
   # CoreDNS - required for cluster DNS
@@ -132,7 +132,7 @@ components:
     repo: "https://github.com/coredns/coredns"
     installation:
       method: "container-image"
-      source_format: "coredns/coredns:v{release}"
+      source_format: "registry.k8s.io/coredns/coredns:v{release}"
     use-spread: false
 
 networking:
