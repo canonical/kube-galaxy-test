@@ -13,6 +13,19 @@ from kube_galaxy.pkg.utils.logging import exception, info, section, success
 from kube_galaxy.pkg.utils.shell import run
 
 __all__ = ["setup_cluster", "teardown_cluster"]
+SETUP_HOOKS = {
+    "download": ComponentBase.download_hook,
+    "pre_install": ComponentBase.pre_install_hook,
+    "install": ComponentBase.install_hook,
+    "configure": ComponentBase.configure_hook,
+    "bootstrap": ComponentBase.bootstrap_hook,
+    "verify": ComponentBase.verify_hook,
+}
+TEARDOWN_HOOKS = {
+    "stop": ComponentBase.stop_hook,
+    "delete": ComponentBase.delete_hook,
+    "post_delete": ComponentBase.post_delete_hook,
+}
 
 
 def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) -> None:
@@ -65,7 +78,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
             instance = component_class(instances, manifest, config, arch_info)
             instances[config.name] = instance
 
-        # Execute 8-stage lifecycle
+        # Execute 6-stage lifecycle
         instances_list = list(instances.values())
         cluster_managers = sum(1 for inst in instances_list if inst.is_cluster_manager)
         if cluster_managers != 1:
@@ -73,12 +86,10 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
                 f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
             )
 
-        _download_components(instances_list, configs)
-        _pre_install_components(instances_list, configs)
-        _install_components(instances_list, configs)
-        _configure_components(instances_list, configs)
-        _bootstrap_components(instances_list, configs)
-        _verify_components(instances_list, configs)
+        num_hooks = len(SETUP_HOOKS)
+        for idx, hook_name in enumerate(SETUP_HOOKS):
+            section(f"Stage {idx + 1}/{num_hooks}: {hook_name.capitalize()} Components")
+            _run_hook(instances_list, configs, hook_name)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")
@@ -142,9 +153,10 @@ def teardown_cluster(
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
         instances_list = list(instances.values())
-        _stop_components(instances_list, configs, force)
-        _delete_components(instances_list, configs, force)
-        _post_delete_components(instances_list, configs, force)
+        num_hooks = len(TEARDOWN_HOOKS)
+        for idx, hook_name in enumerate(TEARDOWN_HOOKS):
+            section(f"Stage {idx + 1}/{num_hooks}: {hook_name.capitalize()} Components")
+            _run_hook(instances_list, configs, hook_name, force)
 
         # Final cleanup: remove any remaining kube-galaxy alternatives
         _cleanup_kube_galaxy_alternatives(force)
@@ -162,138 +174,41 @@ def teardown_cluster(
             raise ClusterError(f"Cluster teardown failed: {exc}") from exc
 
 
-def _download_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
-    """Stage 1/8: Download all component artifacts."""
-    section("Stage 1/8: Downloading Components")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: downloading...")
-        try:
-            instance.download_hook()
-        except Exception as exc:
-            exception(f"  ✗ Download failed for {config.name}", exc)
-            raise
-
-
-def _pre_install_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
-    """Stage 2/8: Pre-installation machine preparation."""
-    section("Stage 2/8: Pre-installation Setup")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: preparing...")
-        try:
-            instance.pre_install_hook()
-        except Exception as exc:
-            exception(f"  ✗ Pre-install failed for {config.name}", exc)
-            raise
-
-
-def _install_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
-    """Stage 3/8: Install component binaries/configs."""
-    section("Stage 3/8: Installing Components")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: installing...")
-        try:
-            instance.install_hook()
-        except Exception as exc:
-            exception(f"  ✗ Install failed for {config.name}", exc)
-            raise
-
-
-def _configure_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
-    """Stage 4/8: Configure components (config files, settings)."""
-    section("Stage 4/8: Configuring Components")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: configuring...")
-        try:
-            instance.configure_hook()
-        except Exception as exc:
-            exception(f"  ✗ Configure failed for {config.name}", exc)
-            raise
-
-
-def _bootstrap_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
-    """Stage 5/8: Bootstrap/start services (systemd start, kubeadm init)."""
-    section("Stage 5/8: Bootstrapping Services")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: bootstrapping...")
-        try:
-            instance.bootstrap_hook()
-        except Exception as exc:
-            exception(f"  ✗ Bootstrap failed for {config.name}", exc)
-            raise
-
-
-def _verify_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
-    """Stage 7/8: Verify components are working."""
-    section("Stage 7/8: Verifying Components")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: verifying...")
-        try:
-            instance.verify_hook()
-        except Exception as exc:
-            exception(f"  ✗ Verification failed for {config.name}", exc)
-            raise
-
-
-def _stop_components(
-    instances: list[ComponentBase], configs: list[ComponentConfig], force: bool
+def _run_hook(
+    instances: list[ComponentBase],
+    configs: list[ComponentConfig],
+    hook_name: str,
+    force: bool = False,
 ) -> None:
-    """Teardown Stage 1/3: Stop component services."""
-    section("Teardown Stage 1/3: Stopping Components")
+    """
+    Run a specific lifecycle hook for all components.
 
+    Args:
+        instances: List of component instances
+        configs: List of component configs (must be in same order as instances)
+        hook_name: Name of the hook to run (e.g., "install")
+        force: Continue execution even if errors occur
+
+    Raises:
+        ClusterError: If any component hook fails
+    """
+    hook_name_caps = hook_name.capitalize()
     for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: stopping...")
+        info(f"  {config.name}: {hook_name_caps}...")
         try:
-            instance.stop_hook()
-        except Exception as exc:
-            if force:
-                exception(f"  ✗ Stop failed for {config.name} (continuing due to --force)", exc)
+            if hook_method := SETUP_HOOKS.get(hook_name) or TEARDOWN_HOOKS.get(hook_name):
+                hook_method(instance)
             else:
-                exception(f"  ✗ Stop failed for {config.name}", exc)
-                raise
-
-
-def _delete_components(
-    instances: list[ComponentBase], configs: list[ComponentConfig], force: bool
-) -> None:
-    """Teardown Stage 2/3: Delete component binaries and configs."""
-    section("Teardown Stage 2/3: Deleting Components")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: deleting...")
-        try:
-            instance.delete_hook()
-        except Exception as exc:
-            if force:
-                exception(f"  ✗ Delete failed for {config.name} (continuing due to --force)", exc)
-            else:
-                exception(f"  ✗ Delete failed for {config.name}", exc)
-                raise
-
-
-def _post_delete_components(
-    instances: list[ComponentBase], configs: list[ComponentConfig], force: bool
-) -> None:
-    """Teardown Stage 3/3: Clean up remaining artifacts."""
-    section("Teardown Stage 3/3: Post-Delete Cleanup")
-
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: cleaning up...")
-        try:
-            instance.post_delete_hook()
+                raise ClusterError(f"Unknown hook name: {hook_name}")
         except Exception as exc:
             if force:
                 exception(
-                    f"  ✗ Post-delete failed for {config.name} (continuing due to --force)", exc
+                    f"  ✗ {hook_name_caps} failed for {config.name} (continuing due to --force)",
+                    exc,
                 )
             else:
-                exception(f"  ✗ Post-delete failed for {config.name}", exc)
-                raise
+                exception(f"  ✗ {hook_name_caps} failed for {config.name}", exc)
+                raise ClusterError(f"{hook_name_caps} failed for {config.name}: {exc}") from exc
 
 
 def _cleanup_kube_galaxy_alternatives(force: bool) -> None:

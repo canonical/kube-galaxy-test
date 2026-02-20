@@ -462,14 +462,14 @@ class ComponentBase:
         image_tar = self.extracted_dir / "image.tar"
         if file_path.suffix == ".tar":
             file_path.rename(image_tar)
-        elif file_path.suffixes == [".tar", ".gz"] or file_path.suffixes == [".tgz"]:
+        elif file_path.suffixes == [".tar", ".gz"] or file_path.suffix == ".tgz":
             with gzip.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+        elif file_path.suffixes == [".tar", ".xz"] or file_path.suffix == ".txz":
+            with lzma.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
                 shutil.copyfileobj(src, dst)
         elif file_path.suffixes == [".tar", ".bz2"]:
             with bz2.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
-                shutil.copyfileobj(src, dst)
-        elif file_path.suffixes == [".tar", ".xz"] or file_path.suffixes == [".txz"]:
-            with lzma.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
                 shutil.copyfileobj(src, dst)
         else:
             raise ComponentError(f"Unsupported archive format for {file_path.name}")

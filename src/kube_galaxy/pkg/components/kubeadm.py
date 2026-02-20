@@ -5,6 +5,7 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 """
 
 import shutil
+from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar
 from urllib.request import urlopen
@@ -80,6 +81,22 @@ class Kubeadm(ClusterComponentBase):
         """
         config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
 
+    @cached_property
+    def _images_list(self) -> list[str]:
+        """List of images kubeadm will use based on the cluster configuration."""
+        cmd = [
+            "kubeadm",
+            "config",
+            "images",
+            "list",
+            "--kubernetes-version",
+            self.manifest.kubernetes_version,
+            "--image-repository",
+            self.LOCAL_REGISTRY,
+        ]
+        config_str = run(cmd, check=True, capture_output=True)
+        return config_str.stdout.splitlines()
+
     def find_image_retag(self, image: str) -> str:
         """
         Match an image against the list of images kubeadm will use
@@ -98,26 +115,6 @@ class Kubeadm(ClusterComponentBase):
             if kubadm_image_name.endswith(custom_image_name):
                 return img
         return ""
-
-    def install_hook(self) -> None:
-        """
-        Install kubeadm and prepare necessary images.
-
-        Determines which images kubeadm will use based on the Kubernetes version
-        """
-        super().install_hook()
-        cmd = [
-            "kubeadm",
-            "config",
-            "images",
-            "list",
-            "--kubernetes-version",
-            self.manifest.kubernetes_version,
-            "--image-repository",
-            self.LOCAL_REGISTRY,
-        ]
-        config_str = run(cmd, check=True, capture_output=True)
-        self._images_list = config_str.stdout.splitlines()
 
     def configure_hook(self) -> None:
         """
