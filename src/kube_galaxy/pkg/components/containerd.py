@@ -58,7 +58,7 @@ class Containerd(ComponentBase):
         info("  Removing existing containerd installation if present")
         run([*Commands.SUDO_APT_REMOVE, "-y", "containerd.io"], check=False)
 
-    def configure_hook(self, arch: str) -> None:
+    def configure_hook(self, arch: str | None = None) -> None:
         """
         Configure containerd with proper Kubernetes-compatible settings.
 

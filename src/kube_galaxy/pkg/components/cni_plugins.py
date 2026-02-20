@@ -34,7 +34,7 @@ class CNIPlugins(ComponentBase):
     OPT_CNI_PLUGINS_DIR = Path("/opt/cni/bin")
     LOOPBACK_CONFIG_PATH = Path("/etc/cni/net.d/10-loopback.conf")
 
-    def install_hook(self, arch: str) -> None:
+    def install_hook(self) -> None:
         """
         Install cni-plugins binary from extracted archive.
 
@@ -72,7 +72,7 @@ class CNIPlugins(ComponentBase):
                     f" {self.config.installation.method}"
                 )
 
-    def configure_hook(self, arch: str) -> None:
+    def configure_hook(self) -> None:
         loopback_content = dedent("""
         {
           "cniVersion": "0.4.0",

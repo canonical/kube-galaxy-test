@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
+from kube_galaxy.pkg.arch.detector import get_arch_info
 from kube_galaxy.pkg.components import ComponentBase, find_component
 from kube_galaxy.pkg.literals import Commands
 from kube_galaxy.pkg.manifest.loader import load_manifest
@@ -62,19 +62,18 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         instances: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = find_component(config.name)
-            instance = component_class(instances, manifest, config)
+            instance = component_class(instances, manifest, config, arch_info)
             instances[config.name] = instance
 
         # Execute 8-stage lifecycle
         instances_list = list(instances.values())
-        _download_components(instances_list, configs, arch_info)
+        _download_components(instances_list, configs)
         _pre_install_components(instances_list, configs)
-        _install_components(instances_list, configs, arch_info)
-        _configure_components(instances_list, configs, arch_info)
+        _install_components(instances_list, configs)
+        _configure_components(instances_list, configs)
         _bootstrap_components(instances_list, configs)
         _post_bootstrap_components(instances_list, configs)
         _verify_components(instances_list, configs)
-        _test_components(instances_list, configs)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")
@@ -158,16 +157,14 @@ def teardown_cluster(
             raise ClusterError(f"Cluster teardown failed: {exc}") from exc
 
 
-def _download_components(
-    instances: list[ComponentBase], configs: list[ComponentConfig], arch_info: ArchInfo
-) -> None:
+def _download_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
     """Stage 1/8: Download all component artifacts."""
     section("Stage 1/8: Downloading Components")
 
     for config, instance in zip(configs, instances, strict=True):
         info(f"  {config.name}: downloading...")
         try:
-            instance.download_hook(arch_info.k8s)
+            instance.download_hook()
         except Exception as exc:
             exception(f"  ✗ Download failed for {config.name}", exc)
             raise
@@ -186,31 +183,27 @@ def _pre_install_components(instances: list[ComponentBase], configs: list[Compon
             raise
 
 
-def _install_components(
-    instances: list[ComponentBase], configs: list[ComponentConfig], arch_info: ArchInfo
-) -> None:
+def _install_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
     """Stage 3/8: Install component binaries/configs."""
     section("Stage 3/8: Installing Components")
 
     for config, instance in zip(configs, instances, strict=True):
         info(f"  {config.name}: installing...")
         try:
-            instance.install_hook(arch_info.k8s)
+            instance.install_hook()
         except Exception as exc:
             exception(f"  ✗ Install failed for {config.name}", exc)
             raise
 
 
-def _configure_components(
-    instances: list[ComponentBase], configs: list[ComponentConfig], arch_info: ArchInfo
-) -> None:
+def _configure_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
     """Stage 4/8: Configure components (config files, settings)."""
     section("Stage 4/8: Configuring Components")
 
     for config, instance in zip(configs, instances, strict=True):
         info(f"  {config.name}: configuring...")
         try:
-            instance.configure_hook(arch_info.image)
+            instance.configure_hook()
         except Exception as exc:
             exception(f"  ✗ Configure failed for {config.name}", exc)
             raise
@@ -255,22 +248,6 @@ def _verify_components(instances: list[ComponentBase], configs: list[ComponentCo
         except Exception as exc:
             exception(f"  ✗ Verification failed for {config.name}", exc)
             raise
-
-
-def _test_components(instances: list[ComponentBase], configs: list[ComponentConfig]) -> None:
-    """Stage 8/8: Run component tests (optional)."""
-    section("Stage 8/8: Testing Components")
-
-    for config, instance in zip(configs, instances, strict=True):
-        if config.use_spread:
-            info(f"  {config.name}: running tests...")
-            try:
-                instance.test_hook()
-            except Exception as exc:
-                exception(f"  ✗ Tests failed for {config.name}", exc)
-                raise
-        else:
-            info(f"  {config.name}: skipping tests (use_spread=false)")
 
 
 def _stop_components(

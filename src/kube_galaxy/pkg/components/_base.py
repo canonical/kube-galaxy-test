@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import ClassVar
 
+from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.components._constants import (
     DEFAULT_BOOTSTRAP_TIMEOUT,
     DEFAULT_CONFIGURE_TIMEOUT,
@@ -36,18 +37,17 @@ class ComponentBase:
     it needs. The component has access to:
     - The full manifest (self.manifest)
     - Its own component configuration (self.config)
-    - Architecture information (passed to hooks)
+    - Architecture information (self.arch_info)
 
     Lifecycle hooks (all have default empty implementations):
     Setup Hooks:
-    1. download_hook(repo, release, method, source_format, arch) - Download artifacts
+    1. download_hook() - Download artifacts
     2. pre_install_hook() - Prepare machine for installation
-    3. install_hook(repo, release, method, source_format, arch) - Install the component
+    3. install_hook() - Install the component
     4. configure_hook() - Configure component (config files, settings)
     5. bootstrap_hook() - Initialize/start the component
     6. post_bootstrap_hook() - Post-initialization tasks
     7. verify_hook() - Verify component is working
-    8. test_hook() - Run component tests (optional)
 
     Teardown Hooks (run in reverse dependency order):
     9. stop_hook() - Stop services and processes
@@ -80,6 +80,7 @@ class ComponentBase:
         instances: dict[str, "ComponentBase"],
         manifest: Manifest,
         config: ComponentConfig,
+        arch_info: ArchInfo | None = None,
     ) -> None:
         """
         Initialize component with instances, manifest, and config.
@@ -92,6 +93,8 @@ class ComponentBase:
         self.instances = instances
         self.manifest = manifest
         self.config = config
+        # Allow tests and callers to omit arch_info; default to detected arch
+        self.arch_info = arch_info or get_arch_info()
         self.install_path: str | None = None
         self.binary_path: Path | None = None
 
@@ -123,7 +126,7 @@ class ComponentBase:
     # Lifecycle hooks - all have default empty implementations
     # Override in subclass as needed
 
-    def download_hook(self, arch: str) -> None:
+    def download_hook(self) -> None:
         """
         Download component artifacts.
 
@@ -131,13 +134,11 @@ class ComponentBase:
         Override to implement download logic.
 
         Access component config via self.config (repo, release, installation).
-
-        Args:
-            arch: Architecture (amd64, arm64, etc.)
         """
         if not self.config:
             raise ComponentError("Component config required for download")
 
+        arch = self.arch_info.k8s
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY:
@@ -164,7 +165,7 @@ class ComponentBase:
         """
         pass
 
-    def install_hook(self, arch: str) -> None:
+    def install_hook(self) -> None:
         """
         Install the component.
 
@@ -172,9 +173,6 @@ class ComponentBase:
         dependency-ordered). Override to implement installation logic.
 
         Access component config via self.config (repo, release, installation).
-
-        Args:
-            arch: Architecture (amd64, arm64, etc.)
         """
         if not self.config:
             raise ComponentError("Component config required for download")
@@ -225,7 +223,7 @@ class ComponentBase:
         """
         pass
 
-    def configure_hook(self, arch: str) -> None:
+    def configure_hook(self) -> None:
         """
         Configure the component (create config files, etc.).
 
@@ -237,6 +235,7 @@ class ComponentBase:
 
         match self.config.installation.method:
             case InstallMethod.CONTAINER_IMAGE:
+                arch = self.arch_info.image
                 self.container_image_pull(arch)
             case InstallMethod.BINARY | InstallMethod.BINARY_ARCHIVE | InstallMethod.NONE:
                 pass  # No default configuration needed for these methods
@@ -252,15 +251,6 @@ class ComponentBase:
 
         This hook runs in the VERIFY stage (sequential).
         Override to implement health check logic.
-        """
-        pass
-
-    def test_hook(self) -> None:
-        """
-        Run tests on the component.
-
-        This hook runs in the TEST stage (sequential).
-        Override to implement testing logic (e.g., spread tests).
         """
         pass
 
@@ -465,12 +455,19 @@ class ComponentBase:
             # Construct image from source_format template
             image = source_format.format(repo=repo, release=release, arch=arch)
 
-            # TODO: find the right way to read the metadata from the tar before importing, to get the correct image reference
-            which = run([ctr, "-n", "k8s.io", "images", "import", str(archive)], check=True, capture_output=True, text=True)
-            run([ctr, "-n", "k8s.io", "images", "tag", which.stdout.strip(), image], check=True)  # Tag the imported image
+            # TODO: find the right way to read the metadata from the tar
+            # before importing, to get the correct image reference
+            which = run(
+                [ctr, "-n", "k8s.io", "images", "import", str(archive)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            run(
+                [ctr, "-n", "k8s.io", "images", "tag", which.stdout.strip(), image], check=True
+            )  # Tag the imported image
         else:
             raise ComponentError("Container image import requested but 'ctr' command not found")
-
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
         """

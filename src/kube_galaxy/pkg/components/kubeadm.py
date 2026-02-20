@@ -49,7 +49,7 @@ class Kubeadm(ComponentBase):
         info("    Setting net.ipv4.ip_forward = 1")
         run(["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"], check=True)
 
-    def configure_hook(self, arch: str) -> None:
+    def configure_hook(self) -> None:
         """
         Configure system for kubeadm.
 
