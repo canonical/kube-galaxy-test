@@ -111,8 +111,8 @@ class Kubeadm(ClusterComponentBase):
         custom_image_name, _ = image.rsplit(":", 1)
         _, custom_image_name = custom_image_name.rsplit("/", 1)
         for img in self._images_list:
-            kubadm_image_name = img.rsplit(":", 1)[0]
-            if kubadm_image_name.endswith(custom_image_name):
+            kubeadm_image_name = img.rsplit(":", 1)[0]
+            if kubeadm_image_name.endswith(custom_image_name):
                 return img
         return ""
 
