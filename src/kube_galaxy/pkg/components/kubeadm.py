@@ -205,17 +205,13 @@ class Kubeadm(ClusterComponentBase):
             check=True,
         )
 
-        # Wait for system pods to be ready
+        # Wait for api-server to be ready
         run(
             [
                 kubectl,
-                "wait",
-                "--for=condition=Ready",
-                "pods",
-                "--all",
-                "-n",
-                "kube-system",
-                "--timeout=300s",
+                "get",
+                "--raw=/readyz",
+                "--request-timeout=300s",
             ],
             check=True,
         )

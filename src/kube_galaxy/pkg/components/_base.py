@@ -471,6 +471,8 @@ class ComponentBase:
         elif file_path.suffixes == [".tar", ".xz"] or file_path.suffixes == [".txz"]:
             with lzma.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
                 shutil.copyfileobj(src, dst)
+        else:
+            raise ComponentError(f"Unsupported archive format for {file_path.name}")
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
         """

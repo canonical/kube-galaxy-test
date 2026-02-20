@@ -17,7 +17,7 @@ __all__ = ["setup_cluster", "teardown_cluster"]
 
 def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) -> None:
     """
-    Set up a Kubernetes cluster using 8-stage component lifecycle.
+    Set up a Kubernetes cluster using 6-stage component lifecycle.
 
     Args:
         manifest_path: Path to cluster manifest YAML
