@@ -106,7 +106,7 @@ class Kubeadm(ClusterComponentBase):
             image: Replacement image name to match against kubeadm's image list
 
         Returns:
-            Retagged image name with local registry prefix, or None if not found
+            Retagged image name with local registry prefix, or '' if not found
         """
         custom_image_name, _ = image.rsplit(":", 1)
         _, custom_image_name = custom_image_name.rsplit("/", 1)

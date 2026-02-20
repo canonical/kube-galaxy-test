@@ -13,19 +13,19 @@ from kube_galaxy.pkg.utils.logging import exception, info, section, success
 from kube_galaxy.pkg.utils.shell import run
 
 __all__ = ["setup_cluster", "teardown_cluster"]
-SETUP_HOOKS = {
-    "download": ComponentBase.download_hook,
-    "pre_install": ComponentBase.pre_install_hook,
-    "install": ComponentBase.install_hook,
-    "configure": ComponentBase.configure_hook,
-    "bootstrap": ComponentBase.bootstrap_hook,
-    "verify": ComponentBase.verify_hook,
-}
-TEARDOWN_HOOKS = {
-    "stop": ComponentBase.stop_hook,
-    "delete": ComponentBase.delete_hook,
-    "post_delete": ComponentBase.post_delete_hook,
-}
+SETUP_HOOKS = [
+    "download",
+    "pre_install",
+    "install",
+    "configure",
+    "bootstrap",
+    "verify",
+]
+TEARDOWN_HOOKS = [
+    "stop",
+    "delete",
+    "post_delete",
+]
 
 
 def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) -> None:
@@ -192,23 +192,20 @@ def _run_hook(
     Raises:
         ClusterError: If any component hook fails
     """
-    hook_name_caps = hook_name.capitalize()
+    hook_name_caps = hook_name.title()
     for config, instance in zip(configs, instances, strict=True):
         info(f"  {config.name}: {hook_name_caps}...")
+        hook_method = getattr(instance, f"{hook_name}_hook", None)
+        if not hook_method:
+            raise ClusterError(f"{hook_name_caps} hook not implemented for {config.name}")
         try:
-            if hook_method := SETUP_HOOKS.get(hook_name) or TEARDOWN_HOOKS.get(hook_name):
-                hook_method(instance)
-            else:
-                raise ClusterError(f"Unknown hook name: {hook_name}")
+            hook_method()
         except Exception as exc:
-            if force:
-                exception(
-                    f"  ✗ {hook_name_caps} failed for {config.name} (continuing due to --force)",
-                    exc,
-                )
-            else:
-                exception(f"  ✗ {hook_name_caps} failed for {config.name}", exc)
-                raise ClusterError(f"{hook_name_caps} failed for {config.name}: {exc}") from exc
+            forced = " (continuing due to --force)" if force else ""
+            message = f"{hook_name_caps} failed for {config.name}{forced}: {exc}"
+            exception(f"  ✗ {message}", exc)
+            if not force:
+                raise ClusterError(message) from exc
 
 
 def _cleanup_kube_galaxy_alternatives(force: bool) -> None:
