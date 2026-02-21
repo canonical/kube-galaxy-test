@@ -9,7 +9,7 @@ from typing import ClassVar
 from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
-@register_component
+@register_component("pause")
 class Pause(ComponentBase):
     """
     Pause component for Kubernetes infrastructure.

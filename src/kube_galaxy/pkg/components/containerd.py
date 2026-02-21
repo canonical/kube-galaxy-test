@@ -4,15 +4,20 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
+import subprocess
+import time
+from pathlib import Path
 from typing import ClassVar
 
-from kube_galaxy.pkg.components import ComponentBase, register_component
+from kube_galaxy.pkg.components import ClusterComponentBase, ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, Permissions
+from kube_galaxy.pkg.manifest.models import InstallMethod
+from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
-@register_component
+@register_component("containerd")
 class Containerd(ComponentBase):
     """
     Containerd container runtime component.
@@ -30,6 +35,8 @@ class Containerd(ComponentBase):
     INSTALL_TIMEOUT = 120  # 2 minutes (extract and copy)
     BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
     CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
+    SOCKET_PATH = Path("/run/containerd/containerd.sock")
+
     BIN_PATH = "bin/*"  # Path inside archive where containerd binary is located
 
     def _get_pause_image(self) -> str:
@@ -52,6 +59,82 @@ class Containerd(ComponentBase):
 
         # Fallback to default if no pause component
         return "registry.k8s.io/pause:3.9"
+
+    def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
+        """
+        Get lists of tagged images and image archives Component instances.
+
+        Returns:
+            Tuple of (tagged_images, image_archives)
+        """
+        tagged_images = []
+        image_archives = []
+        for comp in self.instances.values():
+            match comp.config.installation.method:
+                case InstallMethod.CONTAINER_IMAGE:
+                    tagged_images.append(comp)
+                case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
+                    image_archives.append(comp)
+        return tagged_images, image_archives
+
+    def _image_pull_and_retag(
+        self, cluster_manager: ClusterComponentBase, image: ComponentBase
+    ) -> None:
+        """
+        Pull a container image with containerd and retag for use in the cluster.
+
+        Args:
+            cluster_manager: Cluster manager component instance defining image list
+            image: Component instance with CONTAINER_IMAGE method to pull
+        """
+        # Use ctr to pull images directly into containerd
+        to_pull = f"{image.image_repository}:{image.image_tag}"
+        info(f"    Pulling image: {to_pull}")
+        run([*Commands.SUDO_CTR_IMAGES, "pull", to_pull], check=True, stdout=subprocess.DEVNULL)
+        if to_tag := cluster_manager.find_image_retag(to_pull):
+            info(f"    Retag pulled image: {to_pull} -> {to_tag}")
+            run([*Commands.SUDO_CTR_IMAGES, "tag", to_pull, to_tag], check=True)
+        else:
+            info(f"    No retag found for image: {to_pull}")
+
+    def _image_import_and_retag(
+        self, cluster_manager: ClusterComponentBase, image: ComponentBase
+    ) -> None:
+        """
+        Import a container image archive with containerd and retag for use in the cluster.
+
+        Args:
+            cluster_manager: Cluster manager component instance defining image list
+            image: Component instance with CONTAINER_IMAGE_ARCHIVE method to import
+        """
+        # Use ctr to import images directly into containerd
+
+        if not image.extracted_dir:
+            raise ComponentError(
+                f"Image archive for {image.config.name} not extracted. Run download hook first."
+            )
+
+        tar_archive = str(image.extracted_dir / "image.tar")
+        before = run(
+            [*Commands.SUDO_CTR_IMAGES, "list", "--quiet"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        run([*Commands.SUDO_CTR_IMAGES, "import", tar_archive], check=True)
+        after = run(
+            [*Commands.SUDO_CTR_IMAGES, "list", "--quiet"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        new_images = set(after.stdout.splitlines()) - set(before.stdout.splitlines())
+        for img in new_images:
+            if to_tag := cluster_manager.find_image_retag(img):
+                info(f"    Retag imported image: {img} -> {to_tag}")
+                run([*Commands.SUDO_CTR_IMAGES, "tag", img, to_tag], check=True)
+            else:
+                info(f"    No retag found for imported image: {img}")
 
     def pre_install_hook(self) -> None:
         """Remove any existing containerd installation to avoid conflicts."""
@@ -117,6 +200,24 @@ WantedBy=multi-user.target
         Start containerd service.
         """
         run([*Commands.SYSTEMCTL_START, "containerd"], check=True)
+        run([*Commands.SYSTEMCTL_IS_ACTIVE, "--wait", "containerd"], check=True)
+
+        start = time.time()
+        while not self.SOCKET_PATH.exists():
+            if time.time() - start > self.BOOTSTRAP_TIMEOUT:
+                raise TimeoutError(
+                    f"Socket {self.SOCKET_PATH} did not appear within {self.BOOTSTRAP_TIMEOUT}s"
+                )
+            time.sleep(0.1)
+
+        images_tagged, image_archives = self._image_comps_by_type()
+        cluster_manager = self.get_cluster_manager()
+        for image in images_tagged:
+            info(f"  Pull and retag image from {image.config.name} component")
+            self._image_pull_and_retag(cluster_manager, image)
+        for image in image_archives:
+            info(f"  Import image archive from {image.config.name} component")
+            self._image_import_and_retag(cluster_manager, image)
 
     def verify_hook(self) -> None:
         """

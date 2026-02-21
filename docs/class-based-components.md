@@ -53,12 +53,12 @@ class MyComponent(ComponentBase):
     BOOTSTRAP_TIMEOUT = 180
 
     # Implement hooks you need
-    def download_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def download_hook(self) -> None:
         """Download component artifacts."""
         # Your download logic
         pass
 
-    def install_hook(self, repo: str, release: str, format: str, arch: str) -> None:
+    def install_hook(self) -> None:
         """Install the component."""
         # Your install logic
         pass
@@ -71,14 +71,14 @@ All hooks are optional - implement only what you need:
 1. **download_hook(repo, release, format, arch)** - Download artifacts (parallel)
 2. **pre_install_hook()** - Prepare machine (sequential)
 3. **install_hook(repo, release, format, arch)** - Install component (sequential)
-4. **bootstrap_hook()** - Start services (sequential)
-5. **post_bootstrap_hook()** - Post-init tasks (sequential)
-6. **configure_hook()** - Verify and configure (sequential)
+4. **configure_hook()** - Verify and configure (sequential)
+5. **bootstrap_hook()** - Start services (sequential)
+6. **verify_hook()** -    Confirm services are started (sequential)
 
 ### Accessing Manifest Data
 
 ```python
-def download_hook(self, repo, release, format, arch):
+def download_hook(self):
     # Access full manifest
     cluster_name = self.manifest.name
     k8s_version = self.manifest.kubernetes_version
@@ -100,7 +100,7 @@ def download_hook(self, repo, release, format, arch):
 Share data between hooks using instance attributes:
 
 ```python
-def download_hook(self, repo, release, format, arch):
+def download_hook(self):
     # Download and extract
     temp_dir = Path("/tmp/mycomponent")
     binary_path = temp_dir / "binary"
@@ -109,7 +109,7 @@ def download_hook(self, repo, release, format, arch):
     # Store for next hook (just use instance attribute!)
     self.binary_path = binary_path
 
-def install_hook(self, repo, release, format, arch):
+def install_hook(self):
     # Retrieve from previous hook
     if not hasattr(self, 'binary_path'):
         raise RuntimeError("Binary not downloaded")
@@ -227,6 +227,5 @@ instance.install_hook('https://example.com', '1.0.0', 'Binary', 'amd64')
 
 ## See Also
 
-- `ComponentBase` source: `src/kube_galaxy/pkg/components/base.py`
-- Example components: `kubeadm_v2.py`, `containerd_v2.py`
+- `ComponentBase` source: `src/kube_galaxy/pkg/components/_base.py`
 - Hook system design: `docs/hook-system-design.md`

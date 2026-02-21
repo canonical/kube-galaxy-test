@@ -14,7 +14,7 @@ from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
-@register_component
+@register_component("cni-plugins")
 class CNIPlugins(ComponentBase):
     """
     CNI-plugins component for container networking.
@@ -34,7 +34,7 @@ class CNIPlugins(ComponentBase):
     OPT_CNI_PLUGINS_DIR = Path("/opt/cni/bin")
     LOOPBACK_CONFIG_PATH = Path("/etc/cni/net.d/10-loopback.conf")
 
-    def install_hook(self, arch: str) -> None:
+    def install_hook(self) -> None:
         """
         Install cni-plugins binary from extracted archive.
 
@@ -73,6 +73,7 @@ class CNIPlugins(ComponentBase):
                 )
 
     def configure_hook(self) -> None:
+        """Configure cni-plugins by creating a loopback configuration file."""
         loopback_content = dedent("""
         {
           "cniVersion": "0.4.0",
@@ -81,7 +82,7 @@ class CNIPlugins(ComponentBase):
         }""").strip()
 
         self.write_config_file(
-            loopback_content, str(self.LOOPBACK_CONFIG_PATH), mode=Permissions.READABLE
+            loopback_content, self.LOOPBACK_CONFIG_PATH, mode=Permissions.READABLE
         )
 
     def delete_hook(self) -> None:

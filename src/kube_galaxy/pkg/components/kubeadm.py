@@ -5,21 +5,22 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 """
 
 import shutil
+from functools import cached_property
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 from urllib.request import urlopen
 
 import yaml
 
-from kube_galaxy.pkg.components import ComponentBase, register_component
+from kube_galaxy.pkg.components import ClusterComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
-@register_component
-class Kubeadm(ComponentBase):
+@register_component("kubeadm")
+class Kubeadm(ClusterComponentBase):
     """
     Kubeadm component for bootstrapping Kubernetes clusters.
 
@@ -35,7 +36,6 @@ class Kubeadm(ComponentBase):
     DOWNLOAD_TIMEOUT = 180  # 3 minutes (kubeadm binary is small)
     INSTALL_TIMEOUT = 60  # 1 minute (just copying binary)
     BOOTSTRAP_TIMEOUT = 600  # 10 minutes (kubeadm init can be slow)
-    POST_BOOTSTRAP_TIMEOUT = 30  # 30 seconds (just copy kubeconfig)
     VERIFY_TIMEOUT = 300  # 5 minutes (cluster health checks)
     CONFIGURE_TIMEOUT = 60  # 1 minute (configuration)
 
@@ -48,6 +48,73 @@ class Kubeadm(ComponentBase):
         # Enable IP forwarding for kubeadm networking
         info("    Setting net.ipv4.ip_forward = 1")
         run(["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"], check=True)
+
+    def _update_cluster_config(self, config: dict[str, Any]) -> None:
+        """
+        Update kubeadm ClusterConfiguration with necessary settings.
+
+        This includes setting the Kubernetes version, control plane endpoint,
+        and networking configuration based on the manifest.
+        """
+
+        # Get networking configuration from manifest
+        networking = self.manifest.get_networking()
+        if not networking:
+            raise ComponentError("No networking configuration found in manifest")
+
+        config["networking"].update(
+            {
+                "podSubnet": networking.pod_cidr,
+                "serviceSubnet": networking.service_cidr,
+            }
+        )
+        config["clusterName"] = self.manifest.name
+        config["imageRepository"] = self.LOCAL_REGISTRY
+        config["kubernetesVersion"] = self.manifest.kubernetes_version
+
+    def _update_init_config(self, config: dict[str, Any]) -> None:
+        """
+        Update kubeadm InitConfiguration with necessary settings.
+
+        This includes setting the API server advertise address and other
+        control plane settings.
+        """
+        config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
+
+    @cached_property
+    def _images_list(self) -> list[str]:
+        """List of images kubeadm will use based on the cluster configuration."""
+        cmd = [
+            "kubeadm",
+            "config",
+            "images",
+            "list",
+            "--kubernetes-version",
+            self.manifest.kubernetes_version,
+            "--image-repository",
+            self.LOCAL_REGISTRY,
+        ]
+        config_str = run(cmd, check=True, capture_output=True)
+        return config_str.stdout.splitlines()
+
+    def find_image_retag(self, image: str) -> str:
+        """
+        Match an image against the list of images kubeadm will use
+        If there's a match, return the retagged name with the local registry prefix.
+
+        Args:
+            image: Replacement image name to match against kubeadm's image list
+
+        Returns:
+            Retagged image name with local registry prefix, or '' if not found
+        """
+        custom_image_name, _ = image.rsplit(":", 1)
+        _, custom_image_name = custom_image_name.rsplit("/", 1)
+        for img in self._images_list:
+            kubeadm_image_name = img.rsplit(":", 1)[0]
+            if kubeadm_image_name.endswith(custom_image_name):
+                return img
+        return ""
 
     def configure_hook(self) -> None:
         """
@@ -75,26 +142,15 @@ class Kubeadm(ComponentBase):
         if not self.manifest:
             raise ComponentError("Manifest required for kubeadm bootstrap")
 
-        # Get networking configuration from manifest
-        networking = self.manifest.get_networking()
-        if not networking:
-            raise ComponentError("No networking configuration found in manifest")
-
         cmd = ["kubeadm", "config", "print", "init-defaults"]
         config_str = run(cmd, check=True, capture_output=True)
         configs = list(yaml.safe_load_all(config_str.stdout))
         for config in configs:
-            kind = config.get("kind")
-            if kind == "InitConfiguration":
-                config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
-            elif kind == "ClusterConfiguration":
-                config["networking"].update(
-                    {
-                        "podSubnet": networking.pod_cidr,
-                        "serviceSubnet": networking.service_cidr,
-                    }
-                )
-                config["clusterName"] = self.manifest.name
+            match config.get("kind"):
+                case "InitConfiguration":
+                    self._update_init_config(config)
+                case "ClusterConfiguration":
+                    self._update_cluster_config(config)
         self._cluster_config = Path(self.component_tmp_dir) / "kubeadm-config.yaml"
 
         # Write config to temp file
@@ -115,17 +171,10 @@ class Kubeadm(ComponentBase):
         cmd = ["sudo", "kubeadm", "init", f"--config={self._cluster_config}"]
         run(cmd, check=True)
 
-    def post_bootstrap_hook(self) -> None:
-        """
-        Post-bootstrap tasks: setup kubeconfig for user.
-
-        Copies kubeconfig to user directory and sets permissions.
-        """
+        # Copy admin config
         home = Path.home()
         kube_dir = home / ".kube"
         kube_dir.mkdir(exist_ok=True)
-
-        # Copy admin config
         run(
             [*Commands.SUDO_CP, "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
             check=True,
@@ -153,17 +202,13 @@ class Kubeadm(ComponentBase):
             check=True,
         )
 
-        # Wait for system pods to be ready
+        # Wait for api-server to be ready
         run(
             [
                 kubectl,
-                "wait",
-                "--for=condition=Ready",
-                "pods",
-                "--all",
-                "-n",
-                "kube-system",
-                "--timeout=300s",
+                "get",
+                "--raw=/readyz",
+                "--request-timeout=300s",
             ],
             check=True,
         )

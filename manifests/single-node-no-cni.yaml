@@ -1,6 +1,6 @@
 name: single-node-no-cni
 description: "Single-node Kubernetes cluster without CNI - core components only"
-kubernetes-version: "1.35.0"
+kubernetes-version: &k8s-version "1.35.0"
 labels:
   environment: testing
   cluster-type: minimal
@@ -44,7 +44,7 @@ components:
   # Kubernetes core binaries
   - name: kubelet
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary"
@@ -53,7 +53,7 @@ components:
 
   - name: kubeadm
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary"
@@ -62,7 +62,7 @@ components:
 
   - name: kubectl
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary"
@@ -72,7 +72,7 @@ components:
   # Kubernetes control plane components
   - name: kube-apiserver
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -81,7 +81,7 @@ components:
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -90,7 +90,7 @@ components:
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -99,7 +99,7 @@ components:
 
   - name: kube-proxy
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -112,17 +112,17 @@ components:
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/pause:3.10"
+      source_format: "registry.k8s.io/pause:{release}"
     use-spread: false
 
   # etcd - required for cluster state
   - name: etcd
     category: etcd
-    release: "3.5.26"
+    release: "3.6.6-0"
     repo: "https://github.com/etcd-io/etcd"
     installation:
       method: "container-image"
-      source_format: "quay.io/coreos/etcd:v{release}"
+      source_format: "registry.k8s.io/etcd:{release}"
     use-spread: false
 
   # CoreDNS - required for cluster DNS
@@ -132,7 +132,7 @@ components:
     repo: "https://github.com/coredns/coredns"
     installation:
       method: "container-image"
-      source_format: "coredns/coredns:v{release}"
+      source_format: "registry.k8s.io/coredns/coredns:v{release}"
     use-spread: false
 
 networking:

@@ -19,9 +19,7 @@ class HookStage(StrEnum):
     INSTALL = "install"
     CONFIGURE = "configure"
     BOOTSTRAP = "bootstrap"
-    POST_BOOTSTRAP = "post_bootstrap"
     VERIFY = "verify"
-    TEST = "test"
 
 
 # Default timeout values (in seconds) for lifecycle stages
@@ -30,7 +28,6 @@ DEFAULT_PRE_INSTALL_TIMEOUT = Timeouts.NETWORK_TIMEOUT
 DEFAULT_INSTALL_TIMEOUT = Timeouts.INSTALL_TIMEOUT
 DEFAULT_CONFIGURE_TIMEOUT = Timeouts.CONFIGURE_TIMEOUT
 DEFAULT_BOOTSTRAP_TIMEOUT = Timeouts.BOOTSTRAP_TIMEOUT
-DEFAULT_POST_BOOTSTRAP_TIMEOUT = Timeouts.CONFIGURE_TIMEOUT
 DEFAULT_VERIFY_TIMEOUT = Timeouts.DRAIN_TIMEOUT
 DEFAULT_TEST_TIMEOUT = Timeouts.BOOTSTRAP_TIMEOUT
 

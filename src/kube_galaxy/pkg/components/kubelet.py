@@ -13,7 +13,7 @@ from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
-@register_component
+@register_component("kubelet")
 class Kubelet(ComponentBase):
     """
     Kubelet component for Kubernetes nodes.

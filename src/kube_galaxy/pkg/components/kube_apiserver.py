@@ -9,7 +9,7 @@ from typing import ClassVar
 from kube_galaxy.pkg.components import ComponentBase, register_component
 
 
-@register_component
+@register_component("kube-apiserver")
 class KubeAPIServer(ComponentBase):
     """
     Kube-APIServer component for Kubernetes control plane.

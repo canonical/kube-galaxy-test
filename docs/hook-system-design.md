@@ -36,16 +36,12 @@ The current component installation system is:
 └──────┬───────┘
        │
 ┌──────▼───────┐
-│  BOOTSTRAP   │ ← Start services (dependency-ordered)
-└──────┬───────┘
-       │
-┌──────▼────────┐
-│POST_BOOTSTRAP │ ← Post-init tasks (get kubeconfig, etc.)
-└──────┬────────┘
+│  CONFIGURE   │ ← Configure Services
+└──────────────┘
        │
 ┌──────▼───────┐
-│  CONFIGURE   │ ← Final config and verification
-└──────────────┘
+│  BOOTSTRAP   │ ← Start services (dependency-ordered)
+└──────┬───────┘
 ```
 
 ### Key Design Decisions

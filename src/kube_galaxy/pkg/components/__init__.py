@@ -6,24 +6,30 @@ Components inherit from ComponentBase and override the lifecycle hooks they need
 
 import importlib as _importlib
 import pkgutil as _pkgutil
+from collections.abc import Callable
 
-from kube_galaxy.pkg.components._base import ComponentBase
+from kube_galaxy.pkg.components._base import ClusterComponentBase, ComponentBase
 
-__all__ = ["ComponentBase", "find_component", "register_component"]
+__all__ = ["ClusterComponentBase", "ComponentBase", "find_component", "register_component"]
 
 # Simple mapping of component names to classes
 COMPONENTS: dict[str, type[ComponentBase]] = {}
 
 
-def register_component(cls: type[ComponentBase]) -> type[ComponentBase]:
+def register_component(name: str) -> Callable[[type[ComponentBase]], type[ComponentBase]]:
     """Decorator to register a component class in the COMPONENTS registry
+
     Args:
-        cls: The component class to register.
+        name: The name to register the component under.
     Returns:
-        The original class, unmodified
+        A decorator that registers the component class.
     """
-    COMPONENTS[cls.__name__.lower()] = cls
-    return cls
+
+    def decorator(cls: type[ComponentBase]) -> type[ComponentBase]:
+        COMPONENTS[name.lower()] = cls
+        return cls
+
+    return decorator
 
 
 def find_component(name: str) -> type[ComponentBase]:
@@ -33,8 +39,7 @@ def find_component(name: str) -> type[ComponentBase]:
     Returns:
         The component class if found, or ComponentBase if not found
     """
-    remove = str.maketrans({".": "", "-": "", "_": ""})
-    return COMPONENTS.get(name.lower().translate(remove)) or ComponentBase
+    return COMPONENTS.get(name.lower()) or ComponentBase
 
 
 # Import all component modules so they execute registration side-effects

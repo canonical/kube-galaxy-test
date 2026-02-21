@@ -27,20 +27,16 @@ Components can implement any or all of these lifecycle hooks:
 **Execution**: Sequential, respecting dependencies
 **When**: After downloads and pre-install hooks
 
-### 4. BOOTSTRAP
+### 4. CONFIGURE
+**Purpose**: Final configuration
+**Execution**: Sequential, after install
+**When**: Final stage before completion
+
+### 5. BOOTSTRAP
 **Purpose**: Initialize and start the component
 **Execution**: Sequential, respecting dependencies
 **When**: After all components are installed
 
-### 5. POST_BOOTSTRAP
-**Purpose**: Post-initialization configuration
-**Execution**: Sequential, after bootstrap
-**When**: After cluster/services are running
-
-### 6. CONFIGURE
-**Purpose**: Final configuration and verification
-**Execution**: Sequential, after post_bootstrap
-**When**: Final stage before completion
 
 ## Execution Flow
 
@@ -49,27 +45,46 @@ Stage 1: DOWNLOAD (parallel for all components)
   ├─ runc download
   ├─ containerd download
   ├─ kubelet download
-  └─ kubeadm download
+  ├─ kubeadm download
+  ├─ kube-proxy image-archive download
+  ├─ kube-apiserver image-archive download
+  ├─ kube-scheduler image-archive download
+  ├─ kube-controller-manager image-archive download
+  ├─ etcd image-archive download
+  └─ coredns image-archive download
 
 Stage 2: PRE_INSTALL (sequential, dependency-ordered)
+  ├─ remove apt installed containerd
   └─ (machine preparation, if any components define this)
 
 Stage 3: INSTALL (sequential, dependency-ordered)
   ├─ runc install
   ├─ containerd install (after runc)
   ├─ kubelet install
-  └─ kubeadm install (after containerd, kubelet)
+  ├─ kubeadm install (after containerd, kubelet)
+  ├─ kube-proxy image-archive registration
+  ├─ kube-apiserver image-archive registration
+  ├─ kube-scheduler image-archive registration
+  ├─ kube-controller-manager image-archive registration
+  ├─ etcd image-archive registration
+  └─ coredns image-archive registration
 
-Stage 4: BOOTSTRAP (sequential, dependency-ordered)
-  ├─ containerd bootstrap (start service)
-  └─ kubeadm bootstrap (kubeadm init)
-
-Stage 5: POST_BOOTSTRAP (sequential)
-  └─ kubeadm post_bootstrap (get kubeconfig)
-
-Stage 6: CONFIGURE (sequential, dependency-ordered)
+Stage 4: CONFIGURE (sequential, dependency-ordered)
   ├─ containerd configure (verify)
   └─ kubeadm configure (verify)
+     └─ configure static images and kubernetes release
+
+Stage 5: BOOTSTRAP (sequential, dependency-ordered)
+  ├─ containerd bootstrap (start service)
+  │  ├─ pull   registered images
+  │  ├─ import registered image-archives
+  │  └─ retag  registered images
+  └─ kubeadm bootstrap (kubeadm init)
+
+Stage 6: VERIFY
+ (sequential)
+  └─ kubeadm post_bootstrap (get kubeconfig)
+
 ```
 
 ## Component Registration
