@@ -218,44 +218,22 @@ def _cleanup_kube_galaxy_alternatives(force: bool) -> None:
     Args:
         force: Continue cleanup even if errors occur
     """
+    kube_galaxy_dir = Path("/opt/kube-galaxy")
+    if not kube_galaxy_dir.exists():
+        return
+
+    info("  Final cleanup: removing remaining alternatives...")
+    for binary in kube_galaxy_dir.glob("**/bin/*"):
+        if binary.is_file():
+            cmd = [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary.name, str(binary)]
+            run(cmd, check=False)
+
+    # Remove the entire /opt/kube-galaxy directory
     try:
-        kube_galaxy_dir = Path("/opt/kube-galaxy")
-        if not kube_galaxy_dir.exists():
-            return
-
-        info("  Final cleanup: removing remaining alternatives...")
-
-        for component_dir in kube_galaxy_dir.iterdir():
-            if component_dir.is_dir():
-                bin_dir = component_dir / "bin"
-                if bin_dir.exists():
-                    for binary in bin_dir.glob("*"):
-                        if binary.is_file():
-                            try:
-                                run(
-                                    [
-                                        *Commands.UPDATE_ALTERNATIVES_REMOVE,
-                                        binary.name,
-                                        str(binary),
-                                    ],
-                                    check=False,
-                                )
-                            except Exception:
-                                pass  # Ignore individual failures during cleanup
-
-        # Remove the entire /opt/kube-galaxy directory
-        try:
-            run([*Commands.SUDO_RM_RF, str(kube_galaxy_dir)], check=False)
-            info(f"  Removed {kube_galaxy_dir}")
-        except Exception as e:
-            if force:
-                info(f"  Warning: Failed to remove {kube_galaxy_dir}: {e}")
-            else:
-                raise
-
-    except Exception as exc:
+        run([*Commands.SUDO_RM_RF, str(kube_galaxy_dir)], check=False)
+        info(f"  Removed {kube_galaxy_dir}")
+    except Exception as e:
         if force:
-            exception("Final alternatives cleanup failed (continuing due to --force)", exc)
+            info(f"  Warning: Failed to remove {kube_galaxy_dir}: {e}")
         else:
-            exception("Final alternatives cleanup failed", exc)
             raise
