@@ -22,7 +22,7 @@ class SetupHooks(StrEnum):
     VERIFY = "verify"
 
 
-# Lifecycle stage enumeration
+# Teardown stage enumeration
 class TeardownHooks(StrEnum):
     """Component teardown stages executed in order."""
 
