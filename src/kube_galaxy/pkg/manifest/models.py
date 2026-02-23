@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 
@@ -56,8 +57,9 @@ class Manifest:
     """Cluster manifest configuration."""
 
     name: str
-    description: str
     kubernetes_version: str
+    path: Path = Path("")  # Path to manifest file (optional; used for logging/debugging)
+    description: str = ""
     components: list[ComponentConfig] = field(default_factory=list)
     networking: list[NetworkConfig] = field(default_factory=list)
 

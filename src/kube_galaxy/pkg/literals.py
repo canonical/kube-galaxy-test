@@ -5,8 +5,30 @@ This module consolidates scattered string literals, magic numbers, and constants
 to provide a single source of truth and improve maintainability.
 """
 
+from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar
+
+
+# Lifecycle stage enumeration
+class SetupHooks(StrEnum):
+    """Component lifecycle stages executed in order."""
+
+    DOWNLOAD = "download"
+    PRE_INSTALL = "pre_install"
+    INSTALL = "install"
+    CONFIGURE = "configure"
+    BOOTSTRAP = "bootstrap"
+    VERIFY = "verify"
+
+
+# Lifecycle stage enumeration
+class TeardownHooks(StrEnum):
+    """Component teardown stages executed in order."""
+
+    STOP = "stop"
+    DELETE = "delete"
+    POST_DELETE = "post_delete"
 
 
 class SystemPaths:

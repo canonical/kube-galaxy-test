@@ -37,10 +37,10 @@ def load_manifest(path: str | Path) -> Manifest:
     if not isinstance(data, dict):
         raise ValueError("Manifest must be a YAML dictionary")
 
-    return _deserialize_manifest(data)
+    return _deserialize_manifest(data, manifest_path)
 
 
-def _deserialize_manifest(data: dict[str, Any]) -> Manifest:
+def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     """Deserialize manifest dictionary to Manifest dataclass."""
     # Parse components
     components: list[ComponentConfig] = []
@@ -72,6 +72,7 @@ def _deserialize_manifest(data: dict[str, Any]) -> Manifest:
 
     return Manifest(
         name=data["name"],
+        path=path,
         description=data.get("description", ""),
         kubernetes_version=data["kubernetes-version"],
         components=components,

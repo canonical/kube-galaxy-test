@@ -103,7 +103,7 @@ def setup(manifest_path: str | None = None) -> None:
     info(f"Using manifest: {manifest_file}")
 
     try:
-        setup_cluster(manifest_file, work_dir=".", debug=False)
+        setup_cluster(manifest_file, work_dir=".")
         success("Cluster setup completed")
     except Exception as e:
         exception("Cluster setup failed", e)

@@ -2,40 +2,47 @@
 
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import get_arch_info
+from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.components import ComponentBase, find_component
-from kube_galaxy.pkg.literals import Commands
+from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import ComponentConfig
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
 from kube_galaxy.pkg.utils.shell import run
 
 __all__ = ["setup_cluster", "teardown_cluster"]
-SETUP_HOOKS = [
-    "download",
-    "pre_install",
-    "install",
-    "configure",
-    "bootstrap",
-    "verify",
-]
-TEARDOWN_HOOKS = [
-    "stop",
-    "delete",
-    "post_delete",
-]
 
 
-def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) -> None:
+def _log_cluster_info(
+    task: str, manifest: Manifest, arch_info: ArchInfo, force: None | bool = None
+) -> None:
+    """Log cluster configuration and detected architecture."""
+
+    section(f"Kubernetes Cluster {task}")
+    info(f"Manifest: {manifest.path}")
+    if force is not None:
+        info(f"Force: {force}")
+
+    # Display configuration
+    section("Configuration")
+    info(f"Cluster Name: {manifest.name}")
+    info(f"Kubernetes Version: {manifest.kubernetes_version}")
+
+    # Detect architecture
+    info(f"System Architecture: {arch_info.system}")
+    info(f"Kubernetes Architecture: {arch_info.k8s}")
+    info(f"Image Architecture: {arch_info.image}")
+
+
+def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
     """
     Set up a Kubernetes cluster using 6-stage component lifecycle.
 
     Args:
         manifest_path: Path to cluster manifest YAML
         work_dir: Working directory for artifacts
-        debug: Enable debug output
 
     Raises:
         ClusterError: If cluster setup fails
@@ -43,23 +50,10 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
     try:
         # Load and validate manifest
         manifest = load_manifest(manifest_path)
+        arch_info = get_arch_info()
         work_dir_path = Path(work_dir)
 
-        section("Kubernetes Cluster Setup")
-        info(f"Manifest: {manifest_path}")
-        info(f"Work Dir: {work_dir}")
-        info(f"Debug: {debug}")
-
-        # Display configuration
-        section("Configuration")
-        info(f"Cluster Name: {manifest.name}")
-        info(f"Kubernetes Version: {manifest.kubernetes_version}")
-
-        # Detect architecture
-        arch_info = get_arch_info()
-        info(f"System Architecture: {arch_info.system}")
-        info(f"Kubernetes Architecture: {arch_info.k8s}")
-        info(f"Image Architecture: {arch_info.image}")
+        _log_cluster_info("Setup", manifest, arch_info)
 
         # Create working directories
         work_dir_path.mkdir(parents=True, exist_ok=True)
@@ -84,15 +78,13 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
                 f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
             )
 
-        num_hooks = len(SETUP_HOOKS)
-        for idx, hook_name in enumerate(SETUP_HOOKS):
-            section(f"Stage {idx + 1}/{num_hooks}: {hook_name.capitalize()} Components")
-            _run_hook(instances_list, configs, hook_name)
+        num_hooks = len(SetupHooks)
+        for idx, hook in enumerate(SetupHooks):
+            section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
+            _run_hook(instances_list, configs, hook.value)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")
-        success(f"Cluster Name: {manifest.name}")
-        success(f"Kubernetes Version: {manifest.kubernetes_version}")
         gh_output("CLUSTER_NAME", manifest.name)
         gh_output("KUBECONFIG", str(Path.home() / ".kube" / "config"))
 
@@ -101,9 +93,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         raise ClusterError(f"Cluster setup failed: {exc}") from exc
 
 
-def teardown_cluster(
-    manifest_path: str, force: bool = False, work_dir: str = ".", debug: bool = False
-) -> None:
+def teardown_cluster(manifest_path: str, force: bool = False) -> None:
     """
     Tear down a Kubernetes cluster using component teardown hooks.
 
@@ -119,23 +109,9 @@ def teardown_cluster(
     try:
         # Load and validate manifest
         manifest = load_manifest(manifest_path)
-
-        section("Kubernetes Cluster Teardown")
-        info(f"Manifest: {manifest_path}")
-        info(f"Work Dir: {work_dir}")
-        info(f"Force: {force}")
-        info(f"Debug: {debug}")
-
-        # Display configuration
-        section("Configuration")
-        info(f"Cluster Name: {manifest.name}")
-        info(f"Kubernetes Version: {manifest.kubernetes_version}")
-
-        # Detect architecture
         arch_info = get_arch_info()
-        info(f"System Architecture: {arch_info.system}")
-        info(f"Kubernetes Architecture: {arch_info.k8s}")
-        info(f"Image Architecture: {arch_info.image}")
+
+        _log_cluster_info("Teardown", manifest, arch_info, force)
 
         # Get components in dependency order, then reverse for teardown
         configs = list(reversed(manifest.components))
@@ -149,16 +125,16 @@ def teardown_cluster(
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
         instances_list = list(instances.values())
-        num_hooks = len(TEARDOWN_HOOKS)
-        for idx, hook_name in enumerate(TEARDOWN_HOOKS):
-            section(f"Stage {idx + 1}/{num_hooks}: {hook_name.capitalize()} Components")
-            _run_hook(instances_list, configs, hook_name, force)
+        num_hooks = len(TeardownHooks)
+        for idx, hook in enumerate(TeardownHooks):
+            section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
+            _run_hook(instances_list, configs, hook.value, force)
 
         # Final cleanup: remove any remaining kube-galaxy alternatives
         _cleanup_kube_galaxy_alternatives(force)
 
         section("Cluster Teardown Complete!")
-        success(f"Cluster '{manifest.name}' has been torn down")
+        success(f"Cluster '{manifest.name}' is torn down")
         gh_output("CLUSTER_TEARDOWN_STATUS", "complete")
 
     except Exception as exc:
