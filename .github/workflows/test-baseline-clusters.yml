@@ -137,6 +137,7 @@ jobs:
           else
             echo "Waiting for nodes to be Ready..."
             kubectl wait --for=condition=Ready node --all --timeout=5m
+            kubectl wait --for=condition=Ready pod --all -n kube-system --timeout=5m
           fi
 
           # Get cluster info
