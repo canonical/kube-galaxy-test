@@ -31,13 +31,17 @@ components:
     category: containerd
     release: "2.1.0"
     repo: "https://github.com/containerd/containerd"
-    format: "Binary"
+    installation:
+      source_format: "Binary"
+      method: "binary-archive"
     use-spread: false
   - name: coredns
     category: dns
     release: "1.10.1"
     repo: "https://github.com/coredns/coredns"
-    format: "Binary"
+    installation:
+      source_format: "Binary"
+      method: "binary-archive"
     use-spread: true
 networking:
   - name: default

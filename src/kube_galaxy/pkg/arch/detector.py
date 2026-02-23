@@ -28,15 +28,9 @@ _K8S_ARCH_MAP = {
 
 # Mapping from system architecture to container image tag format
 _IMAGE_ARCH_MAP = {
-    "x86_64": "amd64",
-    "amd64": "amd64",
-    "aarch64": "arm64",
-    "arm64": "arm64",
-    "riscv64": "riscv64",
+    **_K8S_ARCH_MAP,  # Start with same mappings
     "armv7l": "armv7",
     "armv6l": "armv6",
-    "ppc64le": "ppc64le",
-    "s390x": "s390x",
 }
 
 

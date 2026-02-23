@@ -9,6 +9,7 @@ import pkgutil as _pkgutil
 from collections.abc import Callable
 
 from kube_galaxy.pkg.components._base import ClusterComponentBase, ComponentBase
+from kube_galaxy.pkg.utils.logging import info
 
 __all__ = ["ClusterComponentBase", "ComponentBase", "find_component", "register_component"]
 
@@ -39,7 +40,12 @@ def find_component(name: str) -> type[ComponentBase]:
     Returns:
         The component class if found, or ComponentBase if not found
     """
-    return COMPONENTS.get(name.lower()) or ComponentBase
+    if cls := COMPONENTS.get(name.lower()):
+        info(f"Component '{name}' - found registered class '{cls.__name__}'")
+        return cls
+
+    info(f"Component '{name}' - loads default class")
+    return ComponentBase
 
 
 # Import all component modules so they execute registration side-effects
