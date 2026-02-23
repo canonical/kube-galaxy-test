@@ -296,15 +296,228 @@ def test_install_hook_does_nothing_for_manifest(component):
     component.install_hook()  # Should not raise an error
 
 
-def test_verify_hook_has_todos(component):
-    """Test that verify_hook exists and has TODO comments for future implementation."""
-    # verify_hook should exist and not raise an error
+def test_verify_hook_parses_manifest_and_waits_for_workloads(component, monkeypatch, tmp_path):
+    """Test that verify_hook parses manifest and waits for workload rollout status."""
+    # Setup: Create a manifest file
+    manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_content = """
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: calico-kube-controllers
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: calico-node
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: calico-config
+"""
+    manifest_path.write_text(manifest_content)
+    component.manifest_path = manifest_path
+
+    run_calls = []
+
+    # Mock kubectl create --dry-run to return parsed YAML
+    def fake_run(cmd, **kwargs):
+        if "create" in cmd and "--dry-run=client" in cmd:
+            # Return the manifest content as stdout
+            class FakeResult:
+                stdout = manifest_content
+
+            run_calls.append(("create-dry-run", list(cmd), kwargs))
+            return FakeResult()
+        elif "rollout" in cmd and "status" in cmd:
+            run_calls.append(("rollout-status", list(cmd), kwargs))
+            return None
+        return None
+
+    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+
+    # Call verify hook
     component.verify_hook()
 
-    # Read the source to verify TODOs are present (this is a documentation check)
-    import inspect
+    # Verify kubectl create --dry-run was called
+    create_calls = [c for c in run_calls if c[0] == "create-dry-run"]
+    assert len(create_calls) == 1
+    _, cmd, kwargs = create_calls[0]
+    assert "kubectl" in cmd
+    assert "--dry-run=client" in cmd
+    assert "-f" in cmd
+    assert str(manifest_path) in cmd
+    assert kwargs.get("check") is True
+    assert kwargs.get("capture_output") is True
 
-    source = inspect.getsource(ComponentBase.verify_hook)
-    assert "TODO" in source
-    assert "kubectl wait" in source or "manifest" in source.lower()
+    # Verify kubectl rollout status was called for each workload
+    rollout_calls = [c for c in run_calls if c[0] == "rollout-status"]
+    assert len(rollout_calls) == 2  # Deployment and DaemonSet
 
+    # Check deployment rollout
+    deployment_calls = [c for c in rollout_calls if "deployment" in " ".join(c[1])]
+    assert len(deployment_calls) == 1
+    _, cmd, kwargs = deployment_calls[0]
+    assert cmd == [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/calico-kube-controllers",
+        "-n",
+        "kube-system",
+    ]
+    assert kwargs.get("check") is True
+    assert "timeout" in kwargs
+
+    # Check daemonset rollout
+    daemonset_calls = [c for c in rollout_calls if "daemonset" in " ".join(c[1])]
+    assert len(daemonset_calls) == 1
+    _, cmd, kwargs = daemonset_calls[0]
+    assert cmd == ["kubectl", "rollout", "status", "daemonset/calico-node", "-n", "kube-system"]
+    assert kwargs.get("check") is True
+    assert "timeout" in kwargs
+
+
+def test_verify_hook_handles_default_namespace(component, monkeypatch, tmp_path):
+    """Test that verify_hook uses 'default' namespace when not specified in manifest."""
+    manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_content = """
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment
+"""
+    manifest_path.write_text(manifest_content)
+    component.manifest_path = manifest_path
+
+    run_calls = []
+
+    def fake_run(cmd, **kwargs):
+        if "create" in cmd and "--dry-run=client" in cmd:
+
+            class FakeResult:
+                stdout = manifest_content
+
+            return FakeResult()
+        elif "rollout" in cmd:
+            run_calls.append(list(cmd))
+
+    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+
+    component.verify_hook()
+
+    # Verify default namespace was used
+    assert len(run_calls) == 1
+    assert run_calls[0] == [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/my-deployment",
+        "-n",
+        "default",
+    ]
+
+
+def test_verify_hook_skips_non_workload_resources(component, monkeypatch, tmp_path):
+    """Test that verify_hook only waits for Deployment, DaemonSet, and StatefulSet."""
+    manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_content = """
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: my-role
+"""
+    manifest_path.write_text(manifest_content)
+    component.manifest_path = manifest_path
+
+    run_calls = []
+
+    def fake_run(cmd, **kwargs):
+        if "create" in cmd and "--dry-run=client" in cmd:
+
+            class FakeResult:
+                stdout = manifest_content
+
+            return FakeResult()
+        elif "rollout" in cmd:
+            run_calls.append(list(cmd))
+
+    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+
+    component.verify_hook()
+
+    # No rollout status calls should be made for non-workload resources
+    assert len(run_calls) == 0
+
+
+def test_verify_hook_fails_if_manifest_not_downloaded(component):
+    """Test that verify_hook raises error if manifest not downloaded."""
+    # manifest_path is None by default
+    with pytest.raises(ComponentError, match="manifest not downloaded"):
+        component.verify_hook()
+
+
+def test_verify_hook_fails_if_manifest_file_missing(component, tmp_path):
+    """Test that verify_hook raises error if manifest file doesn't exist."""
+    component.manifest_path = Path(tmp_path) / "nonexistent.yaml"
+
+    with pytest.raises(ComponentError, match="manifest not downloaded"):
+        component.verify_hook()
+
+
+def test_verify_hook_handles_statefulset(component, monkeypatch, tmp_path):
+    """Test that verify_hook properly handles StatefulSet workloads."""
+    manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_content = """
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: my-statefulset
+  namespace: test-ns
+"""
+    manifest_path.write_text(manifest_content)
+    component.manifest_path = manifest_path
+
+    run_calls = []
+
+    def fake_run(cmd, **kwargs):
+        if "create" in cmd and "--dry-run=client" in cmd:
+
+            class FakeResult:
+                stdout = manifest_content
+
+            return FakeResult()
+        elif "rollout" in cmd:
+            run_calls.append(list(cmd))
+
+    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+
+    component.verify_hook()
+
+    # Verify statefulset rollout was called
+    assert len(run_calls) == 1
+    assert run_calls[0] == [
+        "kubectl",
+        "rollout",
+        "status",
+        "statefulset/my-statefulset",
+        "-n",
+        "test-ns",
+    ]

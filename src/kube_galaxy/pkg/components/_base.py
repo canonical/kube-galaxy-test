@@ -13,6 +13,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import LiteralString, cast
 
+import yaml
+
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
@@ -253,13 +255,36 @@ class ComponentBase:
         This hook runs in the VERIFY stage (sequential).
         Override to implement health check logic.
         """
-        # TODO: Add verification for container-manifest install method
-        #
-        # Parse manifest file to extract namespaces and resources (Deployments, DaemonSets, etc.)
-        # Use 'kubectl wait --for=condition=ready' for pods in discovered namespaces
-        # Add timeout parameter (default 300s following kubeadm patterns)
-        # Handle cases where manifest has no pods (ConfigMaps, CRDs only)
-        pass
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        match self.config.installation.method:
+            case InstallMethod.CONTAINER_MANIFEST:
+                # Should check self.manifest_path exists before using it
+                if not self.manifest_path or not self.manifest_path.exists():
+                    raise ComponentError(f"{self.config.name} manifest not downloaded")
+
+                # We can check rollout status of workloads defined in the manifest
+                docs_str = run(
+                    [*Commands.K_CREATE_DRY_RUN, "-f", str(self.manifest_path)],
+                    check=True,
+                    capture_output=True,
+                )
+                docs = list(yaml.safe_load_all(docs_str.stdout))
+                workloads = [
+                    doc
+                    for doc in docs
+                    if doc.get("kind") in ("Deployment", "DaemonSet", "StatefulSet")
+                ]
+                for workload in workloads:
+                    kind = workload["kind"].lower()
+                    name = workload["metadata"]["name"].lower()
+                    namespace = workload["metadata"].get("namespace", "default").lower()
+                    run(
+                        [*Commands.K_ROLLOUT_STATUS, f"{kind}/{name}", "-n", namespace],
+                        check=True,
+                        timeout=self.BOOTSTRAP_TIMEOUT,
+                    )
 
     def remove_hook(self) -> None:
         """

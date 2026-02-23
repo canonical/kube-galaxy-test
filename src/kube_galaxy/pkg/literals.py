@@ -117,6 +117,10 @@ class Commands:
         "--remove-all",
     ]
 
+    # kubectl commands
+    K_CREATE_DRY_RUN: ClassVar[list[str]] = ["kubectl", "create", "--dry-run=client", "-o", "yaml"]
+    K_ROLLOUT_STATUS: ClassVar[list[str]] = ["kubectl", "rollout", "status"]
+
 
 class Permissions:
     """File permissions and system priorities."""
