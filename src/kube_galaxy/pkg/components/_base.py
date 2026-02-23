@@ -389,26 +389,7 @@ class ComponentBase:
         This hook runs in the DELETE stage of teardown (sequential, reverse dependency order).
         Override to implement binary/config removal logic.
         """
-        if not self.config:
-            return
-
-        # Handle container-manifest cleanup
-        if self.config.installation.method == InstallMethod.CONTAINER_MANIFEST:
-            if self.manifest_path and self.manifest_path.exists():
-                try:
-                    run(
-                        ["kubectl", "delete", "-f", str(self.manifest_path)],
-                        check=False,
-                        timeout=60,
-                    )
-                    info(f"Deleted manifest resources for {self.config.name}")
-                except Exception as e:
-                    info(f"Failed to delete manifest for {self.config.name}: {e}")
-                # Clean up manifest file
-                try:
-                    self.manifest_path.unlink(missing_ok=True)
-                except Exception:
-                    pass  # Best effort cleanup
+        pass
 
     def post_delete_hook(self) -> None:
         """

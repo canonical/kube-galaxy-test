@@ -191,8 +191,8 @@ def test_bootstrap_hook_fails_if_manifest_file_missing(component, tmp_path):
         component.bootstrap_hook()
 
 
-def test_delete_hook_deletes_manifest_resources(component, monkeypatch, tmp_path):
-    """Test that delete_hook runs kubectl delete for CONTAINER_MANIFEST method."""
+def test_delete_hook_does_nothing_in_base_class(component, monkeypatch, tmp_path):
+    """Test that delete_hook base implementation does nothing for CONTAINER_MANIFEST method."""
     # Setup: Create a manifest file
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,72 +206,49 @@ def test_delete_hook_deletes_manifest_resources(component, monkeypatch, tmp_path
 
     monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
 
-    # Call delete hook
+    # Call delete hook - base class should do nothing
     component.delete_hook()
 
-    # Verify kubectl delete was called with check=False and timeout
-    assert len(run_calls) == 1
-    cmd, kwargs = run_calls[0]
-    assert cmd == ["kubectl", "delete", "-f", str(manifest_path)]
-    assert kwargs.get("check") is False
-    assert "timeout" in kwargs
-
-
-def test_delete_hook_handles_missing_manifest_gracefully(component, monkeypatch):
-    """Test that delete_hook handles missing manifest file gracefully."""
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        run_calls.append(cmd)
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
-
-    # manifest_path is None, should not crash
-    component.delete_hook()
-
-    # No kubectl commands should be called
+    # No kubectl commands should be called in base class
     assert len(run_calls) == 0
 
 
-def test_delete_hook_handles_kubectl_errors_gracefully(component, monkeypatch, tmp_path):
-    """Test that delete_hook continues even if kubectl delete fails."""
+def test_delete_hook_handles_missing_manifest_gracefully(component):
+    """Test that delete_hook handles missing manifest file gracefully."""
+    # manifest_path is None, should not crash
+    component.delete_hook()
+    # Base implementation does nothing, so this should just pass
+
+
+def test_delete_hook_base_implementation_does_nothing(component, tmp_path):
+    """Test that base delete_hook implementation does nothing."""
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text("apiVersion: v1\nkind: ConfigMap\n")
     component.manifest_path = manifest_path
 
-    def fake_run(cmd, **kwargs):
-        raise RuntimeError("kubectl failed")
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
-
-    # Should not raise an exception
+    # Should not raise an exception and should do nothing
     component.delete_hook()
 
 
-def test_delete_hook_cleans_up_manifest_file(component, monkeypatch, tmp_path):
-    """Test that delete_hook removes the manifest file after deleting resources."""
+def test_delete_hook_preserves_manifest_file(component, tmp_path):
+    """Test that base delete_hook does not remove the manifest file."""
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text("apiVersion: v1\nkind: ConfigMap\n")
     component.manifest_path = manifest_path
-
-    def fake_run(cmd, **kwargs):
-        pass  # Simulate successful kubectl delete
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
 
     # Verify file exists before
     assert manifest_path.exists()
 
     component.delete_hook()
 
-    # Verify file is removed after
-    assert not manifest_path.exists()
+    # Verify file still exists after (base class does nothing)
+    assert manifest_path.exists()
 
 
-def test_delete_hook_skips_non_manifest_components(manifest, monkeypatch):
-    """Test that delete_hook doesn't affect components with other install methods."""
+def test_delete_hook_works_for_all_install_methods(manifest):
+    """Test that delete_hook base implementation works for all install methods."""
     install = InstallConfig(method=InstallMethod.BINARY, source_format="https://example/{arch}/bin")
     config = ComponentConfig(
         name="test-binary", category="test", release="v1", repo="org/repo", installation=install
@@ -279,18 +256,9 @@ def test_delete_hook_skips_non_manifest_components(manifest, monkeypatch):
 
     comp = ComponentBase({}, manifest, config)
 
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        run_calls.append(cmd)
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
-
-    # Call delete hook - should do nothing for binary installs
+    # Call delete hook - should do nothing for any install method in base class
     comp.delete_hook()
-
-    # No kubectl commands should be called
-    assert len(run_calls) == 0
+    # Base implementation does nothing, so this should just pass
 
 
 def test_install_hook_does_nothing_for_manifest(component):
