@@ -129,8 +129,6 @@ def manifest(manifest_path: str) -> None:
         info(f"  Name: {manifest.name}")
         info(f"  Description: {manifest.description}")
         info(f"  Kubernetes Version: {manifest.kubernetes_version}")
-        info(f"  Control Plane Nodes: {manifest.nodes.control_plane}")
-        info(f"  Worker Nodes: {manifest.nodes.worker}")
         info(f"  Components: {len(manifest.components)}")
         if manifest.components:
             info("    - " + ", ".join(c.name for c in manifest.components))

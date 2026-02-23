@@ -10,7 +10,6 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     NetworkConfig,
-    NodeConfig,
 )
 
 
@@ -26,7 +25,6 @@ def test_kubeadm_configure_writes_cluster_config(monkeypatch, tmp_path):
         name="test",
         description="d",
         kubernetes_version="1.24",
-        nodes=NodeConfig(),
         networking=[net],
     )
 

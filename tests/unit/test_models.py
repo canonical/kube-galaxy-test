@@ -6,7 +6,6 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     NetworkConfig,
-    NodeConfig,
 )
 
 
@@ -29,20 +28,6 @@ def test_component_creation():
     assert config.installation.method == InstallMethod.BINARY_ARCHIVE
 
 
-def test_node_config_defaults():
-    """Test node configuration defaults."""
-    nodes = NodeConfig()
-    assert nodes.control_plane == 1
-    assert nodes.worker == 1
-
-
-def test_node_config_custom():
-    """Test node configuration with custom values."""
-    nodes = NodeConfig(control_plane=3, worker=5)
-    assert nodes.control_plane == 3
-    assert nodes.worker == 5
-
-
 def test_network_config_creation():
     """Test network configuration creation."""
     net = NetworkConfig(
@@ -56,7 +41,6 @@ def test_network_config_creation():
 
 def test_manifest_creation():
     """Test manifest dataclass creation."""
-    nodes = NodeConfig(control_plane=1, worker=2)
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/{release}/{arch}/binary.tar.gz",
@@ -78,7 +62,6 @@ def test_manifest_creation():
         name="test-cluster",
         description="Test cluster",
         kubernetes_version="1.35.0",
-        nodes=nodes,
         components=components,
         networking=networking,
     )
@@ -114,7 +97,6 @@ def test_manifest_get_component():
         name="test",
         description="test",
         kubernetes_version="1.35.0",
-        nodes=NodeConfig(),
         components=[comp1, comp2],
     )
 
@@ -131,7 +113,6 @@ def test_manifest_get_networking():
         name="test",
         description="test",
         kubernetes_version="1.35.0",
-        nodes=NodeConfig(),
         networking=[net],
     )
 

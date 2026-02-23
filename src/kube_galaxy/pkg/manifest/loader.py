@@ -11,7 +11,6 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     NetworkConfig,
-    NodeConfig,
 )
 
 
@@ -43,13 +42,6 @@ def load_manifest(path: str | Path) -> Manifest:
 
 def _deserialize_manifest(data: dict[str, Any]) -> Manifest:
     """Deserialize manifest dictionary to Manifest dataclass."""
-    # Parse nodes
-    nodes_data = data.get("nodes", {})
-    nodes = NodeConfig(
-        control_plane=nodes_data.get("control-plane", 1),
-        worker=nodes_data.get("worker", 1),
-    )
-
     # Parse components
     components: list[ComponentConfig] = []
     for comp_data in data.get("components", []):
@@ -82,7 +74,6 @@ def _deserialize_manifest(data: dict[str, Any]) -> Manifest:
         name=data["name"],
         description=data.get("description", ""),
         kubernetes_version=data["kubernetes-version"],
-        nodes=nodes,
         components=components,
         networking=networking,
     )

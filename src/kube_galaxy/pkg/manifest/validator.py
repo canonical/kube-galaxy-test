@@ -18,12 +18,6 @@ def validate_manifest(manifest: Manifest) -> None:
     if not manifest.kubernetes_version:
         raise ValueError("Manifest must have a 'kubernetes-version' field")
 
-    if manifest.nodes.control_plane < 1:
-        raise ValueError("Manifest must have at least 1 control plane node")
-
-    if manifest.nodes.worker < 0:
-        raise ValueError("Worker node count cannot be negative")
-
 
 def get_components_with_spread(manifest: Manifest) -> list[ComponentConfig]:
     """Get all components marked with use_spread=true.

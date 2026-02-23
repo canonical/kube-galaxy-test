@@ -24,7 +24,7 @@ def make_config(name: str = "example") -> ComponentConfig:
 
 def test_ensure_temp_dir_calls_mkdir(monkeypatch, tmp_path):
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0", nodes=None), make_config()
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config()
     )
     # redirect component temp dir to test tmp_path to avoid /opt writes
     monkeypatch.setattr(
@@ -42,9 +42,7 @@ def test_ensure_temp_dir_calls_mkdir(monkeypatch, tmp_path):
 
 def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path):
     cfg = make_config("mybin")
-    comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0", nodes=None), cfg
-    )
+    comp = ExampleComponent({}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg)
 
     calls = []
 
@@ -70,9 +68,7 @@ def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path):
 
 def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path):
     cfg = make_config("tool")
-    comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0", nodes=None), cfg
-    )
+    comp = ExampleComponent({}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg)
 
     # create a fake binary file
     bin_path = tmp_path / "tool"
@@ -94,9 +90,7 @@ def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path):
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example/{repo}/{release}/{arch}/archive.tar.gz",
     )
-    comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0", nodes=None), cfg
-    )
+    comp = ExampleComponent({}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg)
 
     events = []
 
@@ -129,7 +123,7 @@ def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path):
 
 def test_create_systemd_service_and_write_config(monkeypatch, tmp_path):
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0", nodes=None), make_config()
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config()
     )
     recorded = []
 
@@ -161,7 +155,7 @@ def test_create_systemd_service_and_write_config(monkeypatch, tmp_path):
 
 def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, tmp_path):
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0", nodes=None), make_config()
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config()
     )
 
     # create dirs and files

@@ -54,8 +54,6 @@ def setup_cluster(manifest_path: str, work_dir: str = ".", debug: bool = False) 
         section("Configuration")
         info(f"Cluster Name: {manifest.name}")
         info(f"Kubernetes Version: {manifest.kubernetes_version}")
-        info(f"Control Plane Nodes: {manifest.nodes.control_plane}")
-        info(f"Worker Nodes: {manifest.nodes.worker}")
 
         # Detect architecture
         arch_info = get_arch_info()
@@ -132,8 +130,6 @@ def teardown_cluster(
         section("Configuration")
         info(f"Cluster Name: {manifest.name}")
         info(f"Kubernetes Version: {manifest.kubernetes_version}")
-        info(f"Control Plane Nodes: {manifest.nodes.control_plane}")
-        info(f"Worker Nodes: {manifest.nodes.worker}")
 
         # Detect architecture
         arch_info = get_arch_info()

@@ -1,15 +1,6 @@
 name: single-node-no-cni
 description: "Single-node Kubernetes cluster without CNI - core components only"
-kubernetes-version: &k8s-version "1.35.0"
-labels:
-  environment: testing
-  cluster-type: minimal
-  k8s-version: "1.35"
-  cni: "none"
-
-nodes:
-  control-plane: 1
-  worker: 0
+kubernetes-version: &k8s-version "1.35.1"
 
 components:
   # Container runtime (required for kubeadm)
@@ -142,16 +133,3 @@ networking:
   # No CNI - cluster will not have pod networking configured
   # Pods on different nodes will not be able to communicate
   # Only host network pods and single-node workloads will function
-
-storage:
-  - name: "local-path"
-    provisioner: "local-path"
-    storage-classes:
-      - name: "local-path"
-        parameters:
-          type: "default"
-
-security:
-  rbac: true
-  network-policies: false
-  pod-security-standards: "baseline"

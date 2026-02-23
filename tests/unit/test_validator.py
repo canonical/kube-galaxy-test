@@ -3,7 +3,7 @@
 import pytest
 
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import Manifest, NodeConfig
+from kube_galaxy.pkg.manifest.models import Manifest
 from kube_galaxy.pkg.manifest.validator import (
     get_component,
     get_components_with_spread,
@@ -24,7 +24,6 @@ def test_validate_manifest_no_name():
         name="",
         description="test",
         kubernetes_version="1.35.0",
-        nodes=NodeConfig(),
     )
 
     with pytest.raises(ValueError, match="must have a 'name' field"):
@@ -37,36 +36,9 @@ def test_validate_manifest_no_k8s_version():
         name="test",
         description="test",
         kubernetes_version="",
-        nodes=NodeConfig(),
     )
 
     with pytest.raises(ValueError, match="must have a 'kubernetes-version' field"):
-        validate_manifest(manifest)
-
-
-def test_validate_manifest_no_control_plane():
-    """Test error when manifest has no control plane nodes."""
-    manifest = Manifest(
-        name="test",
-        description="test",
-        kubernetes_version="1.35.0",
-        nodes=NodeConfig(control_plane=0, worker=2),
-    )
-
-    with pytest.raises(ValueError, match="at least 1 control plane node"):
-        validate_manifest(manifest)
-
-
-def test_validate_manifest_negative_workers():
-    """Test error when manifest has negative worker count."""
-    manifest = Manifest(
-        name="test",
-        description="test",
-        kubernetes_version="1.35.0",
-        nodes=NodeConfig(control_plane=1, worker=-1),
-    )
-
-    with pytest.raises(ValueError, match="cannot be negative"):
         validate_manifest(manifest)
 
 
