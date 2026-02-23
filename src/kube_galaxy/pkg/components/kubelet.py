@@ -4,7 +4,6 @@ Kubelet component installation and management.
 Kubelet is the primary node agent running on each node.
 """
 
-from typing import ClassVar
 from urllib.request import urlopen
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
@@ -20,16 +19,6 @@ class Kubelet(ComponentBase):
 
     This component handles kubelet installation and configuration.
     """
-
-    # Component metadata
-    CATEGORY = "kubernetes/kubernetes"
-    DEPENDENCIES: ClassVar[list[str]] = ["containerd"]
-
-    # Timeout configuration (in seconds)
-    DOWNLOAD_TIMEOUT = 180  # 3 minutes
-    INSTALL_TIMEOUT = 120  # 2 minutes
-    CONFIGURE_TIMEOUT = 120  # 2 minutes
-    VERIFY_TIMEOUT = 120  # 2 minutes
 
     def _system_settings(self) -> None:
         """

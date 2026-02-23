@@ -11,19 +11,10 @@ import lzma
 import shutil
 from collections.abc import Iterable
 from pathlib import Path
-from typing import ClassVar, LiteralString, cast
+from typing import LiteralString, cast
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
-from kube_galaxy.pkg.components._constants import (
-    DEFAULT_BOOTSTRAP_TIMEOUT,
-    DEFAULT_CONFIGURE_TIMEOUT,
-    DEFAULT_DOWNLOAD_TIMEOUT,
-    DEFAULT_INSTALL_TIMEOUT,
-    DEFAULT_PRE_INSTALL_TIMEOUT,
-    DEFAULT_TEST_TIMEOUT,
-    DEFAULT_VERIFY_TIMEOUT,
-)
-from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
+from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
 from kube_galaxy.pkg.utils.components import download_file, extract_archive, install_binary
 from kube_galaxy.pkg.utils.errors import ComponentError
@@ -62,17 +53,9 @@ class ComponentBase:
     """
 
     # Timeout configuration (in seconds) - override in subclass
-    DOWNLOAD_TIMEOUT = DEFAULT_DOWNLOAD_TIMEOUT
-    PRE_INSTALL_TIMEOUT = DEFAULT_PRE_INSTALL_TIMEOUT
-    INSTALL_TIMEOUT = DEFAULT_INSTALL_TIMEOUT
-    CONFIGURE_TIMEOUT = DEFAULT_CONFIGURE_TIMEOUT
-    BOOTSTRAP_TIMEOUT = DEFAULT_BOOTSTRAP_TIMEOUT
-    VERIFY_TIMEOUT = DEFAULT_VERIFY_TIMEOUT
-    TEST_TIMEOUT = DEFAULT_TEST_TIMEOUT
+    BOOTSTRAP_TIMEOUT = Timeouts.BOOTSTRAP_TIMEOUT
 
     # Component metadata - override in subclass
-    CATEGORY: str = ""
-    DEPENDENCIES: ClassVar[list[str]] = []
     BIN_PATH = "./*"  # Default path inside archive where binaries are located
 
     LOCAL_REGISTRY: LiteralString = "registry.k8s.io"
@@ -140,19 +123,6 @@ class ComponentBase:
             if instance.is_cluster_manager:
                 return cast("ClusterComponentBase", instance)
         raise ComponentError("No cluster manager component found in instances")
-
-    def _which(self, component: str) -> str:
-        """
-        Get binary path from specified component.
-
-        Returns:
-            Binary path of the specified component
-        """
-        if component_instance := self.instances.get(component):
-            if component_instance.install_path:
-                return component_instance.install_path
-
-        raise ComponentError(f"Install path for component '{component}' not found")
 
     # Lifecycle hooks - all have default empty implementations
     # Override in subclass as needed

@@ -4,7 +4,6 @@ CNI-plugins component installation and management.
 
 from pathlib import Path
 from textwrap import dedent
-from typing import ClassVar
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, Permissions
@@ -22,15 +21,7 @@ class CNIPlugins(ComponentBase):
     This component handles container networking and network policies.
     """
 
-    # Component metadata
-    CATEGORY = "container-networking"
-    DEPENDENCIES: ClassVar[list[str]] = []
-
     # Timeout configuration (in seconds)
-    DOWNLOAD_TIMEOUT = 120  # 2 minutes
-    INSTALL_TIMEOUT = 60  # 1 minute
-    CONFIGURE_TIMEOUT = 60  # 1 minute
-    VERIFY_TIMEOUT = 120  # 2 minutes
     OPT_CNI_PLUGINS_DIR = Path("/opt/cni/bin")
     LOOPBACK_CONFIG_PATH = Path("/etc/cni/net.d/10-loopback.conf")
 

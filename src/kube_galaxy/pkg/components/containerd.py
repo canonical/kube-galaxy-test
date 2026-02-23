@@ -7,7 +7,6 @@ Containerd is the container runtime used by Kubernetes clusters.
 import subprocess
 import time
 from pathlib import Path
-from typing import ClassVar
 
 from kube_galaxy.pkg.components import ClusterComponentBase, ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, Permissions
@@ -26,15 +25,7 @@ class Containerd(ComponentBase):
     container runtime for Kubernetes.
     """
 
-    # Component metadata
-    CATEGORY = "containerd"
-    DEPENDENCIES: ClassVar[list[str]] = ["runc"]
-
     # Timeout configuration (in seconds)
-    DOWNLOAD_TIMEOUT = 300  # 5 minutes (containerd archive can be large)
-    INSTALL_TIMEOUT = 120  # 2 minutes (extract and copy)
-    BOOTSTRAP_TIMEOUT = 60  # 1 minute (start service)
-    CONFIGURE_TIMEOUT = 60  # 1 minute (verify service running)
     SOCKET_PATH = Path("/run/containerd/containerd.sock")
 
     BIN_PATH = "bin/*"  # Path inside archive where containerd binary is located

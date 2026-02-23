@@ -184,7 +184,7 @@ WantedBy=multi-user.target
 ## Testing Components
 
 ```python
-from kube_galaxy.pkg.manifest.models import Component, Manifest, NodeConfig
+from kube_galaxy.pkg.manifest.models import Component, Manifest
 from kube_galaxy.pkg.components import create_component_instance
 
 # Create test manifest
@@ -201,7 +201,6 @@ manifest = Manifest(
     name='test-cluster',
     description='Test',
     kubernetes_version='1.35.0',
-    nodes=NodeConfig(),
     components=[component_config]
 )
 

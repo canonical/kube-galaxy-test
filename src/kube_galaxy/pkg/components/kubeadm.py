@@ -7,13 +7,13 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 import shutil
 from functools import cached_property
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 from urllib.request import urlopen
 
 import yaml
 
 from kube_galaxy.pkg.components import ClusterComponentBase, register_component
-from kube_galaxy.pkg.literals import Commands, URLs
+from kube_galaxy.pkg.literals import Commands, SystemPaths, URLs
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -28,16 +28,7 @@ class Kubeadm(ClusterComponentBase):
     Kubernetes control planes using kubeadm.
     """
 
-    # Component metadata
-    CATEGORY = "kubernetes/kubernetes"
-    DEPENDENCIES: ClassVar[list[str]] = ["kubelet"]
-
     # Timeout configuration (in seconds)
-    DOWNLOAD_TIMEOUT = 180  # 3 minutes (kubeadm binary is small)
-    INSTALL_TIMEOUT = 60  # 1 minute (just copying binary)
-    BOOTSTRAP_TIMEOUT = 600  # 10 minutes (kubeadm init can be slow)
-    VERIFY_TIMEOUT = 300  # 5 minutes (cluster health checks)
-    CONFIGURE_TIMEOUT = 60  # 1 minute (configuration)
 
     _cluster_config: Path | None = None
 
@@ -131,8 +122,9 @@ class Kubeadm(ClusterComponentBase):
             service_content = response.read().decode("utf-8")
 
         # Write kubelet configuration for kubeadm (10-kubeadm.conf)
-        kubelet = self._which("kubelet")
-        service_content = service_content.replace("/usr/bin/kubelet", kubelet)
+        service_content = service_content.replace(
+            "/usr/bin/kubelet", f"{SystemPaths.USR_LOCAL_BIN}/kubelet"
+        )
 
         # Use base method to write config file
         self.write_config_file(
@@ -193,19 +185,18 @@ class Kubeadm(ClusterComponentBase):
         """
 
         # Check cluster info
-        kubectl = self._which("kubectl")
-        run([kubectl, "cluster-info"], check=True)
+        run(["kubectl", "cluster-info"], check=True)
 
         # Wait for nodes to be ready
         run(
-            [kubectl, "wait", "--for=condition=Ready", "nodes", "--all", "--timeout=300s"],
+            ["kubectl", "wait", "--for=condition=Ready", "nodes", "--all", "--timeout=300s"],
             check=True,
         )
 
         # Wait for api-server to be ready
         run(
             [
-                kubectl,
+                "kubectl",
                 "get",
                 "--raw=/readyz",
                 "--request-timeout=300s",

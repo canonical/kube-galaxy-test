@@ -137,17 +137,11 @@ class Timeouts:
     """Timeout values in seconds."""
 
     # Download and network operations
-    DOWNLOAD_TIMEOUT = 300  # 5 minutes
     NETWORK_TIMEOUT = 60  # 1 minute
-
-    # Installation operations
-    INSTALL_TIMEOUT = 120  # 2 minutes
-    CONFIGURE_TIMEOUT = 60  # 1 minute
 
     # Cluster operations
     BOOTSTRAP_TIMEOUT = 600  # 10 minutes
     JOIN_TIMEOUT = 180  # 3 minutes
-    DRAIN_TIMEOUT = 300  # 5 minutes
 
     # Service operations
     SERVICE_START_TIMEOUT = 30  # 30 seconds
@@ -189,10 +183,8 @@ class ManifestFields:
     USE_SPREAD = "use-spread"
     KUBERNETES_VERSION = "kubernetes-version"
     NAME = "name"
-    CATEGORY = "category"
     RELEASE = "release"
     REPO = "repo"
     FORMAT = "format"
     COMPONENTS = "components"
-    NODES = "nodes"
     NETWORKING = "networking"

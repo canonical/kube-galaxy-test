@@ -1,15 +1,8 @@
 name: baseline-k8s-1.35
-description: "Baseline Kubernetes 1.35.0 cluster with standard components"
-kubernetes-version: "1.35.0"
+description: "Baseline Kubernetes 1.35.1 cluster with standard components"
+kubernetes-version: &k8s-version "1.35.1"
 labels:
-  environment: testing
-  cluster-type: baseline
-  k8s-version: "1.35"
   ci-skip-on-pr: "true"
-
-nodes:
-  control-plane: 1
-  worker: 2
 
 components:
   # Container runtime
@@ -43,7 +36,7 @@ components:
 
   - name: kubelet
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary-archive"
@@ -53,7 +46,7 @@ components:
   # Kubernetes binaries
   - name: kubeadm
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary-archive"
@@ -62,7 +55,7 @@ components:
 
   - name: kubectl
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary-archive"
@@ -72,7 +65,7 @@ components:
   # Kubernetes control plane components (container images)
   - name: kube-apiserver
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -81,7 +74,7 @@ components:
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -90,7 +83,7 @@ components:
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -99,7 +92,7 @@ components:
 
   - name: kube-proxy
     category: kubernetes/kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
@@ -147,7 +140,7 @@ components:
   # Kubernetes addons
   - name: cluster-autoscaler
     category: kubernetes
-    release: "1.35.0"
+    release: *k8s-version
     repo: "https://github.com/kubernetes/autoscaler"
     installation:
       method: "container-image"

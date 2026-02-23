@@ -13,8 +13,6 @@ def test_load_manifest(sample_manifest_file):
     assert manifest.name == "test-cluster"
     assert manifest.description == "Test cluster for unit tests"
     assert manifest.kubernetes_version == "1.35.0"
-    assert manifest.nodes.control_plane == 1
-    assert manifest.nodes.worker == 2
 
 
 def test_load_manifest_components(sample_manifest_file):
@@ -76,7 +74,5 @@ kubernetes-version: "1.35.0"
 
     assert manifest.name == "minimal-cluster"
     assert manifest.description == ""
-    assert manifest.nodes.control_plane == 1
-    assert manifest.nodes.worker == 1
     assert len(manifest.components) == 0
     assert len(manifest.networking) == 0

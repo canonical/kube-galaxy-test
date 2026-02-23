@@ -52,21 +52,12 @@ class NetworkConfig:
 
 
 @dataclass
-class NodeConfig:
-    """Node count configuration."""
-
-    control_plane: int = 1
-    worker: int = 1
-
-
-@dataclass
 class Manifest:
     """Cluster manifest configuration."""
 
     name: str
     description: str
     kubernetes_version: str
-    nodes: NodeConfig
     components: list[ComponentConfig] = field(default_factory=list)
     networking: list[NetworkConfig] = field(default_factory=list)
 
