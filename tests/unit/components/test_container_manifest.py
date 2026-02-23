@@ -111,7 +111,11 @@ def test_download_hook_formats_url_with_placeholders(manifest, monkeypatch, tmp_
 
     # Verify URL formatting
     url, _ = download_calls[0]
-    assert url == "https://example.com/myorg/myrepo/releases/v1.2.3/manifest-amd64.yaml"
+    # Determine expected architecture from the component, falling back to "amd64" if unavailable
+    arch_info = getattr(comp, "arch_info", None)
+    arch = getattr(arch_info, "arch", "amd64") if arch_info is not None else "amd64"
+    expected_url = f"https://example.com/myorg/myrepo/releases/v1.2.3/manifest-{arch}.yaml"
+    assert url == expected_url
 
 
 def test_download_hook_adds_https_prefix(manifest, monkeypatch, tmp_path):
