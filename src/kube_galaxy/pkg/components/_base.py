@@ -13,6 +13,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import LiteralString, cast
 
+import yaml
+
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
@@ -86,6 +88,8 @@ class ComponentBase:
         # for InstallMethod Image or ImageArchive
         self.image_repository: str | None = None
         self.image_tag: str | None = None
+        # for InstallMethod ContainerManifest
+        self.manifest_path: Path | None = None  # path to downloaded manifest file
 
     @property
     def name(self) -> str:
@@ -150,6 +154,8 @@ class ComponentBase:
                 self.download_image_archive(arch)
             case InstallMethod.CONTAINER_IMAGE:
                 self.container_format_repo_and_tag(arch)
+            case InstallMethod.CONTAINER_MANIFEST:
+                self.manifest_path = self.download_manifest_from_config(arch)
             case InstallMethod.NONE:
                 pass
             case _:
@@ -199,6 +205,9 @@ class ComponentBase:
             case InstallMethod.CONTAINER_IMAGE:
                 # TODO: Implement container image install logic
                 pass
+            case InstallMethod.CONTAINER_MANIFEST:
+                # TODO: Implement manifest installation logic
+                pass
             case InstallMethod.NONE:
                 pass
             case _:
@@ -214,6 +223,20 @@ class ComponentBase:
         This hook runs in the BOOTSTRAP stage (sequential, dependency-ordered).
         Override to implement service startup logic.
         """
+
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        comp_name = self.config.name
+        match self.config.installation.method:
+            case InstallMethod.CONTAINER_MANIFEST:
+                if not self.manifest_path or not self.manifest_path.exists():
+                    raise ComponentError(
+                        f"{comp_name} manifest not downloaded. Run download hook first."
+                    )
+                run(["kubectl", "apply", "-f", str(self.manifest_path)], check=True)
+                info(f"Applied manifest for {comp_name}")
+
         pass
 
     def configure_hook(self) -> None:
@@ -232,7 +255,36 @@ class ComponentBase:
         This hook runs in the VERIFY stage (sequential).
         Override to implement health check logic.
         """
-        pass
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        match self.config.installation.method:
+            case InstallMethod.CONTAINER_MANIFEST:
+                # Should check self.manifest_path exists before using it
+                if not self.manifest_path or not self.manifest_path.exists():
+                    raise ComponentError(f"{self.config.name} manifest not downloaded")
+
+                # We can check rollout status of workloads defined in the manifest
+                docs_str = run(
+                    [*Commands.K_CREATE_DRY_RUN, "-f", str(self.manifest_path)],
+                    check=True,
+                    capture_output=True,
+                )
+                docs = list(yaml.safe_load_all(docs_str.stdout))
+                workloads = [
+                    doc
+                    for doc in docs
+                    if doc.get("kind") in ("Deployment", "DaemonSet", "StatefulSet")
+                ]
+                for workload in workloads:
+                    kind = workload["kind"].lower()
+                    name = workload["metadata"]["name"].lower()
+                    namespace = workload["metadata"].get("namespace", "default").lower()
+                    run(
+                        [*Commands.K_ROLLOUT_STATUS, f"{kind}/{name}", "-n", namespace],
+                        check=True,
+                        timeout=self.BOOTSTRAP_TIMEOUT,
+                    )
 
     def remove_hook(self) -> None:
         """
@@ -443,6 +495,41 @@ class ComponentBase:
                 shutil.copyfileobj(src, dst)
         else:
             raise ComponentError(f"Unsupported archive format for {file_path.name}")
+
+    def download_manifest_from_config(self, arch: str) -> Path:
+        """
+        Download Kubernetes manifest using component config source_format.
+
+        Args:
+            arch: Architecture string for URL template
+
+        Returns:
+            Path to downloaded manifest file
+
+        Raises:
+            ComponentError: If download fails or config missing
+        """
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        repo = self.config.repo
+        release = self.config.release
+        source_format = self.config.installation.source_format
+
+        # Construct download URL from source_format template
+        url = source_format.format(repo=repo, release=release, arch=arch)
+
+        # Ensure https:// prefix for URLs like raw.githubusercontent.com
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+
+        # Download to secure temporary directory
+        temp_dir = self.ensure_temp_dir()
+        filepath = temp_dir / f"{self.config.name}-manifest.yaml"
+        download_file(url, filepath)
+        info(f"Downloaded manifest for {self.config.name}")
+
+        return filepath
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
         """

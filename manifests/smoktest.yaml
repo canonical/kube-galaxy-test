@@ -1,5 +1,5 @@
-name: single-node-no-cni
-description: "Single-node Kubernetes cluster without CNI - core components only"
+name: smoke-test
+description: "Single-node Kubernetes cluster + calico - core components only"
 kubernetes-version: &k8s-version "1.35.1"
 
 components:
@@ -124,6 +124,43 @@ components:
     installation:
       method: "container-image"
       source_format: "registry.k8s.io/coredns/coredns:v{release}"
+    use-spread: false
+
+  # Calico - required for cluster networking
+  - name: calico
+    category: projectcalico/calico
+    release:  &calico-version "3.30.6"
+    repo: "https://github.com/projectcalico/calico"
+    installation:
+      method: "container-manifest"
+      source_format: "raw.githubusercontent.com/projectcalico/calico/v{release}/manifests/calico.yaml"
+    use-spread: false
+
+  - name: calico-cni
+    category: projectcalico/calico
+    release: *calico-version
+    repo: "https://github.com/projectcalico/calico"
+    installation:
+      method: "container-image"
+      source_format: "docker.io/calico/cni:v{release}"
+    use-spread: false
+
+  - name: calico-node
+    category: projectcalico/calico
+    release: *calico-version
+    repo: "https://github.com/projectcalico/calico"
+    installation:
+      method: "container-image"
+      source_format: "docker.io/calico/cni:v{release}"
+    use-spread: false
+
+  - name: calico-kube-controllers
+    category: projectcalico/calico
+    release: *calico-version
+    repo: "https://github.com/projectcalico/calico"
+    installation:
+      method: "container-image"
+      source_format: "docker.io/calico/kube-controllers:v{release}"
     use-spread: false
 
 networking:
