@@ -1,0 +1,35 @@
+project: kube-galaxy-component-tests
+path: ${test_root_path}
+
+backends:
+  adhoc:
+    type: adhoc
+    allocate: echo "Using existing cluster"
+    discard: echo "Tests complete"
+
+environment:
+  KUBECONFIG: ${kubeconfig_path}
+  KUBE_GALAXY_NAMESPACE: ${namespace}
+  SYSTEM_ARCH: ${system_arch}
+  K8S_ARCH: ${k8s_arch}
+  IMAGE_ARCH: ${image_arch}
+  COMPONENT_NAME: ${component_name}
+  COMPONENT_VERSION: ${component_version}
+
+prepare: |
+  # Verify cluster connectivity
+  echo "Verifying cluster connectivity..."
+  kubectl cluster-info >/dev/null 2>&1 || { echo "Cannot connect to cluster"; exit 1; }
+
+  echo "Cluster nodes:"
+  kubectl get nodes >/dev/null 2>&1 || { echo "Cannot find ready nodes"; exit 1; }
+
+  echo "Namespace: $${KUBE_GALAXY_NAMESPACE}"
+  kubectl get namespace $${KUBE_GALAXY_NAMESPACE} >/dev/null 2>&1 || echo "Namespace will be created by test"
+
+restore: |
+  # Cleanup is handled by kube-galaxy itself (not by spread)
+  echo "Cleanup handled by kube-galaxy"
+
+suites:
+${component_suites}

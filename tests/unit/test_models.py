@@ -21,10 +21,10 @@ def test_component_creation():
         release="1.0.0",
         repo="https://github.com/test/repo",
         installation=installation,
-        use_spread=True,
+        test=True,
     )
     assert config.name == "test-comp"
-    assert config.use_spread is True
+    assert config.test is True
     assert config.installation.method == InstallMethod.BINARY_ARCHIVE
 
 

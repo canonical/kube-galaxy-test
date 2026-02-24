@@ -49,7 +49,7 @@ def test_get_components_with_spread(sample_manifest_file):
 
     assert len(spread_components) == 1
     assert spread_components[0].name == "coredns"
-    assert spread_components[0].use_spread is True
+    assert spread_components[0].test is True
 
 
 def test_get_component_by_name(sample_manifest_file):
@@ -59,7 +59,7 @@ def test_get_component_by_name(sample_manifest_file):
 
     assert component is not None
     assert component.name == "containerd"
-    assert component.use_spread is False
+    assert component.test is False
 
 
 def test_get_component_not_found(sample_manifest_file):

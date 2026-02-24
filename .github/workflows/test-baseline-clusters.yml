@@ -95,6 +95,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ">=1.22"
+
+      - name: Install Spread
+        run: go install github.com/snapcore/spread/cmd/spread@latest
+
       - name: Install kube-galaxy
         shell: bash
         run: |
@@ -151,7 +159,7 @@ jobs:
         id: run-tests
         shell: bash
         run: |
-          kube-galaxy test spread
+          kube-galaxy test ${{ matrix.manifest-file }}
 
       - name: Capture Test Results
         if: always()

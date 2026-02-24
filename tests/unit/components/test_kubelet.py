@@ -7,6 +7,7 @@ from kube_galaxy.pkg.manifest.models import (
     InstallConfig,
     InstallMethod,
     Manifest,
+    RepoInfo,
 )
 
 
@@ -30,8 +31,9 @@ def test_kubelet_configure_calls_urlopen_and_tee(monkeypatch, tmp_path):
     install = InstallConfig(
         method=InstallMethod.BINARY, source_format="https://example/{repo}/{release}/{arch}/kubelet"
     )
+    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     config = ComponentConfig(
-        name="kubelet", category="k8s", release="v1", repo="r", installation=install
+        name="kubelet", category="k8s", release="v1", repo=repo, installation=install
     )
 
     comp = Kubelet({}, manifest, config)

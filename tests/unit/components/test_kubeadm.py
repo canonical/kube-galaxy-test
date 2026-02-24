@@ -10,6 +10,7 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     NetworkConfig,
+    RepoInfo,
 )
 
 
@@ -31,8 +32,9 @@ def test_kubeadm_configure_writes_cluster_config(monkeypatch, tmp_path):
     install = InstallConfig(
         method=InstallMethod.BINARY, source_format="https://example/{repo}/{release}/kubeadm"
     )
+    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     config = ComponentConfig(
-        name="kubeadm", category="k8s", release="v1", repo="r", installation=install
+        name="kubeadm", category="k8s", release="v1", repo=repo, installation=install
     )
 
     comp = Kubeadm({}, manifest, config)

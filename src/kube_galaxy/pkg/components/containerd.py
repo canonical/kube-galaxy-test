@@ -98,16 +98,22 @@ class Containerd(ComponentBase):
         Returns:
             Pause image URL to use in containerd config
         """
+        # Fallback to default if no pause component
+        image_format = "registry.k8s.io/pause:3.9"
         if pause := self.instances.get("pause"):
             # Use source_format if it's a container image
-            if pause.config.installation.source_format:
-                return pause.config.installation.source_format
+            install = pause.config.installation
+            if (
+                install.method
+                in [InstallMethod.CONTAINER_IMAGE_ARCHIVE, InstallMethod.CONTAINER_IMAGE]
+                and install.source_format
+            ):
+                image_format = pause.config.installation.source_format
             # Otherwise construct from release version
-            if pause.config.release:
-                return f"registry.k8s.io/pause:{pause.config.release}"
+            elif pause.config.release:
+                image_format = f"registry.k8s.io/pause:{pause.config.release}"
 
-        # Fallback to default if no pause component
-        return "registry.k8s.io/pause:3.9"
+        return self.formatter(image_format)
 
     def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
         """

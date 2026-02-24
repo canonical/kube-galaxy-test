@@ -103,6 +103,23 @@ class ComponentBase:
             return self.config.name
         raise ComponentError("Component name not found in config")
 
+    def formatter(self, format_string: str, **kwargs: str) -> str:
+        """
+        Format a string using the component's attributes.
+
+        Args:
+            format_string: The format string
+            **kwargs: Additional keyword arguments for formatting
+
+        Returns:
+            Formatted string
+        """
+        repo = self.config.repo.base_url
+        release = self.config.release
+
+        # Construct download URL from source_format template
+        return format_string.format(repo=repo, release=release, **kwargs)
+
     @property
     def is_cluster_manager(self) -> bool:
         """
@@ -430,12 +447,8 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for download")
 
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
         # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
+        url = self.formatter(self.config.installation.source_format, arch=arch)
         filename = filename or url.split("/")[-1]
 
         # Download to secure temporary directory
@@ -512,12 +525,8 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for download")
 
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
         # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
+        url = self.formatter(self.config.installation.source_format, arch=arch)
 
         # Ensure https:// prefix for URLs like raw.githubusercontent.com
         if not url.startswith(("http://", "https://")):
@@ -570,12 +579,8 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for container image formatting")
 
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
         # Construct download URL from source_format template
-        full = source_format.format(repo=repo, release=release, arch=arch)
+        full = self.formatter(self.config.installation.source_format, arch=arch)
         split = full.rsplit(":", 1)
         if len(split) != 2:
             raise ComponentError(f"Invalid container image format: {full}")

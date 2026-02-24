@@ -7,6 +7,7 @@ from kube_galaxy.pkg.manifest.models import (
     InstallConfig,
     InstallMethod,
     Manifest,
+    RepoInfo,
 )
 
 
@@ -19,7 +20,8 @@ def make_config(name: str = "example") -> ComponentConfig:
         method=InstallMethod.BINARY,
         source_format="https://example/{repo}/{release}/{arch}/binary",
     )
-    return ComponentConfig(name=name, category="cat", release="v1", repo="r", installation=install)
+    repo = RepoInfo(base_url="https://example.com/r")
+    return ComponentConfig(name=name, category="cat", release="v1", repo=repo, installation=install)
 
 
 def test_ensure_temp_dir_calls_mkdir(monkeypatch, tmp_path):

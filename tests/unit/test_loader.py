@@ -21,9 +21,9 @@ def test_load_manifest_components(sample_manifest_file):
 
     assert len(manifest.components) == 2
     assert manifest.components[0].name == "containerd"
-    assert manifest.components[0].use_spread is False
+    assert manifest.components[0].test is False
     assert manifest.components[1].name == "coredns"
-    assert manifest.components[1].use_spread is True
+    assert manifest.components[1].test is True
 
 
 def test_load_manifest_networking(sample_manifest_file):

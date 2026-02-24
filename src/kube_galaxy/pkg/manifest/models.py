@@ -3,7 +3,6 @@
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 
 class InstallMethod(StrEnum):
@@ -26,22 +25,27 @@ class InstallConfig:
 
 
 @dataclass
+class RepoInfo:
+    """Repository information for component source code."""
+
+    base_url: str  # Base URL of the repository (e.g., https://github.com/org/repo)
+    subdir: str | None = None  # Optional subdirectory within repo for monorepos
+    ref: str | None = None  # Optional git reference (branch/tag/commit), defaults to release
+
+
+@dataclass
 class ComponentConfig:
     """Kubernetes component configuration from manifest YAML."""
 
     name: str
     category: str
     release: str
-    repo: str
+    repo: RepoInfo
     installation: InstallConfig
-    use_spread: bool = False
+    test: bool = False
 
     # Component lifecycle configuration
     dependencies: list[str] = field(default_factory=list)  # Must install after these components
-
-    # Hook configuration overrides
-    skip_hooks: list[str] = field(default_factory=list)  # Hooks to skip (e.g., ["bootstrap"])
-    hook_config: dict[str, Any] = field(default_factory=dict)  # Hook-specific configuration
 
 
 @dataclass

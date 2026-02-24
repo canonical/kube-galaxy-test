@@ -30,19 +30,21 @@ components:
   - name: containerd
     category: containerd
     release: "2.1.0"
-    repo: "https://github.com/containerd/containerd"
+    repo:
+      base-url: "https://github.com/containerd/containerd"
     installation:
       source_format: "Binary"
       method: "binary-archive"
-    use-spread: false
+    test: false
   - name: coredns
     category: dns
     release: "1.10.1"
-    repo: "https://github.com/coredns/coredns"
+    repo:
+      base-url: "https://github.com/coredns/coredns"
     installation:
       source_format: "Binary"
       method: "binary-archive"
-    use-spread: true
+    test: true
 networking:
   - name: default
     service-cidr: "10.96.0.0/12"

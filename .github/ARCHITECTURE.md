@@ -62,7 +62,7 @@ cluster provisioning, component installation, and test execution.
                │
 ┌──────────────▼──────────────────────────────────────┐
 │ 5. Execute Tests (run-spread-tests)                │
-│    • Identify components with use-spread: true     │
+│    • Identify components with test: true     │
 │    • Clone component repos                          │
 │    • Run spread tests from component spread.yaml   │
 │    • Collect and report results                    │
@@ -123,14 +123,14 @@ Components use this to download/build for the correct architecture.
 
 **Steps**:
 1. Install spread testing framework
-2. Scan manifest for use-spread components
+2. Scan manifest for test components
 3. Clone component repos
 4. Execute spread tests
 5. Collect artifacts
 
 **Key Features**:
 - Tests come from components and local tests/
-- Scans for use-spread: true in components
+- Scans for test: true in components
 - Reports results and failures
 - Preserves test artifacts
 
