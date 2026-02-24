@@ -194,15 +194,7 @@ class Kubeadm(ClusterComponentBase):
         )
 
         # Wait for api-server to be ready
-        run(
-            [
-                "kubectl",
-                "get",
-                "--raw=/readyz",
-                "--request-timeout=300s",
-            ],
-            check=True,
-        )
+        run(["kubectl", "get", "--raw=/readyz", "--request-timeout=300s"], check=True)
 
     def stop_hook(self) -> None:
         """
