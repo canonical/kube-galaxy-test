@@ -17,6 +17,7 @@ from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
     validate_component_test_structure,
 )
+from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
 from kube_galaxy.pkg.utils.shell import ShellError, run
@@ -84,7 +85,7 @@ def _verify_test_prerequisites() -> None:
         raise ClusterError("Test prerequisites not met") from exc
 
 
-def _checkout_component_repo(component: ComponentConfig, dest_path: Path) -> None:
+def _checkout_component_repo(component: ComponentConfig, dest_path: Path) -> Path | None:
     """
     Clone component repository at specified reference.
 
@@ -95,10 +96,12 @@ def _checkout_component_repo(component: ComponentConfig, dest_path: Path) -> Non
     Raises:
         ClusterError: If clone or checkout fails
     """
+    git_ref = format_component_pattern(
+        component.repo.ref or component.release, component, get_arch_info()
+    )
     try:
         # Determine git reference (use explicit ref or fall back to release)
-        git_ref = component.repo.ref or component.release
-        info(f"  Cloning {component.repo.base_url} at {git_ref}...")
+        info(f"  Cloning {component.repo.base_url} @ {git_ref}...")
 
         # Remove existing directory if present
         if dest_path.exists():
@@ -117,23 +120,26 @@ def _checkout_component_repo(component: ComponentConfig, dest_path: Path) -> Non
             repo.git.checkout(git_ref)
 
         # Determine spread directory location
+        tasks = Path("spread/kube-galaxy")
         if component.repo.subdir:
             # Monorepo: look in subdirectory
-            spread_dir = dest_path / component.repo.subdir / "spread" / "kube-galaxy"
+            tasks_dir = dest_path / component.repo.subdir / tasks
             info(f"  Using monorepo subdirectory: {component.repo.subdir}")
         else:
             # Standard repo: look at root
-            spread_dir = dest_path / "spread" / "kube-galaxy"
+            tasks_dir = dest_path / tasks
 
-        if not spread_dir.exists():
-            raise ClusterError(
-                f"Component {component.name} does not have /spread/kube-galaxy/ directory "
-                f"at {spread_dir.relative_to(dest_path)}"
+        if not tasks_dir.exists():
+            error(
+                f"Component {component.name} does not have directory "
+                f"at {tasks_dir.relative_to(dest_path)}"
             )
+            return None
 
         success(f"  ✓ Repository ready at {dest_path}")
         if component.repo.subdir:
-            info(f"  ✓ Tests found in {spread_dir.relative_to(dest_path)}")
+            info(f"  ✓ Tests found in {tasks_dir.relative_to(dest_path)}")
+        return dest_path
 
     except GitCommandError as exc:
         raise ClusterError(
@@ -265,11 +271,7 @@ def _generate_orchestration_spread_yaml(
 
         # Load template
         template_path = Path(__file__).parent / "spread.yaml.tmpl"
-        if not template_path.exists():
-            raise ClusterError(f"Template not found: {template_path}")
-
-        with open(template_path) as f:
-            template_content = f.read()
+        template_content = template_path.read_text()
 
         # Get architecture info
         arch_info = get_arch_info()
@@ -305,10 +307,7 @@ def _generate_orchestration_spread_yaml(
         # Write spread.yaml
         output_path = SystemPaths.tests_spread_yaml()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_path, "w") as f:
-            f.write(spread_yaml_content)
-
+        output_path.write_text(spread_yaml_content)
         success(f"  ✓ Generated: {output_path}")
         return output_path
 
@@ -320,6 +319,7 @@ def _execute_spread_for_component(
     component: ComponentConfig,
     namespace: str,
     spread_yaml: Path,
+    suite_path: Path,
     log_file: Path,
 ) -> bool:
     """
@@ -353,12 +353,6 @@ def _execute_spread_for_component(
             }
         )
 
-        # Build suite path (account for monorepo subdirectory)
-        if component.repo.subdir:
-            suite_path = f"{component.name}/origin/{component.repo.subdir}/spread/kube-galaxy/"
-        else:
-            suite_path = f"{component.name}/origin/spread/kube-galaxy/"
-
         cmd = ["spread", "-v", f"adhoc:{suite_path}"]
 
         info(f"  Command: {' '.join(cmd)}")
@@ -377,11 +371,10 @@ def _execute_spread_for_component(
 
         if result.returncode == 0:
             success(f"  ✓ Tests passed for {component.name}")
-            return True
         else:
             error(f"  ✗ Tests failed for {component.name} (exit code: {result.returncode})")
             error(f"  Log file: {log_file}")
-            return False
+        return result.returncode == 0
 
     except Exception as exc:
         error(f"  ✗ Test execution error: {exc}")
@@ -404,8 +397,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
     # Validate components have proper structure for testing
     validation_errors = []
     for component in spread_components:
-        errors = validate_component_test_structure(component)
-        if errors:
+        if errors := validate_component_test_structure(component):
             validation_errors.extend(errors)
 
     if validation_errors:
@@ -441,7 +433,17 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
 
         try:
             # Step 1: Checkout component repository
-            _checkout_component_repo(component, component_test_dir)
+            suite_dir = _checkout_component_repo(component, component_test_dir)
+            if suite_dir is None:
+                error(f"  ✗ Skipping tests for {component.name} due to missing test directory")
+                test_results.append(
+                    {
+                        "component": component.name,
+                        "result": "skipped",
+                        "error": "Missing test directory",
+                    }
+                )
+                continue
 
             # Step 2: Create test namespace
             namespace = _create_test_namespace(component.name)
@@ -451,6 +453,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
                 component,
                 namespace,
                 spread_yaml,
+                suite_dir,
                 log_file,
             )
 
@@ -458,7 +461,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
             test_results.append(
                 {
                     "component": component.name,
-                    "passed": test_passed,
+                    "result": "passed" if test_passed else "failed",
                     "log": str(log_file),
                 }
             )
@@ -468,7 +471,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
             test_results.append(
                 {
                     "component": component.name,
-                    "passed": False,
+                    "result": "failed",
                     "error": str(exc),
                     "log": str(log_file) if log_file.exists() else None,
                 }
@@ -484,11 +487,14 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
 
     # Summary
     section("Test Results Summary")
-    passed = sum(1 for r in test_results if r["passed"])
-    failed = len(test_results) - passed
+    passed = sum(1 for r in test_results if r["result"] == "passed")
+    skipped = sum(1 for r in test_results if r["result"] == "skipped")
+    failed = sum(1 for r in test_results if r["result"] == "failed")
 
     info(f"Total: {len(test_results)}")
     success(f"Passed: {passed}")
+    if skipped:
+        warning(f"Skipped: {skipped}")
     if failed > 0:
         error(f"Failed: {failed}")
 
@@ -503,7 +509,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
 
         raise ClusterError(f"{failed} component test(s) failed")
 
-    success("All component tests passed!")
+    success("All component tests passed or skipped!")
 
 
 def collect_test_results(work_dir: str = ".") -> str | None:

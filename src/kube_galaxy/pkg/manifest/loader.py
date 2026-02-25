@@ -48,7 +48,7 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     for comp_data in data.get("components", []):
         install_data = comp_data.get("installation", {})
         installation = InstallConfig(
-            method=InstallMethod(install_data.get("method", "binary-archive")),
+            method=InstallMethod(install_data.get("method", "none")),
             source_format=install_data.get("source_format", ""),
         )
 

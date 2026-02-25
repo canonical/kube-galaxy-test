@@ -161,26 +161,12 @@ jobs:
         run: |
           kube-galaxy test ${{ matrix.manifest-file }}
 
-      - name: Capture Test Results
-        if: always()
-        shell: bash
-        run: |
-          echo "## Test Execution Summary"
-          echo "- **Manifest**: ${{ matrix.manifest-file }}"
-          echo "- **Status**: ${{ steps.run-tests.outputs.test-status }}"
-          echo "- **Results Path**: ${{ steps.run-tests.outputs.test-results }}"
-
-          if [ -f "test-results/summary.md" ]; then
-            echo ""
-            cat test-results/summary.md
-          fi
-
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
-          path: test-results/
+          path: logs/
           retention-days: 30
           if-no-files-found: warn
 

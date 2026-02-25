@@ -156,11 +156,6 @@ class Permissions:
 class URLs:
     """URL patterns and registry endpoints."""
 
-    # GitHub
-    GITHUB_BASE = "https://github.com"
-    GITHUB_RELEASES_PATTERN = "https://github.com/{repo}/releases/download/{release}/{filename}"
-    GITHUB_RAW_CONTENT = "https://raw.githubusercontent.com"
-
     # Kubernetes release URLs
     K8S_RELEASE_BASE = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2"
 

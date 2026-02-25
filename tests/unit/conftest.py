@@ -7,6 +7,7 @@ import pytest
 
 # Ensure component modules are imported during tests so coverage includes them
 import kube_galaxy.pkg.components  # noqa: F401
+from kube_galaxy.pkg.arch.detector import get_arch_info
 
 
 @pytest.fixture
@@ -58,3 +59,9 @@ def sample_manifest_file(tmp_manifest_dir, sample_manifest_yaml):
     manifest_file = tmp_manifest_dir / "test-manifest.yaml"
     manifest_file.write_text(sample_manifest_yaml)
     return manifest_file
+
+
+@pytest.fixture
+def arch_info():
+    """Fixture to provide architecture information."""
+    return get_arch_info()

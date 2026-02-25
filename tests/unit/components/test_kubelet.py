@@ -25,7 +25,7 @@ class ExampleResp:
         return False
 
 
-def test_kubelet_configure_calls_urlopen_and_tee(monkeypatch, tmp_path):
+def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_path):
     # Prepare minimal manifest/config
     manifest = Manifest(name="m", description="d", kubernetes_version="1.24")
     install = InstallConfig(
@@ -36,7 +36,7 @@ def test_kubelet_configure_calls_urlopen_and_tee(monkeypatch, tmp_path):
         name="kubelet", category="k8s", release="v1", repo=repo, installation=install
     )
 
-    comp = Kubelet({}, manifest, config)
+    comp = Kubelet({}, manifest, config, arch_info)
     # set an install path so replace works
     comp.install_path = "/usr/local/bin/kubelet"
 

@@ -163,6 +163,15 @@ components:
       method: "container-image"
       source_format: "docker.io/calico/kube-controllers:v{release}"
 
+  # Test only component, nothing installed in the cluster
+  - name: kubernetes-cncf
+    category: kubernetes/kubernetes
+    release: *k8s-version
+    repo:
+      base-url: https://github.com/kubernetes/kubernetes
+      ref: "v{release}"
+    test: true
+
 networking:
   - name: "default"
     service-cidr: "10.96.0.0/12"

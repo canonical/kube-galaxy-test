@@ -12,6 +12,7 @@ from pathlib import Path
 from kube_galaxy.pkg.components import ClusterComponentBase, ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
+from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -113,7 +114,7 @@ class Containerd(ComponentBase):
             elif pause.config.release:
                 image_format = f"registry.k8s.io/pause:{pause.config.release}"
 
-        return self.formatter(image_format)
+        return format_component_pattern(image_format, self.config, self.arch_info)
 
     def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
         """

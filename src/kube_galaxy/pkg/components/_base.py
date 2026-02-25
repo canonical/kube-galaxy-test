@@ -15,10 +15,15 @@ from typing import LiteralString, cast
 
 import yaml
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
+from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
-from kube_galaxy.pkg.utils.components import download_file, extract_archive, install_binary
+from kube_galaxy.pkg.utils.components import (
+    download_file,
+    extract_archive,
+    format_component_pattern,
+    install_binary,
+)
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -67,7 +72,7 @@ class ComponentBase:
         instances: dict[str, "ComponentBase"],
         manifest: Manifest,
         config: ComponentConfig,
-        arch_info: ArchInfo | None = None,
+        arch_info: ArchInfo,
     ) -> None:
         """
         Initialize component with instances, manifest, and config.
@@ -81,7 +86,7 @@ class ComponentBase:
         self.manifest = manifest
         self.config = config
         # Allow tests and callers to omit arch_info; default to detected arch
-        self.arch_info = arch_info or get_arch_info()
+        self.arch_info = arch_info
         # for InstallMethod Binary or BinaryArchive
         self.binary_path: Path | None = None  # path to downloaded binary (before installation)
         self.install_path: str | None = None  # path to root installed bin
@@ -102,23 +107,6 @@ class ComponentBase:
         if self.config and self.config.name:
             return self.config.name
         raise ComponentError("Component name not found in config")
-
-    def formatter(self, format_string: str, **kwargs: str) -> str:
-        """
-        Format a string using the component's attributes.
-
-        Args:
-            format_string: The format string
-            **kwargs: Additional keyword arguments for formatting
-
-        Returns:
-            Formatted string
-        """
-        repo = self.config.repo.base_url
-        release = self.config.release
-
-        # Construct download URL from source_format template
-        return format_string.format(repo=repo, release=release, **kwargs)
 
     @property
     def is_cluster_manager(self) -> bool:
@@ -448,7 +436,9 @@ class ComponentBase:
             raise ComponentError("Component config required for download")
 
         # Construct download URL from source_format template
-        url = self.formatter(self.config.installation.source_format, arch=arch)
+        url = format_component_pattern(
+            self.config.installation.source_format, self.config, self.arch_info
+        )
         filename = filename or url.split("/")[-1]
 
         # Download to secure temporary directory
@@ -526,7 +516,9 @@ class ComponentBase:
             raise ComponentError("Component config required for download")
 
         # Construct download URL from source_format template
-        url = self.formatter(self.config.installation.source_format, arch=arch)
+        url = format_component_pattern(
+            self.config.installation.source_format, self.config, self.arch_info
+        )
 
         # Ensure https:// prefix for URLs like raw.githubusercontent.com
         if not url.startswith(("http://", "https://")):
@@ -580,7 +572,9 @@ class ComponentBase:
             raise ComponentError("Component config required for container image formatting")
 
         # Construct download URL from source_format template
-        full = self.formatter(self.config.installation.source_format, arch=arch)
+        full = format_component_pattern(
+            self.config.installation.source_format, self.config, self.arch_info
+        )
         split = full.rsplit(":", 1)
         if len(split) != 2:
             raise ComponentError(f"Invalid container image format: {full}")
