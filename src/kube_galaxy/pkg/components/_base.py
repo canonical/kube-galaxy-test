@@ -152,7 +152,7 @@ class ComponentBase:
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY:
-                self.binary_path = self.download_filename_from_config(arch, comp_name)
+                self.binary_path = self.download_filename_from_config()
             case InstallMethod.BINARY_ARCHIVE:
                 self.download_and_extract_archive(arch)
             case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
@@ -168,6 +168,10 @@ class ComponentBase:
                     f"Unsupported installation method for {comp_name}: "
                     f"{self.config.installation.method}"
                 )
+        match self.config.test:
+            case True:
+                info(f"Downloaded test artifacts for {comp_name}")
+                self.download_tasks_from_config(arch)
 
     def pre_install_hook(self) -> None:
         """
@@ -418,7 +422,7 @@ class ComponentBase:
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
-    def download_filename_from_config(self, arch: str, filename: str | None = None) -> Path:
+    def download_filename_from_config(self) -> Path:
         """
         Download binary using component config source_format.
 
@@ -439,7 +443,7 @@ class ComponentBase:
         url = format_component_pattern(
             self.config.installation.source_format, self.config, self.arch_info
         )
-        filename = filename or url.split("/")[-1]
+        filename = url.split("/")[-1]
 
         # Download to secure temporary directory
         temp_dir = self.ensure_temp_dir()
@@ -461,7 +465,7 @@ class ComponentBase:
         Raises:
             ComponentError: If download or extraction fails
         """
-        archive_path = self.download_filename_from_config(arch)
+        archive_path = self.download_filename_from_config()
         if not self.extracted_dir:
             raise ComponentError("Extracted directory not defined for this component")
 
@@ -478,7 +482,7 @@ class ComponentBase:
         This is a placeholder for container image archive download logic, which may involve
         using 'ctr' or 'docker' commands to pull the specified image.
         """
-        file_path = self.download_filename_from_config(arch)
+        file_path = self.download_filename_from_config()
         if not self.extracted_dir:
             raise ComponentError("Extracted directory not defined for this component")
 
@@ -498,6 +502,17 @@ class ComponentBase:
                 shutil.copyfileobj(src, dst)
         else:
             raise ComponentError(f"Unsupported archive format for {file_path.name}")
+
+    def download_tasks_from_config(self, arch: str) -> None:
+        """
+        Download test suite definition for this component.
+
+        This is a placeholder for downloading test suite definitions, which may involve
+        fetching task.yaml files or similar artifacts based on the component configuration.
+        """
+        # For example, we could download a task.yaml file using the same source_format logic
+        # and place it in the appropriate tests directory for this component.
+        pass
 
     def download_manifest_from_config(self, arch: str) -> Path:
         """

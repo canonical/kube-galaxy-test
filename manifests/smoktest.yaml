@@ -164,12 +164,13 @@ components:
       source_format: "docker.io/calico/kube-controllers:v{release}"
 
   # Test only component, nothing installed in the cluster
-  - name: kubernetes-cncf
+  - name: sonobuoy
     category: kubernetes/kubernetes
-    release: *k8s-version
+    release: "0.57.3"
     repo:
-      base-url: https://github.com/kubernetes/kubernetes
-      ref: "v{release}"
+      base-url: https://github.com/vmware-tanzu/sonobuoy
+    installation:
+      source_format: "{repo}/releases/download/v{release}/sonobuoy_{release}_linux_{arch}.tar.gz"
     test: true
 
 networking:

@@ -1,8 +1,16 @@
 """Manifest validation and utilities."""
 
-from git import cmd as git_cmd
+from pathlib import Path
 
+import yaml
+
+from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
+
+
+def task_path_for_component(component: ComponentConfig) -> Path:
+    """Get the expected path to the component's test task definition."""
+    return SystemPaths.tests_root() / component.name / "spread/kube-galaxy/"
 
 
 def validate_manifest(manifest: Manifest) -> None:
@@ -40,53 +48,38 @@ def validate_component_test_structure(component: ComponentConfig) -> list[str]:
     if not component.test:
         return errors  # No validation needed for components without tests
 
-    # Check required fields
-    if not component.repo.base_url:
+    # Validate task yaml is valid YAML and has required fields (name, execute)
+    task_path = task_path_for_component(component) / "task.yaml"
+    content = {}
+    if not task_path.exists():
         errors.append(
-            f"Component {component.name}: 'repo.base-url' field is required for spread tests"
+            f"Component '{component.name}' is marked for testing "
+            f"but task.yaml not found at {task_path}"
         )
+    else:
+        try:
+            content = yaml.safe_load(task_path.read_text())  # Will raise if not valid YAML
+        except yaml.YAMLError as e:
+            errors.append(f"Component '{component.name}' has invalid YAML in task.yaml: {e}")
 
-    try:
-        # Use git ls-remote to check if repo exists and is accessible
-        # This is fast and doesn't clone the repo
-        git = git_cmd.Git()
-        git.ls_remote(component.repo.base_url, heads=True)
-    except Exception as exc:
-        errors.append(
-            f"Component {component.name}: cannot access repo at '{component.repo.base_url}' - {exc}"
-        )
-
-    # Validate subdir doesn't start with / or contain ..
-    if component.repo.subdir:
-        if component.repo.subdir.startswith("/") or ".." in component.repo.subdir:
-            errors.append(
-                f"Component {component.name}: invalid 'repo.subdir' '{component.repo.subdir}' "
-                "(must be relative path without '..')"
-            )
+    if "execute" not in content:
+        errors.append(f"Component '{component.name}' task.yaml missing 'execute' field")
 
     return errors
 
 
 def get_components_with_spread(manifest: Manifest) -> list[ComponentConfig]:
-    """Get all components marked with test=true.
+    """Get all components marked with test=true that have a spread test suite defined.
 
     Args:
         manifest: Manifest to query
 
     Returns:
-        List of component configs with tests enabled
+        List of component configs with runnable tests
     """
-    return [comp for comp in manifest.components if comp.test]
 
+    def has_spread_test(comp: ComponentConfig) -> bool:
+        path_to_tasks = task_path_for_component(comp)
+        return comp.test and path_to_tasks.exists() and any(path_to_tasks.glob("task.yaml"))
 
-def get_component(manifest: Manifest, name: str) -> ComponentConfig | None:
-    """Get component config by name from manifest.
-
-    Args:
-        manifest: Manifest to search
-        name: Component config name
-
-    Returns:
-        ComponentConfig if found, None otherwise
-    """
-    return manifest.get_component(name)
+    return [comp for comp in manifest.components if has_spread_test(comp)]

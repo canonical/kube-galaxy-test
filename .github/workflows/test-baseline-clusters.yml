@@ -103,6 +103,9 @@ jobs:
       - name: Install Spread
         run: go install github.com/snapcore/spread/cmd/spread@latest
 
+      - name: Setup LXD
+        uses: canonical/setup-lxd@main
+
       - name: Install kube-galaxy
         shell: bash
         run: |

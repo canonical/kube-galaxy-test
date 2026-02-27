@@ -71,11 +71,6 @@ class SystemPaths:
         return cls.component_dir(component_name) / cls.KUBE_GALAXY_TEMP_SUFFIX
 
     @classmethod
-    def component_test_dir(cls, component_name: str) -> Path:
-        """Get component test directory path (for spread tests)."""
-        return Path(cls.KUBE_GALAXY_TESTS_ROOT) / component_name / "origin"
-
-    @classmethod
     def tests_root(cls) -> Path:
         """Get tests root directory path."""
         return Path(cls.KUBE_GALAXY_TESTS_ROOT)

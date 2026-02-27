@@ -3,11 +3,11 @@
 import os
 import shutil
 import subprocess
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
-from string import Template
 
-from git import Repo
-from git.exc import GitCommandError
+import yaml
 
 from kube_galaxy.pkg.arch.detector import get_arch_info
 from kube_galaxy.pkg.literals import SystemPaths
@@ -15,12 +15,54 @@ from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
+    task_path_for_component,
     validate_component_test_structure,
 )
-from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
 from kube_galaxy.pkg.utils.shell import ShellError, run
+
+
+class SpreadYamlDumper(yaml.SafeDumper):
+    """Custom YAML dumper to handle Path objects as strings."""
+
+    pass
+
+
+# Register custom representer for Path objects to dump as strings
+SpreadYamlDumper.add_multi_representer(Path, lambda d, p: d.represent_str(str(p)))
+
+
+@contextmanager
+def _setup_shared_kubeconfig() -> Generator[Path, None, None]:
+    """
+    Context manager to copy kubeconfig to shared directory and clean up after.
+
+    Yields:
+        Path to the shared kubeconfig file accessible by LXD containers
+
+    Note:
+        The kubeconfig is copied to SystemPaths.tests_root() which is mounted
+        in spread's LXD containers, allowing tests to access the cluster.
+    """
+    # Copy kubeconfig to shared test directory for LXD container access
+    source_kubeconfig = os.environ.get("KUBECONFIG", os.path.expanduser("~/.kube/config"))
+    shared_kubeconfig = SystemPaths.tests_root() / "kubeconfig"
+
+    # Ensure test root directory exists
+    SystemPaths.tests_root().mkdir(parents=True, exist_ok=True)
+
+    try:
+        info(f"Setting up shared kubeconfig from {source_kubeconfig}")
+        shutil.copy2(source_kubeconfig, shared_kubeconfig)
+        success(f"  ✓ Kubeconfig copied to {shared_kubeconfig}")
+        yield shared_kubeconfig
+    finally:
+        # Cleanup: remove the copied kubeconfig
+        if shared_kubeconfig.exists():
+            info(f"Cleaning up shared kubeconfig: {shared_kubeconfig}")
+            shared_kubeconfig.unlink()
+            success("  ✓ Shared kubeconfig removed")
 
 
 def run_spread_tests(
@@ -54,8 +96,10 @@ def run_spread_tests(
         # Verify test prerequisites (kubectl connectivity, spread availability)
         _verify_test_prerequisites()
 
-        # Run tests from components with spread enabled
-        _run_component_tests(manifest, work_dir_path, test_type, debug)
+        # Setup shared kubeconfig and run tests (cleanup handled by context manager)
+        with _setup_shared_kubeconfig() as shared_kubeconfig:
+            # Run tests from components with spread enabled
+            _run_component_tests(manifest, work_dir_path, test_type, debug, shared_kubeconfig)
 
         section("Test Execution Complete")
         success("Tests completed successfully")
@@ -77,76 +121,18 @@ def _verify_test_prerequisites() -> None:
         spread_path = result.stdout.strip()
         success(f"✓ Found spread at {spread_path}")
 
+        # Check for lxclient (required by spread)
+        info("Verifying lxclient (required by spread)...")
+        result = run(["which", "lxc"], check=True, capture_output=True)
+        lxclient_path = result.stdout.strip()
+        success(f"✓ Found lxclient at {lxclient_path}")
+
     except ShellError as exc:
         if "spread" in str(exc):
             error(
                 "Spread test framework not found. Install from: https://github.com/canonical/spread"
             )
         raise ClusterError("Test prerequisites not met") from exc
-
-
-def _checkout_component_repo(component: ComponentConfig, dest_path: Path) -> Path | None:
-    """
-    Clone component repository at specified reference.
-
-    Args:
-        component: Component configuration
-        dest_path: Destination path for cloned repository
-
-    Raises:
-        ClusterError: If clone or checkout fails
-    """
-    git_ref = format_component_pattern(
-        component.repo.ref or component.release, component, get_arch_info()
-    )
-    try:
-        # Determine git reference (use explicit ref or fall back to release)
-        info(f"  Cloning {component.repo.base_url} @ {git_ref}...")
-
-        # Remove existing directory if present
-        if dest_path.exists():
-            shutil.rmtree(dest_path)
-
-        # Clone repository
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            # Try to clone with specific branch/tag
-            Repo.clone_from(component.repo.base_url, dest_path, depth=1, branch=git_ref)
-        except GitCommandError:
-            # If branch doesn't work, clone and checkout (handles commits)
-            info("  Branch checkout failed, trying commit checkout...")
-            repo = Repo.clone_from(component.repo.base_url, dest_path, depth=1)
-            repo.git.checkout(git_ref)
-
-        # Determine spread directory location
-        tasks = Path("spread/kube-galaxy")
-        if component.repo.subdir:
-            # Monorepo: look in subdirectory
-            tasks_dir = dest_path / component.repo.subdir / tasks
-            info(f"  Using monorepo subdirectory: {component.repo.subdir}")
-        else:
-            # Standard repo: look at root
-            tasks_dir = dest_path / tasks
-
-        if not tasks_dir.exists():
-            error(
-                f"Component {component.name} does not have directory "
-                f"at {tasks_dir.relative_to(dest_path)}"
-            )
-            return None
-
-        success(f"  ✓ Repository ready at {dest_path}")
-        if component.repo.subdir:
-            info(f"  ✓ Tests found in {tasks_dir.relative_to(dest_path)}")
-        return dest_path
-
-    except GitCommandError as exc:
-        raise ClusterError(
-            f"Failed to clone {component.repo.base_url} at {git_ref}: {exc}"
-        ) from exc
-    except Exception as exc:
-        raise ClusterError(f"Failed to checkout component repo: {exc}") from exc
 
 
 def _create_test_namespace(component_name: str) -> str:
@@ -168,47 +154,14 @@ def _create_test_namespace(component_name: str) -> str:
     try:
         info(f"  Creating test namespace: {namespace}")
 
-        # Create namespace with labels
-        run(
-            [
-                "kubectl",
-                "create",
-                "namespace",
-                namespace,
-                "--dry-run=client",
-                "-o",
-                "yaml",
-            ],
-            check=True,
-            capture_output=True,
-        )
-
         # Apply with labels
-        run(
-            [
-                "kubectl",
-                "create",
-                "namespace",
-                namespace,
-                "-o",
-                "json",
-            ],
-            check=True,
-            capture_output=True,
-        )
+        run(["kubectl", "create", "namespace", namespace], check=True)
 
         # Label namespace
+        label = "app.kubernetes.io/managed-by=kube-galaxy"
         run(
-            [
-                "kubectl",
-                "label",
-                "namespace",
-                namespace,
-                "app.kubernetes.io/managed-by=kube-galaxy",
-                f"component={component_name}",
-            ],
+            ["kubectl", "label", "namespace", namespace, label, f"component={component_name}"],
             check=True,
-            capture_output=True,
         )
 
         success(f"  ✓ Namespace created: {namespace}")
@@ -236,7 +189,6 @@ def _cleanup_test_namespace(namespace: str, timeout: int = 60) -> None:
         run(
             ["kubectl", "delete", "namespace", namespace, "--timeout", f"{timeout}s"],
             check=True,
-            capture_output=True,
         )
 
         success(f"  ✓ Namespace deleted: {namespace}")
@@ -250,66 +202,60 @@ def _cleanup_test_namespace(namespace: str, timeout: int = 60) -> None:
 
 
 def _generate_orchestration_spread_yaml(
-    manifest: Manifest,
-    components: list[ComponentConfig],
-) -> Path:
+    components: list[ComponentConfig], kubeconfig: Path
+) -> list[str]:
     """
     Generate spread.yaml from template for component test orchestration.
 
     Args:
-        manifest: Cluster manifest
         components: List of components with spread tests
+        kubeconfig: Path to kubeconfig file (in shared directory)
 
     Returns:
-        Path to generated spread.yaml
+        List of component suites
 
     Raises:
         ClusterError: If generation fails
     """
     try:
         info("Generating test orchestration spread.yaml...")
-
-        # Load template
-        template_path = Path(__file__).parent / "spread.yaml.tmpl"
-        template_content = template_path.read_text()
-
         # Get architecture info
         arch_info = get_arch_info()
 
-        # Get kubeconfig path
-        kubeconfig = os.environ.get("KUBECONFIG", os.path.expanduser("~/.kube/config"))
+        # Load template
+        suites = {}
+        replacements = {
+            "path": SystemPaths.tests_root(),
+            "environment": {
+                "PROJECT_PATH": SystemPaths.tests_root(),
+                "KUBECONFIG": str(kubeconfig),
+                "SYSTEM_ARCH": arch_info.system,
+                "K8S_ARCH": arch_info.k8s,
+                "IMAGE_ARCH": arch_info.image,
+            },
+        }
 
         # Generate component suites section
-        component_suites = []
-        for component in components:
-            if component.repo.subdir:
-                suite_path = (
-                    f"  {component.name}/origin/{component.repo.subdir}/spread/kube-galaxy/:"
-                )
-            else:
-                suite_path = f"  {component.name}/origin/spread/kube-galaxy/:"
-            component_suites.append(suite_path)
+        for each in components:
+            suite_path = task_path_for_component(each)
+            task = suite_path / "task.yaml"
+            suite = yaml.safe_load(task.read_text())  # Load for name and summary
+            rel = suite_path.relative_to(SystemPaths.tests_root()).parent
+            suites[f"{rel}/"] = {"summary": suite.get("summary", "No summary")}
+
+        replacements["suites"] = suites
 
         # Fill template
-        template = Template(template_content)
-        spread_yaml_content = template.substitute(
-            test_root_path=SystemPaths.KUBE_GALAXY_TESTS_ROOT,
-            kubeconfig_path=kubeconfig,
-            namespace="PLACEHOLDER",  # Will be overridden per component
-            system_arch=arch_info.system,
-            k8s_arch=arch_info.k8s,
-            image_arch=arch_info.image,
-            component_name="PLACEHOLDER",  # Will be overridden per component
-            component_version="PLACEHOLDER",  # Will be overridden per component
-            component_suites="\n".join(component_suites),
-        )
+        template_path = Path(__file__).parent / "templates/spread.yaml.tmpl"
+        content = yaml.safe_load(template_path.read_text())
+        content.update(replacements)
 
         # Write spread.yaml
         output_path = SystemPaths.tests_spread_yaml()
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(spread_yaml_content)
+        yaml.dump(content, output_path.open("w"), Dumper=SpreadYamlDumper)
         success(f"  ✓ Generated: {output_path}")
-        return output_path
+        return list(suites.keys())
 
     except Exception as exc:
         raise ClusterError(f"Failed to generate spread.yaml: {exc}") from exc
@@ -353,7 +299,7 @@ def _execute_spread_for_component(
             }
         )
 
-        cmd = ["spread", "-v", f"adhoc:{suite_path}"]
+        cmd = ["spread", "-v", f"{suite_path}/"]
 
         info(f"  Command: {' '.join(cmd)}")
         info(f"  Working directory: {spread_yaml.parent}")
@@ -381,7 +327,9 @@ def _execute_spread_for_component(
         return False
 
 
-def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, debug: bool) -> None:
+def _run_component_tests(
+    manifest: Manifest, work_dir: Path, test_type: str, debug: bool, kubeconfig: Path
+) -> None:
     """Run spread tests from components marked with test: true."""
     section("Looking for components with spread tests")
 
@@ -408,7 +356,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
 
     # Generate orchestration spread.yaml
     try:
-        spread_yaml = _generate_orchestration_spread_yaml(manifest, spread_components)
+        component_suites = _generate_orchestration_spread_yaml(spread_components, kubeconfig)
     except ClusterError as exc:
         error(f"Failed to generate orchestration spread.yaml: {exc}")
         raise
@@ -417,13 +365,14 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
     test_results = []
 
     # Run tests for each component sequentially
-    for i, component in enumerate(spread_components, 1):
+    for i, (component, suite) in enumerate(
+        zip(spread_components, component_suites, strict=False), 1
+    ):
         section(f"Testing Component [{i}/{len(spread_components)}]: {component.name}")
         info(f"  Release: {component.release}")
         info(f"  Repo: {component.repo.base_url}")
 
         # Component-specific directories
-        component_test_dir = SystemPaths.component_test_dir(component.name)
         log_dir = work_dir / "logs" / component.name
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / "test-output.log"
@@ -432,19 +381,6 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
         test_passed = False
 
         try:
-            # Step 1: Checkout component repository
-            suite_dir = _checkout_component_repo(component, component_test_dir)
-            if suite_dir is None:
-                error(f"  ✗ Skipping tests for {component.name} due to missing test directory")
-                test_results.append(
-                    {
-                        "component": component.name,
-                        "result": "skipped",
-                        "error": "Missing test directory",
-                    }
-                )
-                continue
-
             # Step 2: Create test namespace
             namespace = _create_test_namespace(component.name)
 
@@ -452,8 +388,8 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
             test_passed = _execute_spread_for_component(
                 component,
                 namespace,
-                spread_yaml,
-                suite_dir,
+                SystemPaths.tests_spread_yaml(),
+                Path(suite),
                 log_file,
             )
 
@@ -473,7 +409,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
                     "component": component.name,
                     "result": "failed",
                     "error": str(exc),
-                    "log": str(log_file) if log_file.exists() else None,
+                    "log": str(log_file) if log_file.exists() else "",
                 }
             )
 
@@ -502,7 +438,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
     if failed > 0:
         info("\nFailed components:")
         for result in test_results:
-            if not result["passed"]:
+            if result["result"] != "passed":
                 error(f"  - {result['component']}")
                 if result.get("log"):
                     info(f"    Log: {result['log']}")
