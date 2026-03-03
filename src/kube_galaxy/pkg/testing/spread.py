@@ -293,7 +293,8 @@ def _execute_spread_for_component(
             }
         )
 
-        cmd = ["spread", "-v", f"{suite_path}/"]
+        # Only run spread for the kube-galaxy-task within the component suite
+        cmd = ["spread", "-v", f"{suite_path}/kube-galaxy"]
 
         info(f"  Command: {' '.join(cmd)}")
         info(f"  Working directory: {spread_yaml.parent}")
