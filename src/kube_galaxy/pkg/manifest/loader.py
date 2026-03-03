@@ -54,14 +54,13 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
 
         # Parse repo info
         repo_data = comp_data.get("repo", {})
-        if isinstance(repo_data, dict):
+        if isinstance(repo_data, dict) and (base_url := repo_data.get("base-url")):
             repo_info = RepoInfo(
-                base_url=repo_data.get("base-url", ""),
+                base_url=base_url,
                 subdir=repo_data.get("subdir"),
                 ref=repo_data.get("ref"),
             )
         else:
-            # For backwards compatibility during transition, treat string as base_url
             raise ValueError(
                 f"Component {comp_data.get('name')}: 'repo' must be an object with 'base-url', "
                 "'subdir', and 'ref' fields"

@@ -1,6 +1,7 @@
 """Manifest validation and utilities."""
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -50,17 +51,18 @@ def validate_component_test_structure(component: ComponentConfig) -> list[str]:
 
     # Validate task yaml is valid YAML and has required fields (name, execute)
     task_path = task_path_for_component(component) / "task.yaml"
-    content = {}
+    content: dict[str, Any] = {}
     if not task_path.exists():
         errors.append(
             f"Component '{component.name}' is marked for testing "
             f"but task.yaml not found at {task_path}"
         )
-    else:
-        try:
-            content = yaml.safe_load(task_path.read_text())  # Will raise if not valid YAML
-        except yaml.YAMLError as e:
-            errors.append(f"Component '{component.name}' has invalid YAML in task.yaml: {e}")
+        return errors
+
+    try:
+        content = yaml.safe_load(task_path.read_text()) or {}  # Will raise if not valid YAML
+    except yaml.YAMLError as e:
+        errors.append(f"Component '{component.name}' has invalid YAML in task.yaml: {e}")
 
     if "execute" not in content:
         errors.append(f"Component '{component.name}' task.yaml missing 'execute' field")

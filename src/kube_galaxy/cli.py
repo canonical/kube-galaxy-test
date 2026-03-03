@@ -26,7 +26,7 @@ def main_callback(
 
 @app.command(name="test")
 def test_cmd(
-    manifest: str = typer.Argument("manifest", help="Path to manifest file"),
+    manifest: str = typer.Argument(..., help="Path to manifest file"),
 ) -> None:
     """Run tests or manage test clusters.
 

@@ -88,7 +88,7 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
     """Test that download_hook properly formats URLs with release, repo, and arch placeholders."""
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
-        source_format="https://example.com/{repo}/releases/{release}/manifest-{arch}.yaml",
+        source_format="{repo}/releases/{release}/manifest-{arch}.yaml",
     )
     repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     config = ComponentConfig(
@@ -122,10 +122,8 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
     url, _ = download_calls[0]
     # Determine expected architecture from the component, falling back to "amd64" if unavailable
     arch_info = getattr(comp, "arch_info", None)
-    arch = getattr(arch_info, "arch", "amd64") if arch_info is not None else "amd64"
-    expected_url = (
-        f"https://example.com/https://github.com/myorg/myrepo/releases/v1.2.3/manifest-{arch}.yaml"
-    )
+    arch = getattr(arch_info, "k8s", "amd64") if arch_info is not None else "amd64"
+    expected_url = f"https://github.com/myorg/myrepo/releases/v1.2.3/manifest-{arch}.yaml"
     assert url == expected_url
 
 

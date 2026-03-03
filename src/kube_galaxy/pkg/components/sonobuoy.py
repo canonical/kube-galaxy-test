@@ -45,7 +45,7 @@ class Sonobuoy(ComponentBase):
         self.task_path.write_text(TASK.format(url=url))
 
     def remove_hook(self) -> None:
-        shutil.rmtree(self.task_path, ignore_errors=True)
+        shutil.rmtree(self.suite_path, ignore_errors=True)
 
     @property
     def suite_path(self) -> Path:

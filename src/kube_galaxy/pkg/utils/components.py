@@ -136,7 +136,8 @@ def format_component_pattern(
     Construct component formatter
 
     Args:
-        filename_pattern: Filename to download (supports {arch} placeholder)
+        filename_pattern: Filename to download
+            supports placeholders {arch}, {release}, {ref}, {repo}
         config: Component configuration
         arch_info: Architecture information
 
