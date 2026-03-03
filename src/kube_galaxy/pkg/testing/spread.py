@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from kube_galaxy.pkg.arch.detector import get_arch_info
-from kube_galaxy.pkg.literals import SystemPaths
+from kube_galaxy.pkg.literals import SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.manifest.validator import (
@@ -55,14 +55,14 @@ def _setup_shared_kubeconfig() -> Generator[Path, None, None]:
     try:
         info(f"Setting up shared kubeconfig from {source_kubeconfig}")
         shutil.copy2(source_kubeconfig, shared_kubeconfig)
-        success(f"  ✓ Kubeconfig copied to {shared_kubeconfig}")
+        success(f"Kubeconfig copied to {shared_kubeconfig}")
         yield shared_kubeconfig
     finally:
         # Cleanup: remove the copied kubeconfig
         if shared_kubeconfig.exists():
             info(f"Cleaning up shared kubeconfig: {shared_kubeconfig}")
             shared_kubeconfig.unlink()
-            success("  ✓ Shared kubeconfig removed")
+            success("Shared kubeconfig removed")
 
 
 def run_spread_tests(
@@ -97,9 +97,9 @@ def run_spread_tests(
         _verify_test_prerequisites()
 
         # Setup shared kubeconfig and run tests (cleanup handled by context manager)
-        with _setup_shared_kubeconfig() as shared_kubeconfig:
+        with _setup_shared_kubeconfig() as kubeconfig:
             # Run tests from components with spread enabled
-            _run_component_tests(manifest, work_dir_path, test_type, debug, shared_kubeconfig)
+            _run_component_tests(manifest, work_dir_path, test_type, debug, kubeconfig)
 
         section("Test Execution Complete")
         success("Tests completed successfully")
@@ -113,25 +113,21 @@ def _verify_test_prerequisites() -> None:
     try:
         info("Verifying cluster connectivity...")
         run(["kubectl", "cluster-info"], check=True, capture_output=True)
-        success("✓ Connected to Kubernetes cluster")
+        success("Connected to Kubernetes cluster")
 
         # Check for spread
         info("Verifying spread test framework...")
         result = run(["which", "spread"], check=True, capture_output=True)
         spread_path = result.stdout.strip()
-        success(f"✓ Found spread at {spread_path}")
+        success(f"Found spread at {spread_path}")
 
         # Check for lxclient (required by spread)
         info("Verifying lxclient (required by spread)...")
         result = run(["which", "lxc"], check=True, capture_output=True)
         lxclient_path = result.stdout.strip()
-        success(f"✓ Found lxclient at {lxclient_path}")
+        success(f"Found lxclient at {lxclient_path}")
 
     except ShellError as exc:
-        if "spread" in str(exc):
-            error(
-                "Spread test framework not found. Install from: https://github.com/canonical/spread"
-            )
         raise ClusterError("Test prerequisites not met") from exc
 
 
@@ -164,7 +160,7 @@ def _create_test_namespace(component_name: str) -> str:
             check=True,
         )
 
-        success(f"  ✓ Namespace created: {namespace}")
+        success(f"Namespace created: {namespace}")
         return namespace
 
     except ShellError as exc:
@@ -191,7 +187,7 @@ def _cleanup_test_namespace(namespace: str, timeout: int = 60) -> None:
             check=True,
         )
 
-        success(f"  ✓ Namespace deleted: {namespace}")
+        success(f"Namespace deleted: {namespace}")
 
     except ShellError as exc:
         # Don't fail if namespace doesn't exist
@@ -224,10 +220,12 @@ def _generate_orchestration_spread_yaml(
 
         # Load template
         suites = {}
-        replacements = {
+        spread_def = {
             "path": SystemPaths.tests_root(),
             "environment": {
                 "PROJECT_PATH": SystemPaths.tests_root(),
+                "TEST_TIMEOUT_S": str(Timeouts.TEST_EXECUTION_TIMEOUT_S),
+                "TEST_TIMEOUT_M": str(Timeouts.TEST_EXECUTION_TIMEOUT_S // 60),
                 "KUBECONFIG": str(kubeconfig),
                 "SYSTEM_ARCH": arch_info.system,
                 "K8S_ARCH": arch_info.k8s,
@@ -243,18 +241,20 @@ def _generate_orchestration_spread_yaml(
             rel = suite_path.relative_to(SystemPaths.tests_root()).parent
             suites[f"{rel}/"] = {"summary": suite.get("summary", "No summary")}
 
-        replacements["suites"] = suites
+        spread_def["suites"] = suites
 
-        # Fill template
+        # Read template spread.yaml.tmpl
         template_path = Path(__file__).parent / "templates/spread.yaml.tmpl"
         content = yaml.safe_load(template_path.read_text())
-        content.update(replacements)
+
+        # Update template with generated suites and environment
+        content.update(spread_def)
 
         # Write spread.yaml
         output_path = SystemPaths.tests_spread_yaml()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         yaml.dump(content, output_path.open("w"), Dumper=SpreadYamlDumper)
-        success(f"  ✓ Generated: {output_path}")
+        success(f"Generated: {output_path}")
         return list(suites.keys())
 
     except Exception as exc:
@@ -283,9 +283,6 @@ def _execute_spread_for_component(
     try:
         info(f"  Executing tests for {component.name}...")
 
-        # Get architecture info
-        arch_info = get_arch_info()
-
         # Build environment with test context
         env = os.environ.copy()
         env.update(
@@ -293,9 +290,6 @@ def _execute_spread_for_component(
                 "KUBE_GALAXY_NAMESPACE": namespace,
                 "COMPONENT_NAME": component.name,
                 "COMPONENT_VERSION": component.release,
-                "SYSTEM_ARCH": arch_info.system,
-                "K8S_ARCH": arch_info.k8s,
-                "IMAGE_ARCH": arch_info.image,
             }
         )
 
@@ -316,14 +310,14 @@ def _execute_spread_for_component(
             )
 
         if result.returncode == 0:
-            success(f"  ✓ Tests passed for {component.name}")
+            success(f"  Tests passed for {component.name}")
         else:
-            error(f"  ✗ Tests failed for {component.name} (exit code: {result.returncode})")
+            error(f"  Tests failed for {component.name} (exit code: {result.returncode})")
             error(f"  Log file: {log_file}")
         return result.returncode == 0
 
     except Exception as exc:
-        error(f"  ✗ Test execution error: {exc}")
+        error(f"  Test execution error: {exc}")
         return False
 
 
@@ -403,7 +397,7 @@ def _run_component_tests(
             )
 
         except Exception as exc:
-            error(f"  ✗ Test execution failed: {exc}")
+            error(f"Test execution failed: {exc}")
             test_results.append(
                 {
                     "component": component.name,
@@ -436,12 +430,12 @@ def _run_component_tests(
 
     # Show failed components
     if failed > 0:
-        info("\nFailed components:")
+        section("Failed components")
         for result in test_results:
             if result["result"] != "passed":
-                error(f"  - {result['component']}")
+                error(f"- {result['component']}")
                 if result.get("log"):
-                    info(f"    Log: {result['log']}")
+                    info(f" Log: {result['log']}")
 
         raise ClusterError(f"{failed} component test(s) failed")
 

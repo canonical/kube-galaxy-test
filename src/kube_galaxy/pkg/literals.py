@@ -182,6 +182,8 @@ class Timeouts:
     SERVICE_START_TIMEOUT = 30  # 30 seconds
     SERVICE_STOP_TIMEOUT = 30  # 30 seconds
 
+    TEST_EXECUTION_TIMEOUT_S = 900  # 15 minutes
+
 
 class FilePatterns:
     """File name patterns and extensions."""
