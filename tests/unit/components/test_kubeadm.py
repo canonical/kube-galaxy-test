@@ -10,6 +10,7 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     NetworkConfig,
+    RepoInfo,
 )
 
 
@@ -18,7 +19,7 @@ class FakeCompleted:
         self.stdout = stdout
 
 
-def test_kubeadm_configure_writes_cluster_config(monkeypatch, tmp_path):
+def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_path):
     # Build manifest with networking
     net = NetworkConfig(name="default", service_cidr="10.96.0.0/12", pod_cidr="192.168.0.0/16")
     manifest = Manifest(
@@ -31,11 +32,12 @@ def test_kubeadm_configure_writes_cluster_config(monkeypatch, tmp_path):
     install = InstallConfig(
         method=InstallMethod.BINARY, source_format="https://example/{repo}/{release}/kubeadm"
     )
+    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     config = ComponentConfig(
-        name="kubeadm", category="k8s", release="v1", repo="r", installation=install
+        name="kubeadm", category="k8s", release="v1", repo=repo, installation=install
     )
 
-    comp = Kubeadm({}, manifest, config)
+    comp = Kubeadm({}, manifest, config, arch_info)
 
     # Provide a kubelet instance with an install_path so _which() succeeds
     class StubKubelet:

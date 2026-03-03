@@ -9,7 +9,7 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
 - **Per-Component Definition**: Each component specifies its repo, release, and whether it provides tests
 - **GitHub Actions**: Automatic provisioning, testing, and cleanup workflows
 - **Multiarch Support**: Runtime architecture detection (amd64, arm64, riscv64, etc.)
-- **Component-Driven Tests**: Tests live in component repos, referenced via `use-spread` flag
+- **Component-Driven Tests**: Tests live in component repos, referenced via `test` flag
 - **Kubeadm-Based Provisioning**: Real cluster setup without container-based shortcuts
 
 ## 🏃 Quick Start
@@ -135,16 +135,25 @@ kubernetes-version: "v1.29.0"
 components:
   - name: containerd
     release: "v1.7.0"
-    repo: "https://github.com/containerd/containerd"
-    use-spread: false
+    repo:
+      base-url: "https://github.com/containerd/containerd"
+    test: false
   - name: kubeadm
     release: "v1.29.0"
-    repo: "https://github.com/kubernetes/kubernetes"
-    use-spread: false
+    repo:
+      base-url: "https://github.com/kubernetes/kubernetes"
+    test: false
   - name: my-custom-cni
     release: "main"
-    repo: "https://github.com/myorg/custom-cni"
-    use-spread: true
+    repo:
+      base-url: "https://github.com/myorg/custom-cni"
+    test: true
+  - name: monorepo-component
+    repo:
+      base-url: "https://github.com/myorg/monorepo"
+      subdir: "components/my-component"
+      ref: "feature-branch"
+    test: true
 networking:
   - name: "calico"
     service-cidr: "10.96.0.0/12"
@@ -158,17 +167,44 @@ networking:
 - **kubernetes-version**: Kubernetes version (informational)
 - **components**: List of components to install
   - **name**: Component identifier
-  - **release**: Git tag/branch to checkout
-  - **repo**: Git repository URL
-  - **use-spread**: If `true`, component repository provides spread tests
+  - **release**: Git tag/branch to checkout (defaults to repo.ref if not specified)
+  - **repo**: Repository information object
+    - **base-url**: Git repository URL (required)
+    - **subdir**: Optional subdirectory path for monorepo components
+    - **ref**: Optional git reference (branch/tag/commit), defaults to release
+  - **test**: If `true`, component repository provides spread tests
 - **networking**: CNI and network settings
+
+### Repository Configuration
+
+The `repo` field is an object that provides flexible repository configuration:
+
+- **Simple component**: Only needs `base-url`
+  ```yaml
+  repo:
+    base-url: "https://github.com/containerd/containerd"
+  ```
+
+- **Monorepo component**: Add `subdir` to specify component location
+  ```yaml
+  repo:
+    base-url: "https://github.com/kubernetes/kubernetes"
+    subdir: "staging/src/k8s.io/kubectl"
+  ```
+
+- **Development branch**: Use `ref` to override the release tag
+  ```yaml
+  repo:
+    base-url: "https://github.com/myorg/component"
+    ref: "feature-branch"
+  ```
 
 ## 🔧 Component Repositories
 
 Each component repository must contain a `spread.yaml` file that defines:
 
 1. **Install instructions** (required if component is used)
-2. **Test definitions** (required if `use-spread: true`)
+2. **Test definitions** (required if `test: true`)
 
 ### Example Component spread.yaml
 

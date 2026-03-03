@@ -11,6 +11,7 @@ from kube_galaxy.pkg.manifest.models import (
     InstallConfig,
     InstallMethod,
     Manifest,
+    RepoInfo,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
 
@@ -28,17 +29,24 @@ def calico_config():
         method=InstallMethod.CONTAINER_MANIFEST,
         source_format="raw.githubusercontent.com/projectcalico/calico/v{release}/manifests/calico.yaml",
     )
+    repo = RepoInfo(base_url="https://github.com/projectcalico/calico")
     return ComponentConfig(
         name="calico",
         category="projectcalico/calico",
         release="3.30.6",
-        repo="https://github.com/projectcalico/calico",
+        repo=repo,
         installation=install,
     )
 
 
 @pytest.fixture
-def component(manifest, calico_config, monkeypatch, tmp_path):
+def component(
+    manifest,
+    arch_info,
+    calico_config,
+    monkeypatch,
+    tmp_path,
+):
     """Create a ComponentBase instance with mocked temp directory."""
     # Redirect component temp dir to test tmp_path to avoid /opt writes
     monkeypatch.setattr(
@@ -46,7 +54,7 @@ def component(manifest, calico_config, monkeypatch, tmp_path):
         "component_temp_dir",
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
-    return ComponentBase({}, manifest, calico_config)
+    return ComponentBase({}, manifest, calico_config, arch_info)
 
 
 def test_download_hook_downloads_manifest(component, monkeypatch, tmp_path):
@@ -76,17 +84,18 @@ def test_download_hook_downloads_manifest(component, monkeypatch, tmp_path):
     assert component.manifest_path.exists()
 
 
-def test_download_hook_formats_url_with_placeholders(manifest, monkeypatch, tmp_path):
+def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkeypatch, tmp_path):
     """Test that download_hook properly formats URLs with release, repo, and arch placeholders."""
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
-        source_format="https://example.com/{repo}/releases/{release}/manifest-{arch}.yaml",
+        source_format="{repo}/releases/{release}/manifest-{arch}.yaml",
     )
+    repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     config = ComponentConfig(
         name="test-component",
         category="test",
         release="v1.2.3",
-        repo="myorg/myrepo",
+        repo=repo,
         installation=install,
     )
 
@@ -96,7 +105,7 @@ def test_download_hook_formats_url_with_placeholders(manifest, monkeypatch, tmp_
         "component_temp_dir",
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
-    comp = ComponentBase({}, manifest, config)
+    comp = ComponentBase({}, manifest, config, arch_info)
 
     download_calls = []
 
@@ -113,19 +122,20 @@ def test_download_hook_formats_url_with_placeholders(manifest, monkeypatch, tmp_
     url, _ = download_calls[0]
     # Determine expected architecture from the component, falling back to "amd64" if unavailable
     arch_info = getattr(comp, "arch_info", None)
-    arch = getattr(arch_info, "arch", "amd64") if arch_info is not None else "amd64"
-    expected_url = f"https://example.com/myorg/myrepo/releases/v1.2.3/manifest-{arch}.yaml"
+    arch = getattr(arch_info, "k8s", "amd64") if arch_info is not None else "amd64"
+    expected_url = f"https://github.com/myorg/myrepo/releases/v1.2.3/manifest-{arch}.yaml"
     assert url == expected_url
 
 
-def test_download_hook_adds_https_prefix(manifest, monkeypatch, tmp_path):
+def test_download_hook_adds_https_prefix(manifest, arch_info, monkeypatch, tmp_path):
     """Test that download_hook adds https:// prefix when URL doesn't have protocol."""
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
         source_format="raw.githubusercontent.com/org/repo/v{release}/manifest.yaml",
     )
+    repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     config = ComponentConfig(
-        name="test", category="test", release="1.0", repo="org/repo", installation=install
+        name="test", category="test", release="1.0", repo=repo, installation=install
     )
 
     monkeypatch.setattr(
@@ -133,7 +143,7 @@ def test_download_hook_adds_https_prefix(manifest, monkeypatch, tmp_path):
         "component_temp_dir",
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
-    comp = ComponentBase({}, manifest, config)
+    comp = ComponentBase({}, manifest, config, arch_info)
 
     download_calls = []
 
@@ -247,14 +257,15 @@ def test_delete_hook_preserves_manifest_file(component, tmp_path):
     assert manifest_path.exists()
 
 
-def test_delete_hook_works_for_all_install_methods(manifest):
+def test_delete_hook_works_for_all_install_methods(manifest, arch_info):
     """Test that delete_hook base implementation works for all install methods."""
     install = InstallConfig(method=InstallMethod.BINARY, source_format="https://example/{arch}/bin")
+    repo = RepoInfo(base_url="https://github.com/org/repo")
     config = ComponentConfig(
-        name="test-binary", category="test", release="v1", repo="org/repo", installation=install
+        name="test-binary", category="test", release="v1", repo=repo, installation=install
     )
 
-    comp = ComponentBase({}, manifest, config)
+    comp = ComponentBase({}, manifest, config, arch_info)
 
     # Call delete hook - should do nothing for any install method in base class
     comp.delete_hook()

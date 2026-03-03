@@ -1,0 +1,17 @@
+project: kube-galaxy-component-tests
+path: test_root_path
+
+environment:
+  PROJECT_PATH: test_root_path
+  KUBECONFIG: kubeconfig_path
+  SYSTEM_ARCH: system_arch
+  K8S_ARCH: k8s_arch
+  IMAGE_ARCH: image_arch
+
+backends:
+  kube-galaxy:
+    type: lxd
+    systems:
+    - ubuntu-24.04
+
+suites: {}

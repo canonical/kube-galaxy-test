@@ -5,7 +5,7 @@ import sys
 import typer
 
 from kube_galaxy import __version__
-from kube_galaxy.cmd import cleanup, setup, status, test, validate
+from kube_galaxy.cmd import cleanup, setup, status, test
 
 app = typer.Typer(
     help="Kubernetes Galaxy: Scalable Kubernetes testing infrastructure",
@@ -24,63 +24,30 @@ def main_callback(
         sys.exit(0)
 
 
-@app.command(name="validate")
-def validate_cmd(
-    target: str = typer.Argument(
-        "all",
-        help="What to validate: manifests, workflows, actions, or all",
-    ),
-) -> None:
-    """Validate cluster manifests, workflows, and actions.
-
-    Examples:
-        kube-galaxy validate all
-        kube-galaxy validate manifests
-    """
-    match target:
-        case "manifests":
-            validate.validate_manifests_cmd()
-        case "all":
-            validate.validate_all()
-        case _:
-            typer.echo(f"Unknown validation target: {target}")
-            raise typer.Exit(code=1)
-
-
 @app.command(name="test")
 def test_cmd(
-    target: str = typer.Argument("local", help="What to test: local, spread, or setup"),
-    manifest: str = typer.Option(None, "--manifest", "-m", help="Path to manifest file"),
+    manifest: str = typer.Argument(..., help="Path to manifest file"),
 ) -> None:
     """Run tests or manage test clusters.
 
     Examples:
-        kube-galaxy test local
-        kube-galaxy test spread
-        kube-galaxy test setup --manifest manifests/baseline-k8s-1.35.yaml
+        kube-galaxy test manifests/baseline-k8s-1.35.yaml
     """
-    match target:
-        case "local":
-            test.local()
-        case "spread":
-            test.spread()
-        case "setup":
-            test.setup(manifest)
-        case _:
-            typer.echo(f"Unknown test target: {target}")
-            raise typer.Exit(code=1)
+    test.spread(manifest)
 
 
-@app.command(name="test-manifest")
-def test_manifest_cmd(
-    manifest: str = typer.Argument(..., help="Path to manifest file"),
+@app.command(name="validate")
+def validate_cmd(
+    manifest: str = typer.Option(
+        None, "--manifest", "-m", help="Path to manifest file for validation"
+    ),
 ) -> None:
     """Test and inspect a specific manifest file.
 
     Examples:
-        kube-galaxy test-manifest manifests/baseline-k8s-1.35.yaml
+        kube-galaxy validate manifests/baseline-k8s-1.35.yaml
     """
-    test.manifest(manifest)
+    test.validate(manifest)
 
 
 @app.command(name="cleanup")

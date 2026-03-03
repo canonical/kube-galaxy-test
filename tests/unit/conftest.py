@@ -7,6 +7,7 @@ import pytest
 
 # Ensure component modules are imported during tests so coverage includes them
 import kube_galaxy.pkg.components  # noqa: F401
+from kube_galaxy.pkg.arch.detector import get_arch_info
 
 
 @pytest.fixture
@@ -30,19 +31,21 @@ components:
   - name: containerd
     category: containerd
     release: "2.1.0"
-    repo: "https://github.com/containerd/containerd"
+    repo:
+      base-url: "https://github.com/containerd/containerd"
     installation:
       source_format: "Binary"
       method: "binary-archive"
-    use-spread: false
+    test: false
   - name: coredns
     category: dns
     release: "1.10.1"
-    repo: "https://github.com/coredns/coredns"
+    repo:
+      base-url: "https://github.com/coredns/coredns"
     installation:
       source_format: "Binary"
       method: "binary-archive"
-    use-spread: true
+    test: true
 networking:
   - name: default
     service-cidr: "10.96.0.0/12"
@@ -56,3 +59,9 @@ def sample_manifest_file(tmp_manifest_dir, sample_manifest_yaml):
     manifest_file = tmp_manifest_dir / "test-manifest.yaml"
     manifest_file.write_text(sample_manifest_yaml)
     return manifest_file
+
+
+@pytest.fixture
+def arch_info():
+    """Fixture to provide architecture information."""
+    return get_arch_info()

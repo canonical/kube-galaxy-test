@@ -79,8 +79,8 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
             )
 
         num_hooks = len(SetupHooks)
-        for idx, hook in enumerate(SetupHooks):
-            section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
+        for idx, hook in enumerate(SetupHooks, 1):
+            section(f"Stage {idx}/{num_hooks}: {hook.value.capitalize()} Components")
             _run_hook(instances_list, configs, hook.value)
 
         section("Cluster Setup Complete!")
@@ -120,7 +120,7 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         instances: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = find_component(config.name)
-            instance = component_class(instances, manifest, config)
+            instance = component_class(instances, manifest, config, arch_info)
             instances[config.name] = instance
 
         # Execute 3-stage teardown lifecycle in reverse dependency order

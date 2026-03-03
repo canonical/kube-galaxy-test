@@ -7,6 +7,7 @@ from kube_galaxy.pkg.manifest.models import (
     InstallConfig,
     InstallMethod,
     Manifest,
+    RepoInfo,
 )
 
 
@@ -19,12 +20,13 @@ def make_config(name: str = "example") -> ComponentConfig:
         method=InstallMethod.BINARY,
         source_format="https://example/{repo}/{release}/{arch}/binary",
     )
-    return ComponentConfig(name=name, category="cat", release="v1", repo="r", installation=install)
+    repo = RepoInfo(base_url="https://example.com/r")
+    return ComponentConfig(name=name, category="cat", release="v1", repo=repo, installation=install)
 
 
-def test_ensure_temp_dir_calls_mkdir(monkeypatch, tmp_path):
+def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config()
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
     )
     # redirect component temp dir to test tmp_path to avoid /opt writes
     monkeypatch.setattr(
@@ -40,9 +42,11 @@ def test_ensure_temp_dir_calls_mkdir(monkeypatch, tmp_path):
     assert ret.exists()
 
 
-def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path):
+def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path, arch_info):
     cfg = make_config("mybin")
-    comp = ExampleComponent({}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg)
+    comp = ExampleComponent(
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info
+    )
 
     calls = []
 
@@ -61,14 +65,16 @@ def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path):
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
 
-    p = comp.download_filename_from_config("amd64", "mybin")
+    p = comp.download_filename_from_config()
     assert calls, "download_file was not called"
     assert p.exists()
 
 
-def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path):
+def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, arch_info):
     cfg = make_config("tool")
-    comp = ExampleComponent({}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg)
+    comp = ExampleComponent(
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info
+    )
 
     # create a fake binary file
     bin_path = tmp_path / "tool"
@@ -84,13 +90,15 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path):
     assert comp.install_path == install_path
 
 
-def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path):
+def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path, arch_info):
     cfg = make_config("foo")
     cfg.installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example/{repo}/{release}/{arch}/archive.tar.gz",
     )
-    comp = ExampleComponent({}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg)
+    comp = ExampleComponent(
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info
+    )
 
     events = []
 
@@ -121,9 +129,9 @@ def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path):
     assert (dest / "foo").exists()
 
 
-def test_create_systemd_service_and_write_config(monkeypatch, tmp_path):
+def test_create_systemd_service_and_write_config(monkeypatch, tmp_path, arch_info):
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config()
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
     )
     recorded = []
 
@@ -153,9 +161,9 @@ def test_create_systemd_service_and_write_config(monkeypatch, tmp_path):
     assert any("chmod" in cmd for cmd in recorded)
 
 
-def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, tmp_path):
+def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, tmp_path, arch_info):
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config()
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
     )
 
     # create dirs and files

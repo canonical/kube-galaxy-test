@@ -12,6 +12,7 @@ from pathlib import Path
 from kube_galaxy.pkg.components import ClusterComponentBase, ComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
+from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -98,16 +99,22 @@ class Containerd(ComponentBase):
         Returns:
             Pause image URL to use in containerd config
         """
+        # Fallback to default if no pause component
+        image_format = "registry.k8s.io/pause:3.9"
         if pause := self.instances.get("pause"):
             # Use source_format if it's a container image
-            if pause.config.installation.source_format:
-                return pause.config.installation.source_format
+            install = pause.config.installation
+            if (
+                install.method
+                in [InstallMethod.CONTAINER_IMAGE_ARCHIVE, InstallMethod.CONTAINER_IMAGE]
+                and install.source_format
+            ):
+                image_format = pause.config.installation.source_format
             # Otherwise construct from release version
-            if pause.config.release:
-                return f"registry.k8s.io/pause:{pause.config.release}"
+            elif pause.config.release:
+                image_format = f"registry.k8s.io/pause:{pause.config.release}"
 
-        # Fallback to default if no pause component
-        return "registry.k8s.io/pause:3.9"
+        return format_component_pattern(image_format, self.config, self.arch_info)
 
     def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
         """
