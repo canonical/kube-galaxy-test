@@ -8,8 +8,9 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import get_arch_info
-from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, URLs
+from kube_galaxy.pkg.arch.detector import ArchInfo
+from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
+from kube_galaxy.pkg.manifest.models import ComponentConfig
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.shell import run
 
@@ -128,22 +129,25 @@ def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_
         raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
 
 
-def get_github_release_url(
-    repo: str,
-    release: str,
-    filename_pattern: str,
+def format_component_pattern(
+    filename_pattern: str, config: ComponentConfig, arch_info: ArchInfo
 ) -> str:
     """
-    Construct GitHub release download URL.
+    Construct component formatter
 
     Args:
-        repo: GitHub repo (owner/repo)
-        release: Release tag
-        filename_pattern: Filename to download (supports {arch} placeholder)
+        filename_pattern: Filename to download
+            supports placeholders {arch}, {release}, {ref}, {repo}
+        config: Component configuration
+        arch_info: Architecture information
 
     Returns:
-        Full download URL
+        formatted pattern with placeholders replaced
     """
-    arch_info = get_arch_info()
-    filename = filename_pattern.format(arch=arch_info.k8s)
-    return URLs.GITHUB_RELEASES_PATTERN.format(repo=repo, release=release, filename=filename)
+    formatting = {
+        "arch": arch_info.k8s,
+        "release": config.release,
+        "ref": config.repo.ref or "",
+        "repo": config.repo.base_url,
+    }
+    return filename_pattern.format(**formatting)

@@ -39,6 +39,10 @@ class SystemPaths:
     KUBE_GALAXY_BIN_SUFFIX = "bin"
     KUBE_GALAXY_TEMP_SUFFIX = "temp"
 
+    # Test directories
+    KUBE_GALAXY_TESTS_ROOT = "/opt/kube-galaxy/tests"
+    KUBE_GALAXY_TESTS_SPREAD_YAML = "/opt/kube-galaxy/tests/spread.yaml"
+
     # System binaries
     USR_LOCAL_BIN = "/usr/local/bin"
 
@@ -65,6 +69,16 @@ class SystemPaths:
     def component_temp_dir(cls, component_name: str) -> Path:
         """Get component temp directory path."""
         return cls.component_dir(component_name) / cls.KUBE_GALAXY_TEMP_SUFFIX
+
+    @classmethod
+    def tests_root(cls) -> Path:
+        """Get tests root directory path."""
+        return Path(cls.KUBE_GALAXY_TESTS_ROOT)
+
+    @classmethod
+    def tests_spread_yaml(cls) -> Path:
+        """Get orchestration spread.yaml path."""
+        return Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML)
 
 
 class ConfigFiles:
@@ -137,11 +151,6 @@ class Permissions:
 class URLs:
     """URL patterns and registry endpoints."""
 
-    # GitHub
-    GITHUB_BASE = "https://github.com"
-    GITHUB_RELEASES_PATTERN = "https://github.com/{repo}/releases/download/{release}/{filename}"
-    GITHUB_RAW_CONTENT = "https://raw.githubusercontent.com"
-
     # Kubernetes release URLs
     K8S_RELEASE_BASE = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2"
 
@@ -172,6 +181,8 @@ class Timeouts:
     # Service operations
     SERVICE_START_TIMEOUT = 30  # 30 seconds
     SERVICE_STOP_TIMEOUT = 30  # 30 seconds
+
+    TEST_EXECUTION_TIMEOUT_S = 900  # 15 minutes
 
 
 class FilePatterns:
@@ -206,7 +217,7 @@ class NetworkDefaults:
 class ManifestFields:
     """YAML manifest field names."""
 
-    USE_SPREAD = "use-spread"
+    TEST = "test"
     KUBERNETES_VERSION = "kubernetes-version"
     NAME = "name"
     RELEASE = "release"

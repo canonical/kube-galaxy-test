@@ -15,10 +15,15 @@ from typing import LiteralString, cast
 
 import yaml
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
+from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
-from kube_galaxy.pkg.utils.components import download_file, extract_archive, install_binary
+from kube_galaxy.pkg.utils.components import (
+    download_file,
+    extract_archive,
+    format_component_pattern,
+    install_binary,
+)
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -67,7 +72,7 @@ class ComponentBase:
         instances: dict[str, "ComponentBase"],
         manifest: Manifest,
         config: ComponentConfig,
-        arch_info: ArchInfo | None = None,
+        arch_info: ArchInfo,
     ) -> None:
         """
         Initialize component with instances, manifest, and config.
@@ -81,7 +86,7 @@ class ComponentBase:
         self.manifest = manifest
         self.config = config
         # Allow tests and callers to omit arch_info; default to detected arch
-        self.arch_info = arch_info or get_arch_info()
+        self.arch_info = arch_info
         # for InstallMethod Binary or BinaryArchive
         self.binary_path: Path | None = None  # path to downloaded binary (before installation)
         self.install_path: str | None = None  # path to root installed bin
@@ -147,7 +152,7 @@ class ComponentBase:
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY:
-                self.binary_path = self.download_filename_from_config(arch, comp_name)
+                self.binary_path = self.download_filename_from_config()
             case InstallMethod.BINARY_ARCHIVE:
                 self.download_and_extract_archive(arch)
             case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
@@ -163,6 +168,10 @@ class ComponentBase:
                     f"Unsupported installation method for {comp_name}: "
                     f"{self.config.installation.method}"
                 )
+        match self.config.test:
+            case True:
+                info(f"Downloaded test artifacts for {comp_name}")
+                self.download_tasks_from_config(arch)
 
     def pre_install_hook(self) -> None:
         """
@@ -413,7 +422,7 @@ class ComponentBase:
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
-    def download_filename_from_config(self, arch: str, filename: str | None = None) -> Path:
+    def download_filename_from_config(self) -> Path:
         """
         Download binary using component config source_format.
 
@@ -430,13 +439,11 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for download")
 
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
         # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
-        filename = filename or url.split("/")[-1]
+        url = format_component_pattern(
+            self.config.installation.source_format, self.config, self.arch_info
+        )
+        filename = url.split("/")[-1]
 
         # Download to secure temporary directory
         temp_dir = self.ensure_temp_dir()
@@ -458,7 +465,7 @@ class ComponentBase:
         Raises:
             ComponentError: If download or extraction fails
         """
-        archive_path = self.download_filename_from_config(arch)
+        archive_path = self.download_filename_from_config()
         if not self.extracted_dir:
             raise ComponentError("Extracted directory not defined for this component")
 
@@ -475,7 +482,7 @@ class ComponentBase:
         This is a placeholder for container image archive download logic, which may involve
         using 'ctr' or 'docker' commands to pull the specified image.
         """
-        file_path = self.download_filename_from_config(arch)
+        file_path = self.download_filename_from_config()
         if not self.extracted_dir:
             raise ComponentError("Extracted directory not defined for this component")
 
@@ -496,6 +503,17 @@ class ComponentBase:
         else:
             raise ComponentError(f"Unsupported archive format for {file_path.name}")
 
+    def download_tasks_from_config(self, arch: str) -> None:
+        """
+        Download test suite definition for this component.
+
+        This is a placeholder for downloading test suite definitions, which may involve
+        fetching task.yaml files or similar artifacts based on the component configuration.
+        """
+        # For example, we could download a task.yaml file using the same source_format logic
+        # and place it in the appropriate tests directory for this component.
+        pass
+
     def download_manifest_from_config(self, arch: str) -> Path:
         """
         Download Kubernetes manifest using component config source_format.
@@ -512,12 +530,10 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for download")
 
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
         # Construct download URL from source_format template
-        url = source_format.format(repo=repo, release=release, arch=arch)
+        url = format_component_pattern(
+            self.config.installation.source_format, self.config, self.arch_info
+        )
 
         # Ensure https:// prefix for URLs like raw.githubusercontent.com
         if not url.startswith(("http://", "https://")):
@@ -570,12 +586,10 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for container image formatting")
 
-        repo = self.config.repo
-        release = self.config.release
-        source_format = self.config.installation.source_format
-
         # Construct download URL from source_format template
-        full = source_format.format(repo=repo, release=release, arch=arch)
+        full = format_component_pattern(
+            self.config.installation.source_format, self.config, self.arch_info
+        )
         split = full.rsplit(":", 1)
         if len(split) != 2:
             raise ComponentError(f"Invalid container image format: {full}")

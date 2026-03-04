@@ -7,13 +7,13 @@ Scalable Kubernetes testing infrastructure that validates custom-built component
 
 **Manifest-Driven Design** - YAML cluster configurations:
 - Define K8s version, node counts, networking, and component versions/sources
-- Components specify repo URL, release tag, format (Binary|Container|Binary+Container), and `use-spread` flag (component provides tests)
+- Components specify repo URL, release tag, format (Binary|Container|Binary+Container), and `test` flag (component provides tests)
 - 4 baseline manifests targeting K8s 1.33, 1.34, 1.35, 1.36 with 30+ components each (containerd, etcd, coredns, kube-* etc.)
 
 **Python CLI Framework** - Cross-platform testing:
 - `kube-galaxy` CLI with command routing and automatic manifest discovery
 - `pkg/cluster/setup.py`: Manifest-based provisioning via kubeadm (not container shortcuts)
-- `pkg/testing/spread.py`: Executes spread tests from components marked `use-spread: true`
+- `pkg/testing/spread.py`: Executes spread tests from components marked `test: true`
 - `pkg/utils/logs.py`: Log collection and debugging utilities
 - Library utilities for arch detection, YAML manifest parsing, component installation
 
@@ -42,25 +42,28 @@ components:
   - name: containerd              # Component identifier
     category: containerd           # Organizational
     release: "2.2.1"              # Git tag or branch
-    repo: "https://github.com/..."  # Fetch source
+    repo:                          # Repository info object
+      base-url: "https://github.com/..."  # Required: fetch source
+      subdir: "path/to/component"  # Optional: for monorepo components
+      ref: "feature-branch"        # Optional: override release with git ref
     format: Binary|Container|Binary+Container  # Install method
-    use-spread: false/true        # Component provides spread tests
+    test: false/true        # Component provides spread tests
 networking:
   - name: calico
     service-cidr: "10.96.0.0/12"
     pod-cidr: "192.168.0.0/16"
 ```
-Key insight: `use-spread: true` means component repo has spread.yaml tests that `kube-galaxy test spread` will execute.
+Key insight: `test: true` means component repo has spread.yaml tests that `kube-galaxy test` will execute.
 
 ### Local Development Workflow
 ```bash
 # Validate manifest YAML syntax
-kube-galaxy validate manifests
+kube-galaxy validate
 
 # Provision real cluster with kubeadm (no container shortcuts)
 kube-galaxy setup
 
-# Run spread tests from components with use-spread: true
+# Run spread tests from components with test: true
 kube-galaxy test spread
 
 # Clean cluster and artifacts
@@ -83,7 +86,7 @@ kube-galaxy cleanup all
 5. Components specify format: Binary (install to /usr/local/bin), Container (pull image), or both
 
 ### Test Execution Model
-- **Test discovery**: Only components with `use-spread: true` are tested
+- **Test discovery**: Only components with `test: true` are tested
 - **Test location**: Component repos contain `spread.yaml` at root
 - **Spread execution**: `kube-galaxy test spread` clones each component, finds spread.yaml, runs spread test suite
 - **Parallelism**: Spread tests run concurrently if specified in spread.yaml
@@ -142,7 +145,7 @@ Architecture detection happens at runtime in `pkg/cluster/setup.py`:
 
 **When Adding Components**:
 1. Add entry to all 4 `manifests/baseline-k8s-*.yaml` files (don't skip versions)
-2. Set `use-spread: true` only if component repo has `spread.yaml` with test definitions
+2. Set `test: true` only if component repo has `spread.yaml` with test definitions
 3. Use canonical GitHub repos where available; verify release tag exists
 4. Set `format` correctly based on component's build/distribution (Binary, Container, or both)
 
@@ -163,17 +166,15 @@ Architecture detection happens at runtime in `pkg/cluster/setup.py`:
 
 ```bash
 # Validation
-kube-galaxy validate all
-kube-galaxy validate manifests
-kube-galaxy test-manifest manifests/baseline-k8s-1.35.yaml
+kube-galaxy validate
+kube-galaxy validate --manifest manifests/baseline-k8s-1.35.yaml
 
 # Testing
-kube-galaxy setup
-kube-galaxy test local
-kube-galaxy test spread
+kube-galaxy setup manifests/baseline-k8s-1.35.yaml
+kube-galaxy test manifests/baseline-k8s-1.35.yaml
 
 # Management
-kube-galaxy cleanup all
+kube-galaxy cleanup manifests/baseline-k8s-1.35.yaml
 kube-galaxy status
 ```
 

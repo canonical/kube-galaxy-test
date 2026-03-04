@@ -70,6 +70,7 @@ class Kubeadm(ClusterComponentBase):
         This includes setting the API server advertise address and other
         control plane settings.
         """
+        config["nodeRegistration"]["taints"] = []
         config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
 
     @cached_property

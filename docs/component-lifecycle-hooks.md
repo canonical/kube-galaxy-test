@@ -119,7 +119,7 @@ The `@register_component_class` decorator registers the component at module impo
 
 2. **Use instance attributes for state**: Share data between hooks using `self.attribute_name`
 
-3. **Use properties for configuration**: Access manifest config via `self.custom_binary_url`, `self.hook_config`, etc.
+3. **Use properties for configuration**: Access manifest config via `self.custom_binary_url`, etc.
 
 4. **Don't override hooks you don't need**: The base class provides empty defaults
 

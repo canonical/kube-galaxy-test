@@ -11,6 +11,7 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     NetworkConfig,
+    RepoInfo,
 )
 
 
@@ -47,16 +48,31 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     for comp_data in data.get("components", []):
         install_data = comp_data.get("installation", {})
         installation = InstallConfig(
-            method=InstallMethod(install_data.get("method", "binary-archive")),
+            method=InstallMethod(install_data.get("method", "none")),
             source_format=install_data.get("source_format", ""),
         )
+
+        # Parse repo info
+        repo_data = comp_data.get("repo", {})
+        if isinstance(repo_data, dict) and (base_url := repo_data.get("base-url")):
+            repo_info = RepoInfo(
+                base_url=base_url,
+                subdir=repo_data.get("subdir"),
+                ref=repo_data.get("ref"),
+            )
+        else:
+            raise ValueError(
+                f"Component {comp_data.get('name')}: 'repo' must be an object with 'base-url', "
+                "'subdir', and 'ref' fields"
+            )
+
         component = ComponentConfig(
             name=comp_data["name"],
             category=comp_data.get("category", ""),
             release=comp_data["release"],
-            repo=comp_data["repo"],
+            repo=repo_info,
             installation=installation,
-            use_spread=comp_data.get("use-spread", False),
+            test=comp_data.get("test", False),
         )
         components.append(component)
 

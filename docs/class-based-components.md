@@ -19,7 +19,6 @@ The class-based approach provides several advantages:
    - Pythonic, simple, no special methods needed
 
 3. **Configuration**: Easy access to manifest configuration via properties:
-   - `self.hook_config` - dict of hook-specific configuration
    - `self.custom_binary_url` - custom binary URL (if provided)
    - `self.install_method` - installation method
 
@@ -117,23 +116,6 @@ def install_hook(self):
     # Install
     install_binary(self.binary_path, 'mycomponent')
 ```
-
-### Hook Configuration
-
-Access hook-specific configuration from manifest:
-
-```python
-def bootstrap_hook(self):
-    # Get hook configuration from manifest (via property)
-    config = self.hook_config.get('bootstrap', {})
-    pod_cidr = config.get('pod_network_cidr', '10.244.0.0/16')
-    service_cidr = config.get('service_cidr', '10.96.0.0/12')
-
-    # Use configuration
-    run(['kubeadm', 'init', f'--pod-network-cidr={pod_cidr}'])
-```
-
-**Note**: Hook skipping is automatic! If you don't override a hook method, it simply won't run (the base class provides an empty default implementation).
 
 ## Complete Example
 
