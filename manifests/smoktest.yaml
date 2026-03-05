@@ -124,7 +124,7 @@ components:
       base-url: "https://github.com/coredns/coredns"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/coredns/coredns:v{release}"
+      source_format: "ghcr.io/canonical/coredns:{release}-ck4"
 
   # Calico - required for cluster networking
   - name: calico
