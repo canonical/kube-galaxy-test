@@ -1,5 +1,6 @@
 """Cluster setup and provisioning with 8-stage component lifecycle."""
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
@@ -81,7 +82,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
         num_hooks = len(SetupHooks)
         for idx, hook in enumerate(SetupHooks, 1):
             section(f"Stage {idx}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(instances_list, configs, hook.value)
+            _run_hook(instances_list, configs, hook.value, parallel=hook.is_parallel)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")
@@ -128,7 +129,7 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         num_hooks = len(TeardownHooks)
         for idx, hook in enumerate(TeardownHooks):
             section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(instances_list, configs, hook.value, force)
+            _run_hook(instances_list, configs, hook.value, force, parallel=hook.is_parallel)
 
         # Final cleanup: remove any remaining kube-galaxy alternatives
         _cleanup_kube_galaxy_alternatives(force)
@@ -151,6 +152,7 @@ def _run_hook(
     configs: list[ComponentConfig],
     hook_name: str,
     force: bool = False,
+    parallel: bool = False,
 ) -> None:
     """
     Run a specific lifecycle hook for all components.
@@ -160,24 +162,36 @@ def _run_hook(
         configs: List of component configs (must be in same order as instances)
         hook_name: Name of the hook to run (e.g., "install")
         force: Continue execution even if errors occur
+        parallel: Execute hooks concurrently (respects component order for submission)
 
     Raises:
         ClusterError: If any component hook fails
     """
     hook_name_caps = hook_name.title()
-    for config, instance in zip(configs, instances, strict=True):
-        info(f"  {config.name}: {hook_name_caps}...")
-        hook_method = getattr(instance, f"{hook_name}_hook", None)
-        if not hook_method:
-            raise ClusterError(f"{hook_name_caps} hook not implemented for {config.name}")
-        try:
-            hook_method()
-        except Exception as exc:
-            forced = " (continuing due to --force)" if force else ""
-            message = f"{hook_name_caps} failed for {config.name}{forced}: {exc}"
-            exception(f"  ✗ {message}", exc)
-            if not force:
-                raise ClusterError(message) from exc
+    max_workers = 10 if parallel else 1
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures_list = []
+
+        # Submit all tasks in component order
+        for config, instance in zip(configs, instances, strict=True):
+            hook_method = getattr(instance, f"{hook_name}_hook", None)
+            if not hook_method:
+                raise ClusterError(f"{hook_name_caps} hook not implemented for {config.name}")
+            info(f"  {config.name}: {hook_name_caps}...")
+            future = executor.submit(hook_method)
+            futures_list.append((config.name, future))
+
+        # Collect results in submission order
+        for component_name, future in futures_list:
+            try:
+                future.result()
+            except Exception as exc:
+                forced = " (continuing due to --force)" if force else ""
+                message = f"{hook_name_caps} failed for {component_name}{forced}: {exc}"
+                exception(f"  ✗ {message}", exc)
+                if not force:
+                    raise ClusterError(message) from exc
 
 
 def _cleanup_kube_galaxy_alternatives(force: bool) -> None:

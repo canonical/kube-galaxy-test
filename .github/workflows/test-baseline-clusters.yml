@@ -133,30 +133,7 @@ jobs:
       - name: Verify Cluster Health
         shell: bash
         run: |
-          echo "Verifying cluster health..."
-
-          # For no-CNI manifests, skip node ready check (nodes will be NotReady without CNI)
-          if [[ "${{ matrix.manifest-file }}" == *"no-cni"* ]]; then
-            echo "⚠️  Skipping node ready check for no-CNI manifest (expected behavior)"
-            echo "Verifying control plane components are running..."
-
-            # Wait for core system pods to be running
-            kubectl wait --for=condition=Ready pod -l component=kube-apiserver -n kube-system --timeout=5m || true
-            kubectl wait --for=condition=Ready pod -l component=etcd -n kube-system --timeout=5m || true
-            kubectl wait --for=condition=Ready pod -l component=kube-controller-manager -n kube-system --timeout=5m || true
-            kubectl wait --for=condition=Ready pod -l component=kube-scheduler -n kube-system --timeout=5m || true
-          else
-            echo "Waiting for nodes to be Ready..."
-            kubectl wait --for=condition=Ready node --all --timeout=5m
-            kubectl wait --for=condition=Ready pod --all -n kube-system --timeout=5m
-          fi
-
-          # Get cluster info
-          kubectl cluster-info
-          kubectl get nodes -o wide
-          kubectl get pods -A -o wide
-
-          echo "✅ Cluster is healthy"
+          kube-galaxy status --wait --timeout 300
 
       - name: Run Spread Tests
         id: run-tests

@@ -92,9 +92,21 @@ def setup_cmd(
 
 
 @app.command(name="status")
-def status_cmd() -> None:
-    """Display project status and dependency information."""
-    status.status()
+def status_cmd(
+    wait: bool = typer.Option(
+        False,
+        "--wait",
+        help="Wait for cluster nodes and kube-system pods to become Ready",
+    ),
+    timeout: int = typer.Option(
+        300,
+        "--timeout",
+        min=1,
+        help="Readiness wait timeout in seconds (used with --wait)",
+    ),
+) -> None:
+    """Display project status and optional cluster health verification."""
+    status.status(wait=wait, timeout=timeout)
 
 
 def main() -> None:
