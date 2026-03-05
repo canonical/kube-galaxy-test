@@ -27,7 +27,6 @@ def _print_dependency_status() -> None:
     info("Dependencies:")
     deps = {
         "kubectl": _check_command("kubectl"),
-        "kubeadm": _check_command("kubeadm"),
         "spread": _check_command("spread"),
     }
     print_dict(deps)
@@ -43,10 +42,6 @@ def _print_cluster_context() -> None:
     try:
         context = get_context()
         info(f"Active Cluster: {context}")
-    except ClusterError:
-        info("Active Cluster: error checking")
-
-    try:
         nodes_output = get_nodes()
         if nodes_output:
             lines = nodes_output.strip().split("\n")
@@ -55,7 +50,7 @@ def _print_cluster_context() -> None:
                 if line:
                     info(f"    {line}")
     except ClusterError:
-        pass
+        info("Active Cluster: error checking")
 
 
 def _verify_cluster_health(timeout: int) -> None:
@@ -83,12 +78,6 @@ def _check_command(cmd: str) -> str:
             if cmd == "kubectl":
                 result = run(
                     [cmd, "version", "--client"],
-                    capture_output=True,
-                    check=False,
-                )
-            elif cmd == "kubeadm":
-                result = run(
-                    [cmd, "version"],
                     capture_output=True,
                     check=False,
                 )

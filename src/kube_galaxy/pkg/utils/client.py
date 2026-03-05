@@ -156,30 +156,12 @@ def get_cluster_info() -> str:
         raise ClusterError(f"Failed to retrieve cluster info: {exc}") from exc
 
 
-def get_context_info() -> dict[str, str]:
-    """
-    Get current context information.
-
-    Returns:
-        Dict with 'context' key containing current context name
-
-    Raises:
-        ClusterError: If context info cannot be retrieved
-    """
-    try:
-        context = get_context()
-        return {"context": context}
-    except ClusterError:
-        raise
-
-
-def get_nodes(wide: bool = False, namespace: str = "") -> str:
+def get_nodes(wide: bool = False) -> str:
     """
     Get nodes information.
 
     Args:
         wide: Return wide output (includes internal IP, kernel version, etc.)
-        namespace: Namespace filter (unused for nodes, included for API consistency)
 
     Returns:
         Node information as string
@@ -320,17 +302,14 @@ def get_pod_logs(namespace: str, pod_name: str, tail: int = 100) -> str:
     Raises:
         ClusterError: If logs cannot be retrieved (other than missing logs)
     """
-    try:
-        result = run(
-            ["kubectl", "logs", "-n", namespace, pod_name, f"--tail={tail}"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        # Non-zero exit is OK if pod has no logs; return empty
-        return result.stdout
-    except ShellError as exc:
-        raise ClusterError(f"Failed to retrieve logs for {namespace}/{pod_name}: {exc}") from exc
+    result = run(
+        ["kubectl", "logs", "-n", namespace, pod_name, f"--tail={tail}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    # Non-zero exit is OK if pod has no logs; return empty
+    return result.stdout if result.returncode == 0 else ""
 
 
 def create_namespace(name: str, labels: dict[str, str] | None = None) -> None:
