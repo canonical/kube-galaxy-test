@@ -14,6 +14,11 @@ import yaml
 
 from kube_galaxy.pkg.components import ClusterComponentBase, register_component
 from kube_galaxy.pkg.literals import Commands, SystemPaths, URLs
+from kube_galaxy.pkg.utils.client import (
+    get_api_server_status,
+    verify_connectivity,
+    wait_for_nodes,
+)
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -184,18 +189,9 @@ class Kubeadm(ClusterComponentBase):
 
         Checks cluster connectivity and waits for nodes/pods to be ready.
         """
-
-        # Check cluster info
-        run(["kubectl", "cluster-info"], check=True)
-
-        # Wait for nodes to be ready
-        run(
-            ["kubectl", "wait", "--for=condition=Ready", "nodes", "--all", "--timeout=300s"],
-            check=True,
-        )
-
-        # Wait for api-server to be ready
-        run(["kubectl", "get", "--raw=/readyz", "--request-timeout=300s"], check=True)
+        verify_connectivity()
+        wait_for_nodes(timeout=300)
+        get_api_server_status(timeout=300)
 
     def stop_hook(self) -> None:
         """

@@ -10,8 +10,18 @@ from pathlib import Path
 from typing import ClassVar
 
 
+# Base hooks enumeration with parallelization support
+class Hooks(StrEnum):
+    """Base class for lifecycle hooks with parallelization support."""
+
+    @property
+    def is_parallel(self) -> bool:
+        """Check if this hook can run in parallel."""
+        return self in PARALLEL_HOOKS
+
+
 # Lifecycle stage enumeration
-class SetupHooks(StrEnum):
+class SetupHooks(Hooks):
     """Component lifecycle stages executed in order."""
 
     DOWNLOAD = "download"
@@ -23,12 +33,16 @@ class SetupHooks(StrEnum):
 
 
 # Teardown stage enumeration
-class TeardownHooks(StrEnum):
+class TeardownHooks(Hooks):
     """Component teardown stages executed in order."""
 
     STOP = "stop"
     DELETE = "delete"
     POST_DELETE = "post_delete"
+
+
+# Hooks that can run in parallel
+PARALLEL_HOOKS = frozenset([SetupHooks.DOWNLOAD])
 
 
 class SystemPaths:

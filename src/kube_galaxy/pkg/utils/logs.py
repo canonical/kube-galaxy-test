@@ -1,12 +1,19 @@
 """Kubernetes log collection and debugging utilities."""
 
-import json
 from datetime import datetime
 from pathlib import Path
 
+from kube_galaxy.pkg.utils.client import (
+    describe_nodes,
+    get_cluster_info,
+    get_events,
+    get_nodes,
+    get_pod_data_json,
+    get_pod_logs,
+    get_pods,
+)
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import info, section, success, warning
-from kube_galaxy.pkg.utils.shell import ShellError, run
 
 
 def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
@@ -56,10 +63,10 @@ def _collect_cluster_info(output_path: Path) -> None:
     info("Collecting cluster information...")
 
     try:
-        result = run(["kubectl", "cluster-info"], capture_output=True, text=True, check=True)
-        (output_path / "cluster-info.txt").write_text(result.stdout)
+        cluster_info = get_cluster_info()
+        (output_path / "cluster-info.txt").write_text(cluster_info)
         success("  Cluster info saved")
-    except ShellError as exc:
+    except ClusterError as exc:
         warning(f"  Failed to collect cluster info: {exc}")
 
 
@@ -69,25 +76,15 @@ def _collect_node_info(output_path: Path) -> None:
 
     try:
         # Get node descriptions
-        result = run(
-            ["kubectl", "describe", "nodes"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        (output_path / "nodes-describe.txt").write_text(result.stdout)
+        node_descriptions = describe_nodes()
+        (output_path / "nodes-describe.txt").write_text(node_descriptions)
 
         # Get node status
-        result = run(
-            ["kubectl", "get", "nodes", "-o", "wide"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        (output_path / "nodes-status.txt").write_text(result.stdout)
+        node_status = get_nodes(wide=True)
+        (output_path / "nodes-status.txt").write_text(node_status)
 
         success("  Node info saved")
-    except ShellError as exc:
+    except ClusterError as exc:
         warning(f"  Failed to collect node info: {exc}")
 
 
@@ -100,40 +97,25 @@ def _collect_pod_logs(output_path: Path) -> None:
 
     try:
         # Get all pods
-        result = run(
-            ["kubectl", "get", "pods", "-A", "-o", "json"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        pods_data = json.loads(result.stdout)
+        pods_data = get_pod_data_json()
         pod_count = 0
 
-        for pod_item in pods_data.get("items", []):
+        for pod_item in pods_data:
             namespace = pod_item["metadata"]["namespace"]
             pod_name = pod_item["metadata"]["name"]
 
-            try:
-                # Get pod logs
-                log_result = run(
-                    ["kubectl", "logs", "-n", namespace, pod_name, "--tail=100"],
-                    capture_output=True,
-                    text=True,
-                )
+            # Get pod logs
+            log_content = get_pod_logs(namespace, pod_name, tail=100)
 
-                log_dir = pods_dir / namespace / pod_name
-                log_dir.mkdir(parents=True, exist_ok=True)
-                (log_dir / "logs.txt").write_text(log_result.stdout)
+            log_dir = pods_dir / namespace / pod_name
+            log_dir.mkdir(parents=True, exist_ok=True)
+            (log_dir / "logs.txt").write_text(log_content)
 
-                pod_count += 1
-            except ShellError:
-                # Pod might not have logs, skip
-                pass
+            pod_count += 1
 
         success(f"  Pod logs saved ({pod_count} pods)")
 
-    except ShellError as exc:
+    except ClusterError as exc:
         warning(f"  Failed to collect pod logs: {exc}")
 
 
@@ -142,15 +124,10 @@ def _collect_events(output_path: Path) -> None:
     info("Collecting events...")
 
     try:
-        result = run(
-            ["kubectl", "get", "events", "-A"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        (output_path / "events.txt").write_text(result.stdout)
+        events = get_events(all_namespaces=True)
+        (output_path / "events.txt").write_text(events)
         success("  Events saved")
-    except ShellError as exc:
+    except ClusterError as exc:
         warning(f"  Failed to collect events: {exc}")
 
 
@@ -160,25 +137,13 @@ def _collect_system_logs(output_path: Path) -> None:
 
     try:
         # Get kube-system namespace pods
-        result = run(
-            ["kubectl", "get", "pods", "-n", "kube-system", "-o", "wide"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        (output_path / "kube-system-pods.txt").write_text(result.stdout)
+        pods_str = get_pods(namespace="kube-system", wide=True)
+        (output_path / "kube-system-pods.txt").write_text(pods_str)
 
-        # Get kube-system namespace events
-        result = run(
-            ["kubectl", "get", "events", "-n", "kube-system"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        (output_path / "kube-system-events.txt").write_text(result.stdout)
-
+        # Events are now collected from all namespaces in _collect_events()
+        # so we don't need a separate kube-system events call
         success("  System logs saved")
-    except ShellError as exc:
+    except ClusterError as exc:
         warning(f"  Failed to collect system logs: {exc}")
 
 

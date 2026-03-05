@@ -168,21 +168,19 @@ def test_bootstrap_hook_applies_manifest(component, monkeypatch, tmp_path):
     manifest_path.write_text("apiVersion: v1\nkind: ConfigMap\n")
     component.manifest_path = manifest_path
 
-    run_calls = []
+    apply_manifest_calls = []
 
-    def fake_run(cmd, **kwargs):
-        run_calls.append((list(cmd), kwargs))
+    def fake_apply_manifest(path):
+        apply_manifest_calls.append(path)
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    monkeypatch.setattr("kube_galaxy.pkg.components._base.apply_manifest", fake_apply_manifest)
 
     # Call bootstrap hook
     component.bootstrap_hook()
 
-    # Verify kubectl apply was called
-    assert len(run_calls) == 1
-    cmd, kwargs = run_calls[0]
-    assert cmd == ["kubectl", "apply", "-f", str(manifest_path)]
-    assert kwargs.get("check") is True
+    # Verify apply_manifest was called with the correct path
+    assert len(apply_manifest_calls) == 1
+    assert apply_manifest_calls[0] == manifest_path
 
 
 def test_bootstrap_hook_fails_if_manifest_not_downloaded(component):

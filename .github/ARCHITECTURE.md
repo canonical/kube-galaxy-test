@@ -10,7 +10,7 @@ cluster provisioning, component installation, and test execution.
 
 ### 1. Component-Driven Architecture
 - Each component (containerd, kubeadm, CNI, etc.) is defined in its own repository
-- Components define their own installation instructions via `spread.yaml`
+- Components define their installation instructions via a `manifest/*.yaml`
 - Components can optionally provide their own test suites
 - The orchestration layer simply invokes component definitions
 
@@ -27,9 +27,12 @@ cluster provisioning, component installation, and test execution.
 - Manifests can be validated without running anything
 
 ### 4. Separation of Concerns
-- **setup-cluster**: Provisions infrastructure
-- **run-spread-tests**: Executes tests
-- Each action is self-contained and reusable
+- **kube-galaxy setup**: Provisions infrastructure
+- **kube-galaxy test**: Executes tests
+- **kube-galaxy status**: Cluster health checks
+- **kube-galaxy cleanup**: Teardown and cleanup
+- Each command is self-contained and reusable
+- Commands implemented using Python with Typer CLI framework
 
 ## Workflow
 
@@ -46,11 +49,11 @@ cluster provisioning, component installation, and test execution.
 └──────────────┬──────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────┐
-│ 3. Install Components (setup-cluster)              │
+│ 3. Install Components (kube-galaxy setup)          │
 │    For each component:                              │
 │    • Download component from specified release     │
-|    * Install and configure component               |
-│    • Execute with ARCH, K_ARCH, RELEASE info       │
+│    • Install and configure component               │
+│    • Execute with SYSTEM_ARCH, K8S_ARCH, IMAGE_ARCH│
 └──────────────┬──────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────┐
@@ -61,103 +64,223 @@ cluster provisioning, component installation, and test execution.
 └──────────────┬──────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────┐
-│ 5. Execute Tests (run-spread-tests)                │
-│    • Identify components with test: true     │
-│    • Clone component repos                          │
-│    • Run spread tests from component spread.yaml   │
+│ 5. Execute Tests (kube-galaxy test)                │
+│    • Identify components with test: true           │
+│    • Discover spread test tasks                    │
+│    • Execute tests in LXD containers via spread    │
 │    • Collect and report results                    │
 └──────────────┬──────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────┐
-│ 6. Cleanup (cleanup-cluster)                        │
+│ 6. Cleanup (kube-galaxy cleanup)                    │
 │    • Drain and delete cluster resources             │
 │    • Remove kubeconfig contexts                     │
 │    • Cleanup temporary files                        │
 └─────────────────────────────────────────────────────┘
 ```
 
-## Component Repository Structure
+## Adding Components
 
-A component repository providing custom installation must have `spread.yaml`:
+### Base Components (Manifest-Only)
 
+Components that follow standard installation patterns can be defined purely in the manifest:
+
+```yaml
+# Example: Adding a binary component
+- name: etcdctl
+  category: etcd
+  release: "3.5.0"
+  repo:
+    base-url: "https://github.com/etcd-io/etcd"
+  installation:
+    method: "binary-archive"
+    source_format: "{repo}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
+  test: false
 ```
-my-component/
-├── spread.yaml           # Required: optional test definitions
-├── src/                  # Source code
+
+**Supported installation methods**:
+- `binary`: Download direct binary artifacts
+- `binary-archive`: Download and extract binary archives
+- `container-image`: Pull and register container images
+- `container-image-archive`: Pull and register container images from a tar
+- `none`: Component installs nothing directly into the cluster (eg. test-only)
+
+### Custom Components (Requires Python Class)
+
+When components need special handling (complex configuration, multi-step bootstrap, dependencies), create a component class in `src/kube_galaxy/pkg/components/`:
+
+```python
+from kube_galaxy.pkg.components import ComponentBase, register_component
+
+@register_component("mycomponent")
+class MyComponent(ComponentBase):
+    """My component description."""
+
+    def download_hook(self) -> None:
+        # Custom download logic
+        pass
+
+    def install_hook(self) -> None:
+        # Custom install logic
+        pass
+
+    def configure_hook(self) -> None:
+        # Configuration logic
+        pass
+
+    def bootstrap_hook(self) -> None:
+        # Initialization logic
+        pass
 ```
 
-### Component Awareness
+**When to use custom components**:
+- Complex multi-step installation
+- Runtime configuration generation (kubeadm, containerd)
+- Service management (systemd)
+- Dependencies on other components
+- Bootstrap orchestration
 
-Components receive architecture in environment:
-- `ARCH`: The system architecture from `uname -m`
-- `K_ARCH`: The Kubernetes-compatible architecture name
+**Available lifecycle hooks**: `download`, `pre_install`, `install`, `configure`, `bootstrap`, `verify`, `stop`, `delete`, `post_delete`
 
-Components use this to download/build for the correct architecture.
+### Component Architecture Awareness
 
-## Custom GitHub Actions
+Components receive architecture information via environment variables:
+- `SYSTEM_ARCH`: Raw system architecture from `uname -m` (e.g., x86_64, aarch64)
+- `K8S_ARCH`: Kubernetes-compatible architecture name (e.g., amd64, arm64)
+- `IMAGE_ARCH`: Container image architecture tag (e.g., amd64, arm64)
 
-### setup-cluster
+Components use these to download/build binaries and pull images for the correct architecture.
 
-**Input**: Cluster manifest path
-**Output**: kubeconfig location, cluster info
+## Kube-Galaxy CLI Commands
+
+The `kube-galaxy` CLI tool (built with Python and Typer) provides commands that are invoked in GitHub Actions workflows:
+
+### kube-galaxy setup
+
+**Usage**: `kube-galaxy setup <manifest-path>`
+
+**Purpose**: Provision and configure a Kubernetes cluster
 
 **Steps**:
-1. Detect system properties (architecture)
-2. Install base dependencies
-3. Parse manifest
-4. install and configure each component
-5. Initialize Kubernetes with kubeadm
-6. Configure networking
-7. Verify cluster health
+1. Detect system architecture (SYSTEM_ARCH, K8S_ARCH, IMAGE_ARCH)
+2. Parse cluster manifest
+3. Execute component lifecycle hooks in order:
+   - Download
+   - Pre-install
+   - Install (dependency-ordered)
+   - Configure
+   - Bootstrap (dependency-ordered)
+   - Verify
+4. Initialize Kubernetes cluster via a cluster-manager
+5. Bootstrap remaining container based components
+6. Verify cluster health
 
 **Key Features**:
-- Runs as composite action (uses shell scripts)
-- Fetches tools for detected architecture
-- Invokes component install scripts
-- Kubeadm-based cluster, not container-based
+- Component plugin system with lifecycle hooks
+- Dependency-based installation ordering
+- Multiarch binary and image handling
+- Cluster Management lifecycle manager is just another plugin
 
-### run-spread-tests
+### kube-galaxy status
 
-**Input**: Manifest, test suite, timeout
-**Output**: Test results, status
+**Usage**: `kube-galaxy status`
+
+**Purpose**: Display cluster health and status
+
+**Output**:
+- Cluster connectivity
+- Node status
+- System pod status
+- Basic cluster info
+
+### kube-galaxy test
+
+**Usage**: `kube-galaxy test <manifest-path>`
+
+**Purpose**: Execute spread tests for components marked with `test: true`
 
 **Steps**:
-1. Install spread testing framework
-2. Scan manifest for test components
-3. Clone component repos
-4. Execute spread tests
-5. Collect artifacts
+1. Scan manifest for test-enabled components
+2. Validate component test structure
+3. Generate orchestration spread.yaml
+4. Copy kubeconfig to shared directory (for LXD containers)
+5. Create test namespace per component
+6. Execute spread tests in isolated LXD containers
+7. Collect and aggregate results
+8. Cleanup test namespaces
+
+**Current State**: Tests run from local `tests/` directory
+
+**Future Vision**: Fetch test tasks from component repositories:
+```yaml
+- name: mycomponent
+  repo:
+    base-url: "https://github.com/org/component"  # Component source
+    test-url: "https://github.com/org/component"  # Test source (optional, defaults to base-url)
+  test: true
+```
+
+Expected test structure in component repos:
+```
+component-repo/
+└── spread/
+    └── kube-galaxy/
+        ├── basic/
+        │   └── task.yaml
+        └── advanced/
+            └── task.yaml
+```
 
 **Key Features**:
-- Tests come from components and local tests/
-- Scans for test: true in components
-- Reports results and failures
-- Preserves test artifacts
+- Spread framework integration for reproducible tests
+- LXD container isolation
+- Parallel test execution
+- Automatic namespace management
+- Test result aggregation
 
-### collect-kubernetes-logs
+### kube-galaxy cleanup
 
-Gathers debugging information on failures:
-- Node status and descriptions
-- Pod logs and status
-- Kubernetes events
-- Network information
-- System diagnostics
+**Usage**: `kube-galaxy cleanup all --manifest <manifest-path>`
 
-### create-failure-issue
+**Purpose**: Graceful cluster teardown
 
-Creates GitHub issues with:
-- Failure context
-- Debug information
-- Links to artifacts
-- Investigation steps
+**Steps**:
+1. Parse manifest
+2. Execute component teardown hooks in reverse order:
+   - Stop (sequential)
+   - Delete (sequential)
+   - Post-delete (sequential)
+3. Kubeadm reset
+4. Remove cluster resources
+5. Clean kubeconfig entries
+6. Remove temporary files
 
-### cleanup-cluster
+**Key Features**:
+- Best-effort cleanup (continues on errors)
+- Component lifecycle hook support
+- Complete cluster state removal
 
-Graceful cluster teardown:
-- Drain nodes
-- Delete resources
-- Remove kubeconfig entries
-- Clean temporary files
+### GitHub Actions Integration
+
+These CLI commands are invoked directly in GitHub Actions workflows:
+
+```yaml
+- name: Setup Cluster
+  run: kube-galaxy setup manifests/my-cluster.yaml
+
+- name: Run Tests
+  run: kube-galaxy test manifests/my-cluster.yaml
+
+- name: Cleanup
+  if: always()
+  run: kube-galaxy cleanup all --manifest manifests/my-cluster.yaml
+```
+
+Workflows handle:
+- Debug log collection on failures
+- Test result artifacts
+- Issue creation for failures
+- upterm debugging sessions
 
 ## Manifest Validation
 
@@ -186,22 +309,80 @@ Manifests are validated for:
 - Errors logged but don't fail workflow
 - Manual cleanup may be needed
 
-## Testing Your Components
+## Developing Components
 
-To develop a component for this infrastructure:
+### Local Testing
 
-1. Create `spread.yaml` with `install` section
-2. Test locally:
+1. **Create or modify manifest**: Add your component to a manifest file
+
+2. **Test component installation**:
    ```bash
-   export ARCH=$(uname -m)
-   export K_ARCH="amd64"  # Example
-   spread prepare
-   spread execute
-   spread restore
+   # Install kube-galaxy CLI
+   pip install -e .
+
+   # Setup cluster with your component
+   kube-galaxy setup manifests/my-test.yaml
+
+   # Verify cluster health
+   kube-galaxy status
+
+   # Cleanup
+   kube-galaxy cleanup all --manifest manifests/my-test.yaml
    ```
 
-3. Add your repo to a cluster manifest
-4. Test the full workflow in GitHub Actions
+3. **Test component with spread tests** (if `test: true`):
+   ```bash
+   # Ensure spread and LXD are installed
+   go install github.com/snapcore/spread/cmd/spread@latest
+   snap install lxd
+
+   # Run tests
+   kube-galaxy test manifests/my-test.yaml
+   ```
+
+### Creating Component Tests
+
+Create spread test tasks in your component repository:
+
+```
+my-component-repo/
+└── spread/
+    └── kube-galaxy/
+        └── basic/
+            └── task.yaml
+```
+
+**task.yaml example**:
+```yaml
+summary: Test basic component functionality
+
+details: |
+    Verify the component is properly installed and functional
+
+environment:
+    COMPONENT_NAME: mycomponent
+
+prepare: |
+    # Setup test environment
+    kubectl create namespace test-mycomponent
+
+execute: |
+    # Run test commands
+    kubectl get pods -n test-mycomponent
+
+restore: |
+    # Cleanup
+    kubectl delete namespace test-mycomponent
+```
+
+Environment variables available in tests:
+- `SYSTEM_ARCH`: System architecture
+- `K8S_ARCH`: Kubernetes architecture
+- `IMAGE_ARCH`: Container image architecture
+- `KUBECONFIG`: Path to kubeconfig
+- `KUBE_GALAXY_NAMESPACE`: Test namespace
+- `COMPONENT_NAME`: Component being tested
+- `COMPONENT_VERSION`: Component release version
 
 ## Best Practices
 
@@ -214,18 +395,34 @@ To develop a component for this infrastructure:
 
 ## Extension Points
 
-### Adding New CNI Options
-- Update setup-cluster's Configure Networking step
-- Add case for your CNI in the switch
+### Adding New Cluster Manager Plugins
 
-### Custom Networking
-- Manifest supports multiple networking entries
-- Update setup-cluster to handle your config
+Create a custom component class in `src/kube_galaxy/pkg/components/`:
 
-### New Storage Providers
-- Add to manifest storage section
-- setup-cluster can detect and install
+```python
+@register_component("my-kube-maker")
+class MyKubeMaker(ClusterComponentBase):
 
-### New Infrastructure Providers
-- Currently supports GitHub Actions
-- extend workflow generation for other providers
+    def bootstrap_hook(self) -> None:
+        # Apply bootstrap config
+        pass
+```
+
+Add to manifest:
+```yaml
+components:
+  - name: my-kube-maker
+    category: kubernetes/kube-maker
+    release: "1.0.0"
+    repo:
+      base-url: "https://github.com/org/my-kube-maker"
+    installation:
+      method: "binary-archive"
+```
+
+### Supporting New Architectures
+
+Architecture detection and mapping is in `src/kube_galaxy/pkg/arch/detector.py`:
+1. Add new architecture to mapping functions
+2. Ensure components support the architecture
+3. Test with `SYSTEM_ARCH` environment override

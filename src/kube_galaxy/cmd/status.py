@@ -1,111 +1,114 @@
 """Status command handler."""
 
 import shutil
-import subprocess
-from pathlib import Path
+from collections.abc import Callable
 
-from kube_galaxy.pkg.utils.logging import info, print_dict, section
+import typer
+
+from kube_galaxy.pkg.utils.client import (
+    get_cluster_info,
+    get_context,
+    get_nodes,
+    get_pods,
+    wait_for_nodes,
+    wait_for_pods,
+)
+from kube_galaxy.pkg.utils.errors import ClusterError
+from kube_galaxy.pkg.utils.logging import error, info, print_dict, section, success, warning
+from kube_galaxy.pkg.utils.shell import run
 
 
-def status() -> None:
-    """Display project status including dependencies and file counts."""
+def status(wait: bool = False, timeout: int = 300) -> None:
+    """Display project status and optionally verify cluster health."""
     section("Kubernetes Galaxy Test - Project Status")
 
-    # Check dependencies
+    _print_dependency_status()
+    _print_cluster_context()
+
+    if wait:
+        _verify_cluster_health(timeout)
+        success("Cluster is healthy")
+
+
+def _print_dependency_status() -> None:
+    """Print required command dependency status."""
     info("Dependencies:")
     deps = {
-        "kubectl": check_command("kubectl"),
-        "kubeadm": check_command("kubeadm"),
-        "spread": check_command("spread"),
+        "kubectl": _check_command("kubectl"),
+        "spread": _check_command("spread"),
     }
     print_dict(deps)
 
-    # Count project files
+
+def _print_cluster_context() -> None:
+    """Print active cluster context and current node table if available."""
+    if not shutil.which("kubectl"):
+        warning("kubectl not available; skipping cluster checks")
+        return
+
     info("")
-    info("Project Files:")
-    file_counts = {
-        "Manifests": len(list(Path("manifests").glob("*.yaml")))
-        if Path("manifests").exists()
-        else 0,
-        "Workflows": len(
-            list(Path(".github/workflows").glob("*.yml"))
-            + list(Path(".github/workflows").glob("*.yaml"))
-        )
-        if Path(".github/workflows").exists()
-        else 0,
-        "Actions": len(
-            list(Path(".github/actions").glob("*/action.yml"))
-            + list(Path(".github/actions").glob("*/action.yaml"))
-        )
-        if Path(".github/actions").exists()
-        else 0,
-        "Tests": len(list(Path("tests").glob("*.yaml")) + list(Path("tests").glob("*.yml")))
-        if Path("tests").exists()
-        else 0,
-    }
-    print_dict(file_counts)
-
-    # Show kubeadm cluster nodes
-    if shutil.which("kubectl"):
-        info("")
-        try:
-            result = subprocess.run(
-                ["kubectl", "get", "nodes"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0 and result.stdout:
-                lines = result.stdout.strip().split("\n")
-                info(f"Cluster Nodes: {len(lines) - 1}")  # Subtract header
-                for line in lines[1:]:  # Skip header
-                    if line:
-                        info(f"    {line}")
-        except Exception:
-            pass
-
-    # Show active cluster
-    if shutil.which("kubectl"):
-        info("")
-        try:
-            result = subprocess.run(
-                ["kubectl", "config", "current-context"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                context = result.stdout.strip()
-                info(f"Active Cluster: {context}")
-            else:
-                info("Active Cluster: none")
-        except Exception:
-            info("Active Cluster: error checking")
+    try:
+        context = get_context()
+        info(f"Active Cluster: {context}")
+        nodes_output = get_nodes()
+        if nodes_output:
+            lines = nodes_output.strip().split("\n")
+            info(f"Cluster Nodes: {len(lines) - 1}")
+            for line in lines[1:]:
+                if line:
+                    info(f"    {line}")
+    except ClusterError:
+        info("Active Cluster: error checking")
 
 
-def check_command(cmd: str) -> str:
+def _verify_cluster_health(timeout: int) -> None:
+    """Wait for cluster readiness and print summary tables."""
+    if not shutil.which("kubectl"):
+        error("kubectl is required for --wait health checks", show_traceback=False)
+        raise typer.Exit(code=1)
+
+    section("Cluster Health Verification")
+    info("Waiting for nodes to be Ready...")
+
+    try:
+        wait_for_nodes(timeout=timeout)
+        wait_for_pods(namespace="kube-system", timeout=timeout)
+    except ClusterError as exc:
+        error(str(exc), show_traceback=False)
+        error("Cluster readiness checks failed", show_traceback=False)
+        raise typer.Exit(code=1) from exc
+
+    _print_command_output(get_cluster_info, "Cluster Info")
+    _print_command_output(get_nodes, "Nodes")
+    _print_command_output(get_pods, "Pods")
+
+
+def _print_command_output(command: Callable[[], str], title: str) -> None:
+    """Run command and print its output with a section label."""
+    info("")
+    info(f"{title}:")
+    try:
+        if output := command().strip():
+            info(output)
+    except ClusterError as exc:
+        error(f"Failed to run: {title}", show_traceback=False)
+        raise typer.Exit(code=1) from exc
+
+
+def _check_command(cmd: str) -> str:
     """Check if a command is installed and return status."""
     if shutil.which(cmd):
         try:
             if cmd == "kubectl":
-                result = subprocess.run(
+                result = run(
                     [cmd, "version", "--client"],
                     capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            elif cmd == "kubeadm":
-                result = subprocess.run(
-                    [cmd, "version"],
-                    capture_output=True,
-                    text=True,
                     check=False,
                 )
             else:
-                result = subprocess.run(
+                result = run(
                     [cmd, "--version"],
                     capture_output=True,
-                    text=True,
                     check=False,
                 )
 
