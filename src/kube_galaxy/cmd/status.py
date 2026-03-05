@@ -1,10 +1,18 @@
 """Status command handler."""
 
 import shutil
+from collections.abc import Callable
 
 import typer
 
-from kube_galaxy.pkg.utils.client import get_context, get_nodes, wait_for_nodes, wait_for_pods
+from kube_galaxy.pkg.utils.client import (
+    get_cluster_info,
+    get_context,
+    get_nodes,
+    get_pods,
+    wait_for_nodes,
+    wait_for_pods,
+)
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, print_dict, section, success, warning
 from kube_galaxy.pkg.utils.shell import run
@@ -68,6 +76,22 @@ def _verify_cluster_health(timeout: int) -> None:
     except ClusterError as exc:
         error(str(exc), show_traceback=False)
         error("Cluster readiness checks failed", show_traceback=False)
+        raise typer.Exit(code=1) from exc
+
+    _print_command_output(get_cluster_info, "Cluster Info")
+    _print_command_output(get_nodes, "Nodes")
+    _print_command_output(get_pods, "Pods")
+
+
+def _print_command_output(command: Callable[[], str], title: str) -> None:
+    """Run command and print its output with a section label."""
+    info("")
+    info(f"{title}:")
+    try:
+        if output := command().strip():
+            info(output)
+    except ClusterError as exc:
+        error(f"Failed to run: {title}", show_traceback=False)
         raise typer.Exit(code=1) from exc
 
 

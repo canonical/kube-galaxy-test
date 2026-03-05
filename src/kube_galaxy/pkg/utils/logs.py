@@ -104,18 +104,14 @@ def _collect_pod_logs(output_path: Path) -> None:
             namespace = pod_item["metadata"]["namespace"]
             pod_name = pod_item["metadata"]["name"]
 
-            try:
-                # Get pod logs
-                log_content = get_pod_logs(namespace, pod_name, tail=100)
+            # Get pod logs
+            log_content = get_pod_logs(namespace, pod_name, tail=100)
 
-                log_dir = pods_dir / namespace / pod_name
-                log_dir.mkdir(parents=True, exist_ok=True)
-                (log_dir / "logs.txt").write_text(log_content)
+            log_dir = pods_dir / namespace / pod_name
+            log_dir.mkdir(parents=True, exist_ok=True)
+            (log_dir / "logs.txt").write_text(log_content)
 
-                pod_count += 1
-            except ClusterError:
-                # Pod might not have logs, skip
-                pass
+            pod_count += 1
 
         success(f"  Pod logs saved ({pod_count} pods)")
 

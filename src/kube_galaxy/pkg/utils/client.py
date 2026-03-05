@@ -298,9 +298,6 @@ def get_pod_logs(namespace: str, pod_name: str, tail: int = 100) -> str:
 
     Returns:
         Pod logs as string. Returns empty string if pod has no logs.
-
-    Raises:
-        ClusterError: If logs cannot be retrieved (other than missing logs)
     """
     result = run(
         ["kubectl", "logs", "-n", namespace, pod_name, f"--tail={tail}"],

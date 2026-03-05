@@ -25,7 +25,7 @@ from kube_galaxy.pkg.utils.components import (
     format_component_pattern,
     install_binary,
 )
-from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
@@ -244,7 +244,10 @@ class ComponentBase:
                     raise ComponentError(
                         f"{comp_name} manifest not downloaded. Run download hook first."
                     )
-                apply_manifest(self.manifest_path)
+                try:
+                    apply_manifest(self.manifest_path)
+                except ClusterError as e:
+                    raise ComponentError(f"Failed to apply manifest for {comp_name}") from e
 
         pass
 

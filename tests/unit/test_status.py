@@ -29,6 +29,8 @@ def test_status_wait_runs_readiness_checks(monkeypatch):
     monkeypatch.setattr(status_cmd, "wait_for_pods", fake_wait_for_pods)
     monkeypatch.setattr(status_cmd, "get_context", fake_get_context)
     monkeypatch.setattr(status_cmd, "get_nodes", fake_get_nodes)
+    monkeypatch.setattr(status_cmd, "get_cluster_info", lambda: "cluster-info")
+    monkeypatch.setattr(status_cmd, "get_pods", lambda: "pods-output")
     monkeypatch.setattr(status_cmd, "_check_command", lambda _cmd: "ok")
     monkeypatch.setattr(status_cmd.shutil, "which", lambda _cmd: "/usr/bin/tool")
 

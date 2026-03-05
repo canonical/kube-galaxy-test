@@ -146,33 +146,12 @@ def _create_test_namespace(component_name: str) -> str:
     # Normalize component name for namespace (lowercase, hyphens only)
     namespace = f"kube-galaxy-test-{component_name.lower().replace('_', '-')}"
 
-    try:
-        labels = {
-            "app.kubernetes.io/managed-by": "kube-galaxy",
-            "component": component_name,
-        }
-        create_namespace(namespace, labels)
-        return namespace
-
-    except ClusterError:
-        raise
-
-
-def _cleanup_test_namespace(namespace: str, timeout: int = 60) -> None:
-    """
-    Delete test namespace and wait for termination.
-
-    Args:
-        namespace: Namespace to delete
-        timeout: Maximum seconds to wait for deletion
-
-    Raises:
-        ClusterError: If namespace deletion fails
-    """
-    try:
-        delete_namespace(namespace, timeout)
-    except ClusterError:
-        raise
+    labels = {
+        "app.kubernetes.io/managed-by": "kube-galaxy",
+        "component": component_name,
+    }
+    create_namespace(namespace, labels)
+    return namespace
 
 
 def _generate_orchestration_spread_yaml(
@@ -328,11 +307,7 @@ def _run_component_tests(
         raise ClusterError("Component validation failed")
 
     # Generate orchestration spread.yaml
-    try:
-        component_suites = _generate_orchestration_spread_yaml(spread_components, kubeconfig)
-    except ClusterError as exc:
-        error(f"Failed to generate orchestration spread.yaml: {exc}")
-        raise
+    component_suites = _generate_orchestration_spread_yaml(spread_components, kubeconfig)
 
     # Track test results
     test_results = []
@@ -390,7 +365,7 @@ def _run_component_tests(
             # Step 4: Cleanup namespace (always executed)
             if namespace:
                 try:
-                    _cleanup_test_namespace(namespace)
+                    delete_namespace(namespace)
                 except Exception as cleanup_exc:
                     warning(f"  Namespace cleanup failed: {cleanup_exc}")
 
