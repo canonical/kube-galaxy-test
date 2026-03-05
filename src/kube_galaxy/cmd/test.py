@@ -1,6 +1,5 @@
 """Test command handler."""
 
-import subprocess
 from pathlib import Path
 
 import typer
@@ -9,6 +8,8 @@ import yaml
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.validator import validate_manifest
 from kube_galaxy.pkg.testing.spread import collect_test_results, run_spread_tests
+from kube_galaxy.pkg.utils.client import get_context, verify_connectivity
+from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, exception, info, section, success, warning
 
 
@@ -22,25 +23,10 @@ def spread(manifest_path: str) -> None:
 
     try:
         # Check if kubectl can connect
-        result = subprocess.run(
-            ["kubectl", "cluster-info"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            error("No Kubernetes cluster available. Please set up a cluster first.")
-            info("You can create a test cluster with: kube-galaxy setup")
-            raise typer.Exit(code=1)
+        verify_connectivity()
 
         # Get cluster context
-        result = subprocess.run(
-            ["kubectl", "config", "current-context"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        cluster_context = result.stdout.strip()
+        cluster_context = get_context()
         success(f"Connected to cluster: {cluster_context}")
 
         # Run spread tests from manifest
@@ -57,7 +43,7 @@ def spread(manifest_path: str) -> None:
 
         success("Spread tests completed")
 
-    except Exception as e:
+    except ClusterError as e:
         exception("Spread tests failed", e)
         raise typer.Exit(code=1) from e
 

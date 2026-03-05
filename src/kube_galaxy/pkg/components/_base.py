@@ -18,13 +18,14 @@ import yaml
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
+from kube_galaxy.pkg.utils.client import apply_manifest
 from kube_galaxy.pkg.utils.components import (
     download_file,
     extract_archive,
     format_component_pattern,
     install_binary,
 )
-from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
@@ -243,8 +244,10 @@ class ComponentBase:
                     raise ComponentError(
                         f"{comp_name} manifest not downloaded. Run download hook first."
                     )
-                run(["kubectl", "apply", "-f", str(self.manifest_path)], check=True)
-                info(f"Applied manifest for {comp_name}")
+                try:
+                    apply_manifest(self.manifest_path)
+                except ClusterError as e:
+                    raise ComponentError(f"Failed to apply manifest for {comp_name}") from e
 
         pass
 

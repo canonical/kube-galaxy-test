@@ -18,6 +18,7 @@ from kube_galaxy.pkg.manifest.validator import (
     task_path_for_component,
     validate_component_test_structure,
 )
+from kube_galaxy.pkg.utils.client import create_namespace, delete_namespace, verify_connectivity
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
 from kube_galaxy.pkg.utils.shell import ShellError, run
@@ -111,9 +112,7 @@ def run_spread_tests(
 def _verify_test_prerequisites() -> None:
     """Verify kubectl and spread are available."""
     try:
-        info("Verifying cluster connectivity...")
-        run(["kubectl", "cluster-info"], check=True, capture_output=True)
-        success("Connected to Kubernetes cluster")
+        verify_connectivity()
 
         # Check for spread
         info("Verifying spread test framework...")
@@ -147,54 +146,12 @@ def _create_test_namespace(component_name: str) -> str:
     # Normalize component name for namespace (lowercase, hyphens only)
     namespace = f"kube-galaxy-test-{component_name.lower().replace('_', '-')}"
 
-    try:
-        info(f"  Creating test namespace: {namespace}")
-
-        # Apply with labels
-        run(["kubectl", "create", "namespace", namespace], check=True)
-
-        # Label namespace
-        label = "app.kubernetes.io/managed-by=kube-galaxy"
-        run(
-            ["kubectl", "label", "namespace", namespace, label, f"component={component_name}"],
-            check=True,
-        )
-
-        success(f"Namespace created: {namespace}")
-        return namespace
-
-    except ShellError as exc:
-        raise ClusterError(f"Failed to create namespace {namespace}: {exc}") from exc
-
-
-def _cleanup_test_namespace(namespace: str, timeout: int = 60) -> None:
-    """
-    Delete test namespace and wait for termination.
-
-    Args:
-        namespace: Namespace to delete
-        timeout: Maximum seconds to wait for deletion
-
-    Raises:
-        ClusterError: If namespace deletion fails
-    """
-    try:
-        info(f"  Cleaning up namespace: {namespace}")
-
-        # Delete namespace
-        run(
-            ["kubectl", "delete", "namespace", namespace, "--timeout", f"{timeout}s"],
-            check=True,
-        )
-
-        success(f"Namespace deleted: {namespace}")
-
-    except ShellError as exc:
-        # Don't fail if namespace doesn't exist
-        if "not found" in str(exc):
-            warning(f"  Namespace {namespace} not found (may already be deleted)")
-        else:
-            raise ClusterError(f"Failed to delete namespace {namespace}: {exc}") from exc
+    labels = {
+        "app.kubernetes.io/managed-by": "kube-galaxy",
+        "component": component_name,
+    }
+    create_namespace(namespace, labels)
+    return namespace
 
 
 def _generate_orchestration_spread_yaml(
@@ -350,11 +307,7 @@ def _run_component_tests(
         raise ClusterError("Component validation failed")
 
     # Generate orchestration spread.yaml
-    try:
-        component_suites = _generate_orchestration_spread_yaml(spread_components, kubeconfig)
-    except ClusterError as exc:
-        error(f"Failed to generate orchestration spread.yaml: {exc}")
-        raise
+    component_suites = _generate_orchestration_spread_yaml(spread_components, kubeconfig)
 
     # Track test results
     test_results = []
@@ -412,7 +365,7 @@ def _run_component_tests(
             # Step 4: Cleanup namespace (always executed)
             if namespace:
                 try:
-                    _cleanup_test_namespace(namespace)
+                    delete_namespace(namespace)
                 except Exception as cleanup_exc:
                     warning(f"  Namespace cleanup failed: {cleanup_exc}")
 
