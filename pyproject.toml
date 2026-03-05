@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kube-galaxy"
+version = "0.1.0"
+description = "Scalable Kubernetes testing infrastructure for custom-built components"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Canonical", email = "dev@canonical.com" }
+]
+license = { text = "Apache-2.0" }
+dependencies = [
+    "pyyaml>=6.0",
+    "gitpython>=3.1.0",
+    "typer>=0.9.0",
+]
+
+[project.scripts]
+kube-galaxy = "kube_galaxy.cli:main"
+
+[project.urls]
+Repository = "https://github.com/canonical/kube-galaxy-test"
+
+[tool.uv]
+managed = true
+
+[dependency-groups]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.10",
+]
+lint = [
+    "ruff>=0.1.0",
+]
+type = [
+    "mypy>=1.0",
+    "types-pyyaml",
+]
+dev = [
+    { include-group = "test" },
+    { include-group = "lint" },
+    { include-group = "type" },
+]
+build = [
+    "build>=0.10",
+    "wheel>=0.40",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=kube_galaxy --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "TID", "RUF", "PLC0415"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kube_galaxy"]
