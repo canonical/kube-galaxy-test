@@ -4,8 +4,10 @@ import shutil
 
 import typer
 
+from kube_galaxy.pkg.utils.client import get_context, get_nodes, wait_for_nodes, wait_for_pods
+from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, print_dict, section, success, warning
-from kube_galaxy.pkg.utils.shell import ShellError, run
+from kube_galaxy.pkg.utils.shell import run
 
 
 def status(wait: bool = False, timeout: int = 300) -> None:
@@ -39,21 +41,20 @@ def _print_cluster_context() -> None:
 
     info("")
     try:
-        result = run(["kubectl", "config", "current-context"], capture_output=True, check=False)
-        context = result.stdout.strip() if result.returncode == 0 else "none"
+        context = get_context()
         info(f"Active Cluster: {context}")
-    except Exception:
+    except ClusterError:
         info("Active Cluster: error checking")
 
     try:
-        result = run(["kubectl", "get", "nodes"], capture_output=True, check=False)
-        if result.returncode == 0 and result.stdout:
-            lines = result.stdout.strip().split("\n")
+        nodes_output = get_nodes()
+        if nodes_output:
+            lines = nodes_output.strip().split("\n")
             info(f"Cluster Nodes: {len(lines) - 1}")
             for line in lines[1:]:
                 if line:
                     info(f"    {line}")
-    except Exception:
+    except ClusterError:
         pass
 
 
@@ -63,52 +64,15 @@ def _verify_cluster_health(timeout: int) -> None:
         error("kubectl is required for --wait health checks", show_traceback=False)
         raise typer.Exit(code=1)
 
-    timeout_arg = f"--timeout={timeout}s"
     section("Cluster Health Verification")
     info("Waiting for nodes to be Ready...")
 
     try:
-        run(
-            ["kubectl", "wait", "--for=condition=Ready", "node", "--all", timeout_arg],
-            capture_output=True,
-        )
-        run(
-            [
-                "kubectl",
-                "wait",
-                "--for=condition=Ready",
-                "pod",
-                "--all",
-                "-n",
-                "kube-system",
-                timeout_arg,
-            ],
-            capture_output=True,
-        )
-    except ShellError as exc:
-        if exc.stderr.strip():
-            error(exc.stderr.strip(), show_traceback=False)
+        wait_for_nodes(timeout=timeout)
+        wait_for_pods(namespace="kube-system", timeout=timeout)
+    except ClusterError as exc:
+        error(str(exc), show_traceback=False)
         error("Cluster readiness checks failed", show_traceback=False)
-        raise typer.Exit(code=1) from exc
-
-    _print_command_output(["kubectl", "cluster-info"], "Cluster Info")
-    _print_command_output(["kubectl", "get", "nodes", "-o", "wide"], "Nodes")
-    _print_command_output(["kubectl", "get", "pods", "-A", "-o", "wide"], "Pods")
-
-
-def _print_command_output(command: list[str], title: str) -> None:
-    """Run command and print its output with a section label."""
-    info("")
-    info(f"{title}:")
-    try:
-        result = run(command, capture_output=True)
-        output = result.stdout.strip()
-        if output:
-            info(output)
-    except ShellError as exc:
-        if exc.stderr.strip():
-            error(exc.stderr.strip(), show_traceback=False)
-        error(f"Failed to run: {' '.join(command)}", show_traceback=False)
         raise typer.Exit(code=1) from exc
 
 
