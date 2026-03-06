@@ -11,7 +11,7 @@ components:
       base-url: "https://github.com/opencontainers/runc"
     installation:
       method: "binary"
-      source_format: "{repo}/releases/download/v{release}/runc.{arch}"
+      source-format: "{repo}/releases/download/v{release}/runc.{arch}"
 
   - name: containerd
     category: containerd
@@ -20,7 +20,8 @@ components:
       base-url: "https://github.com/containerd/containerd"
     installation:
       method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
+      bin-path: "./bin/*"
+      source-format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
 
   # cni-plugins
   - name: cni-plugins
@@ -30,7 +31,7 @@ components:
       base-url: "https://github.com/containernetworking/plugins"
     installation:
       method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
+      source-format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
 
   # Kubernetes core binaries
   - name: kubelet
@@ -40,7 +41,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary"
-      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubelet"
+      source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubelet"
 
   - name: kubeadm
     category: kubernetes/kubernetes
@@ -49,7 +50,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary"
-      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubeadm"
+      source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubeadm"
 
   - name: kubectl
     category: kubernetes/kubernetes
@@ -58,7 +59,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "binary"
-      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubectl"
+      source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubectl"
 
   # Kubernetes control plane components
   - name: kube-apiserver
@@ -68,7 +69,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-apiserver:v{release}"
+      source-format: "registry.k8s.io/kube-apiserver:v{release}"
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
@@ -77,7 +78,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-controller-manager:v{release}"
+      source-format: "registry.k8s.io/kube-controller-manager:v{release}"
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
@@ -86,7 +87,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-scheduler:v{release}"
+      source-format: "registry.k8s.io/kube-scheduler:v{release}"
 
   - name: kube-proxy
     category: kubernetes/kubernetes
@@ -95,7 +96,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-proxy:v{release}"
+      source-format: "registry.k8s.io/kube-proxy:v{release}"
 
   - name: pause
     category: kubernetes/kubernetes
@@ -104,17 +105,17 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/pause:{release}"
+      source-format: "registry.k8s.io/pause:{release}"
 
   # etcd - required for cluster state
   - name: etcd
     category: etcd
-    release: "3.6.6-0"
+    release: "3.6.6"
     repo:
       base-url: "https://github.com/etcd-io/etcd"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/etcd:{release}"
+      source-format: "registry.k8s.io/etcd:v{release}"
 
   # CoreDNS - required for cluster DNS
   - name: coredns
@@ -124,7 +125,7 @@ components:
       base-url: "https://github.com/coredns/coredns"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/coredns/coredns:v{release}"
+      source-format: "registry.k8s.io/coredns/coredns:v{release}"
 
   # Calico - required for cluster networking
   - name: calico
@@ -134,7 +135,7 @@ components:
       base-url: "https://github.com/projectcalico/calico"
     installation:
       method: "container-manifest"
-      source_format: "raw.githubusercontent.com/projectcalico/calico/v{release}/manifests/calico.yaml"
+      source-format: "raw.githubusercontent.com/projectcalico/calico/v{release}/manifests/calico.yaml"
 
   - name: calico-cni
     category: projectcalico/calico
@@ -143,7 +144,7 @@ components:
       base-url: "https://github.com/projectcalico/calico"
     installation:
       method: "container-image"
-      source_format: "docker.io/calico/cni:v{release}"
+      source-format: "docker.io/calico/cni:v{release}"
 
   - name: calico-node
     category: projectcalico/calico
@@ -152,7 +153,7 @@ components:
       base-url: "https://github.com/projectcalico/calico"
     installation:
       method: "container-image"
-      source_format: "docker.io/calico/cni:v{release}"
+      source-format: "docker.io/calico/cni:v{release}"
 
   - name: calico-kube-controllers
     category: projectcalico/calico
@@ -161,7 +162,7 @@ components:
       base-url: "https://github.com/projectcalico/calico"
     installation:
       method: "container-image"
-      source_format: "docker.io/calico/kube-controllers:v{release}"
+      source-format: "docker.io/calico/kube-controllers:v{release}"
 
   # Test only component, nothing installed in the cluster
   - name: sonobuoy
@@ -170,7 +171,7 @@ components:
     repo:
       base-url: https://github.com/vmware-tanzu/sonobuoy
     installation:
-      source_format: "{repo}/releases/download/v{release}/sonobuoy_{release}_linux_{arch}.tar.gz"
+      source-format: "{repo}/releases/download/v{release}/sonobuoy_{release}_linux_{arch}.tar.gz"
     test: true
 
 networking:

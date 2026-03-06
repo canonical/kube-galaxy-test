@@ -85,7 +85,6 @@ class Containerd(ComponentBase):
     """
 
     # Timeout configuration (in seconds)
-    BIN_PATH = "bin/*"  # Path inside archive where containerd binary is located
     MAX_IMAGE_PULL_WORKERS = 10
     SOCKET_PATH = Path("/run/containerd/containerd.sock")
 

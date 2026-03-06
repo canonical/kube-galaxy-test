@@ -179,7 +179,7 @@ components:
     release: "2.2.1"
     installation:
       method: "binary-archive"
-      source_format: "https://custom-mirror.example.com/containerd-{version}.tar.gz"
+      source-format: "https://custom-mirror.example.com/containerd-{version}.tar.gz"
 
   # Kubernetes core
   - name: kubelet

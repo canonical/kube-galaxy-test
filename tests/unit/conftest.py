@@ -34,7 +34,7 @@ components:
     repo:
       base-url: "https://github.com/containerd/containerd"
     installation:
-      source_format: "Binary"
+      source-format: "Binary"
       method: "binary-archive"
     test: false
   - name: coredns
@@ -43,7 +43,7 @@ components:
     repo:
       base-url: "https://github.com/coredns/coredns"
     installation:
-      source_format: "Binary"
+      source-format: "Binary"
       method: "binary-archive"
     test: true
 networking:

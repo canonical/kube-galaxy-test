@@ -12,8 +12,8 @@ components:
     repo:
       base-url: "https://github.com/opencontainers/runc"
     installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/runc.{arch}"
+      method: "binary"
+      source-format: "{repo}/releases/download/v{release}/runc.{arch}"
 
   - name: containerd
     category: containerd
@@ -22,7 +22,8 @@ components:
       base-url: "https://github.com/containerd/containerd"
     installation:
       method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
+      bin-path: "./bin/*"
+      source-format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
 
   # cni-plugins
   - name: cni-plugins
@@ -32,7 +33,7 @@ components:
       base-url: "https://github.com/containernetworking/plugins"
     installation:
       method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
+      source-format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
 
   - name: kubelet
     category: kubernetes/kubernetes
@@ -40,18 +41,17 @@ components:
     repo:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubelet"
+      method: "binary"
+      source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubelet"
 
-  # Kubernetes binaries
   - name: kubeadm
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubeadm"
+      method: "binary"
+      source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubeadm"
 
   - name: kubectl
     category: kubernetes/kubernetes
@@ -59,10 +59,10 @@ components:
     repo:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubectl"
+      method: "binary"
+      source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubectl"
 
-  # Kubernetes control plane components (container images)
+  # Kubernetes control plane components
   - name: kube-apiserver
     category: kubernetes/kubernetes
     release: *k8s-version
@@ -70,7 +70,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-apiserver:v{release}"
+      source-format: "registry.k8s.io/kube-apiserver:v{release}"
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
@@ -79,7 +79,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-controller-manager:v{release}"
+      source-format: "registry.k8s.io/kube-controller-manager:v{release}"
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
@@ -88,7 +88,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-scheduler:v{release}"
+      source-format: "registry.k8s.io/kube-scheduler:v{release}"
 
   - name: kube-proxy
     category: kubernetes/kubernetes
@@ -97,7 +97,7 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/kube-proxy:v{release}"
+      source-format: "registry.k8s.io/kube-proxy:v{release}"
 
   - name: pause
     category: kubernetes/kubernetes
@@ -106,17 +106,17 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/pause:3.10"
+      source-format: "registry.k8s.io/pause:3.10"
 
   # etcd
   - name: etcd
     category: etcd
-    release: "3.5.22"
+    release: "3.5.24"
     repo:
       base-url: "https://github.com/etcd-io/etcd"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/etcd:{release}"
+      source-format: "registry.k8s.io/etcd:v{release}"
 
   # CoreDNS
   - name: coredns
@@ -126,26 +126,27 @@ components:
       base-url: "https://github.com/coredns/coredns"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/coredns/coredns:v{release}"
+      source-format: "registry.k8s.io/coredns/coredns:v{release}"
 
   - name: etcdctl
     category: etcd
-    release: "3.5.22"
+    release: "3.5.24"
     repo:
       base-url: "https://github.com/etcd-io/etcd"
     installation:
       method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
+      bin-path: "./etcd-v{release}-linux-{arch}/etcdctl"
+      source-format: "{repo}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
 
   # Kubernetes addons
   - name: cluster-autoscaler
     category: kubernetes
-    release: *k8s-version
+    release: "1.33.4"
     repo:
       base-url: "https://github.com/kubernetes/autoscaler"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/autoscaling/cluster-autoscaler:v{release}"
+      source-format: "registry.k8s.io/autoscaling/cluster-autoscaler:v{release}"
 
   - name: node-problem-detector
     category: kubernetes
@@ -154,7 +155,7 @@ components:
       base-url: "https://github.com/kubernetes/node-problem-detector"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/node-problem-detector/node-problem-detector:v{release}"
+      source-format: "registry.k8s.io/node-problem-detector/node-problem-detector:v{release}"
 
   # Kubernetes CSI
   - name: external-attacher
@@ -164,7 +165,7 @@ components:
       base-url: "https://github.com/kubernetes-csi/external-attacher"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/sig-storage/csi-attacher:v{release}"
+      source-format: "registry.k8s.io/sig-storage/csi-attacher:v{release}"
 
   - name: external-provisioner
     category: kubernetes-csi
@@ -173,7 +174,7 @@ components:
       base-url: "https://github.com/kubernetes-csi/external-provisioner"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/sig-storage/csi-provisioner:v{release}"
+      source-format: "registry.k8s.io/sig-storage/csi-provisioner:v{release}"
 
 networking:
   - name: "default"
