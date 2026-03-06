@@ -1,11 +1,20 @@
 name: baseline-k8s-1.35
-description: "Baseline Kubernetes 1.35.1 cluster with standard components"
-kubernetes-version: &k8s-version "1.35.1"
+description: "Baseline Kubernetes 1.35.2 cluster with standard components"
+kubernetes-version: &k8s-version "1.35.2"
 labels:
   ci-skip-on-pr: "true"
 
 components:
   # Container runtime
+  - name: runc
+    category: containerd
+    release: "1.3.4"
+    repo:
+      base-url: "https://github.com/opencontainers/runc"
+    installation:
+      method: "binary"
+      source_format: "{repo}/releases/download/v{release}/runc.{arch}"
+
   - name: containerd
     category: containerd
     release: "2.2.1"
@@ -13,45 +22,36 @@ components:
       base-url: "https://github.com/containerd/containerd"
     installation:
       method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/containerd-{release}.linux-{arch}.tar.gz"
-
-  - name: runc
-    category: containerd
-    release: "1.3.4"
-    repo:
-      base-url: "https://github.com/opencontainers/runc"
-    installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/runc.{arch}"
+      source_format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
 
   # cni-plugins
   - name: cni-plugins
     category: container-networking
-    release: "1.8.0"
+    release: "1.9.0"
     repo:
       base-url: "https://github.com/containernetworking/plugins"
     installation:
       method: "binary-archive"
       source_format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
 
+  # Kubernetes core binaries
   - name: kubelet
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubelet"
+      method: "binary"
+      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubelet"
 
-  # Kubernetes binaries
   - name: kubeadm
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubeadm"
+      method: "binary"
+      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubeadm"
 
   - name: kubectl
     category: kubernetes/kubernetes
@@ -59,10 +59,10 @@ components:
     repo:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/bin/linux/{arch}/kubectl"
+      method: "binary"
+      source_format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubectl"
 
-  # Kubernetes control plane components (container images)
+  # Kubernetes control plane components
   - name: kube-apiserver
     category: kubernetes/kubernetes
     release: *k8s-version
@@ -106,19 +106,9 @@ components:
       base-url: "https://github.com/kubernetes/kubernetes"
     installation:
       method: "container-image"
-      source_format: "registry.k8s.io/pause:3.10"
+      source_format: "registry.k8s.io/pause:{release}"
 
-  # CoreDNS
-  - name: coredns
-    category: coredns
-    release: "1.13.1"
-    repo:
-      base-url: "https://github.com/coredns/coredns"
-    installation:
-      method: "container-image"
-      source_format: "coredns/coredns:v{release}"
-
-  # etcd
+  # etcd - required for cluster state
   - name: etcd
     category: etcd
     release: "3.5.26"
@@ -126,7 +116,17 @@ components:
       base-url: "https://github.com/etcd-io/etcd"
     installation:
       method: "container-image"
-      source_format: "quay.io/coreos/etcd:v{release}"
+      source_format: "registry.k8s.io/etcd:{release}"
+
+  # CoreDNS - required for cluster DNS
+  - name: coredns
+    category: coredns
+    release: "1.13.1"
+    repo:
+      base-url: "https://github.com/coredns/coredns"
+    installation:
+      method: "container-image"
+      source_format: "registry.k8s.io/coredns/coredns:v{release}"
 
   - name: etcdctl
     category: etcd
@@ -160,3 +160,5 @@ networking:
   - name: "default"
     service-cidr: "10.96.0.0/12"
     pod-cidr: "192.168.0.0/16"
+  # Pods on different nodes will not be able to communicate
+  # Only host network pods and single-node workloads will function

@@ -39,6 +39,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Discover manifest files
         id: discover
@@ -61,13 +63,25 @@ jobs:
           fi
 
           if [ "$IS_PR" = "true" ]; then
-            echo "PR context: Including only manifests without ci-skip-on-pr: true"
-            # Find manifests that don't have ci-skip-on-pr: "true"
-            manifests=$(find manifests/ -name "*.yaml" -type f | while read -r file; do
+            echo "PR context: Including manifests without ci-skip-on-pr: true plus any changed manifests"
+
+            # Base set: manifests that don't have ci-skip-on-pr: "true"
+            base_manifests=$(find manifests/ -name "*.yaml" -type f | while read -r file; do
               if ! grep -q 'ci-skip-on-pr.*\:.*"true"' "$file" && ! grep -q "ci-skip-on-pr.*\:.*'true'" "$file"; then
                 echo "$file"
               fi
-            done | sort | jq -R -s -c 'split("\n")[:-1] | map(select(length > 0)) | map({"manifest-file": .})')
+            done | sort)
+
+            # Changed manifests in this PR (always included)
+            changed_manifests=""
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              changed_manifests=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- 'manifests/*.yaml' | sort)
+            fi
+
+            manifests=$(printf "%s\n%s\n" "$base_manifests" "$changed_manifests" \
+              | sed '/^$/d' \
+              | sort -u \
+              | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
           else
             echo "Non-PR context: Including all manifests"
             manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')

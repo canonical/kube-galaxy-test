@@ -6,15 +6,6 @@ labels:
 
 components:
   # Container runtime
-  - name: containerd
-    category: containerd
-    release: "2.2.1"
-    repo:
-      base-url: "https://github.com/containerd/containerd"
-    installation:
-      method: "binary-archive"
-      source_format: "{repo}/releases/download/v{release}/containerd-{release}.linux-{arch}.tar.gz"
-
   - name: runc
     category: containerd
     release: "1.3.4"
@@ -23,6 +14,15 @@ components:
     installation:
       method: "binary-archive"
       source_format: "{repo}/releases/download/v{release}/runc.{arch}"
+
+  - name: containerd
+    category: containerd
+    release: "2.2.1"
+    repo:
+      base-url: "https://github.com/containerd/containerd"
+    installation:
+      method: "binary-archive"
+      source_format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
 
   # cni-plugins
   - name: cni-plugins
@@ -108,16 +108,6 @@ components:
       method: "container-image"
       source_format: "registry.k8s.io/pause:3.10"
 
-  # CoreDNS
-  - name: coredns
-    category: coredns
-    release: "1.13.1"
-    repo:
-      base-url: "https://github.com/coredns/coredns"
-    installation:
-      method: "container-image"
-      source_format: "coredns/coredns:v{release}"
-
   # etcd
   - name: etcd
     category: etcd
@@ -126,7 +116,17 @@ components:
       base-url: "https://github.com/etcd-io/etcd"
     installation:
       method: "container-image"
-      source_format: "quay.io/coreos/etcd:v{release}"
+      source_format: "registry.k8s.io/etcd:{release}"
+
+  # CoreDNS
+  - name: coredns
+    category: coredns
+    release: "1.13.1"
+    repo:
+      base-url: "https://github.com/coredns/coredns"
+    installation:
+      method: "container-image"
+      source_format: "registry.k8s.io/coredns/coredns:v{release}"
 
   - name: etcdctl
     category: etcd
