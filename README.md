@@ -1,16 +1,27 @@
 # Kubernetes Galaxy Test
 
-A scalable, multi-architecture testing infrastructure for Kubernetes using functional test suites that run on GitHub Actions. This project tests custom-built Kubernetes components using the canonical [spread](https://github.com/canonical/spread) testing framework, with architecture detection and per-component test orchestration.
+![Kube-Galaxy-Test](docs/kube-galaxy.png "Kube Galaxy Tests")
+
+A scalable, multi-architecture testing infrastructure for Kubernetes using
+functional test suites that run on GitHub Actions. This project tests
+custom-built Kubernetes components using the canonical
+ [spread](https://github.com/canonical/spread) testing framework, with
+ architecture detection and per-component test orchestration.
 
 ## 🏗️ Architecture
 
 - **Python CLI**: Modern `kube-galaxy` command-line tool (Python 3.12+)
-- **Cluster Manifests**: Simple YAML configuration files defining Kubernetes cluster setups with component lists
-- **Per-Component Definition**: Each component specifies its repo, release, and whether it provides tests
+- **Cluster Manifests**: Simple YAML configuration files defining Kubernetes
+  cluster setups with component lists
+- **Per-Component Definition**: Each component specifies its repo, release,
+  and whether it provides tests
 - **GitHub Actions**: Automatic provisioning, testing, and cleanup workflows
-- **Multiarch Support**: Runtime architecture detection (amd64, arm64, riscv64, etc.)
-- **Component-Driven Tests**: Tests live in component repos, referenced via `test` flag
-- **Kubeadm-Based Provisioning**: Real cluster setup without container-based shortcuts
+- **Multiarch Support**: Runtime architecture detection
+  (amd64, arm64, riscv64, etc.)
+- **Component-Driven Tests**: Tests live in component repos, referenced via
+  `test` flag
+- **Kubeadm-Based Provisioning**: Real cluster setup without container-based
+  shortcuts
 
 ## 🏃 Quick Start
 
@@ -22,29 +33,34 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
 ### Development Setup
 
 1. **Install astral**:
+
    ```bash
    sudo snap install astral-uv --classic
    ```
 
 2. **Clone the repository**:
+
    ```bash
    git clone https://github.com/canonical/kube-galaxy-test.git
    cd kube-galaxy-test
    ```
 
 3. **Create Python environment** (using `uv`):
+
    ```bash
    uv venv
    source .venv/bin/activate
    ```
 
    Or with `venv`:
+
    ```bash
    python3.12 -m venv .venv
    source .venv/bin/activate
    ```
 
 4. **Install kube-galaxy with dev dependencies**:
+
    ```bash
    uv pip install -e .
    ```
@@ -52,31 +68,28 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
 ### Basic Usage
 
 1. **Validate the project**:
+
    ```bash
-   kube-galaxy validate all
+   kube-galaxy validate
    ```
 
-2. **Review a cluster manifest**:
-   ```bash
-   kube-galaxy test-manifest manifests/baseline-k8s-1.35.yaml
-   ```
+2. **Setup the cluster**:
 
-3. **Setup the cluster**:
    ```bash
    kube-galaxy setup manifests/baseline-k8s-1.35.yaml
    ```
 
-4. **Check project status**:
+3. **Check project status**:
+
    ```bash
    kube-galaxy status
    ```
 
-5. **Run tests**:
+4. **Run tests**:
+
    ```bash
-   # Run local validation tests
-   kube-galaxy test local
    # Run spread tests against active cluster
-   kube-galaxy test spread
+   kube-galaxy test manifest/baseline-k8s-1.35.yaml
    ```
 
 ## 📦 Available Manifests
@@ -84,34 +97,36 @@ A scalable, multi-architecture testing infrastructure for Kubernetes using funct
 The `manifests/` directory contains several pre-configured cluster definitions:
 
 ### Baseline Clusters (Run on `workflow_dispatch`)
-- `baseline-k8s-1.33.yaml` - Full K8s 1.33.0 cluster with Calico CNI
-- `baseline-k8s-1.34.yaml` - Full K8s 1.34.0 cluster with Calico CNI
-- `baseline-k8s-1.35.yaml` - Full K8s 1.35.0 cluster with Calico CNI
-- `baseline-k8s-1.36.yaml` - Full K8s 1.36.0 cluster with Calico CNI
 
-These comprehensive manifests include full networking and are marked with `ci-skip-on-pr: "true"` to run only on manual workflow dispatch.
+- `baseline-k8s-1.33.yaml` - Full K8s 1.33 cluster
+- `baseline-k8s-1.34.yaml` - Full K8s 1.34 cluster
+- `baseline-k8s-1.35.yaml` - Full K8s 1.35 cluster
+- `baseline-k8s-1.36.yaml` - Full K8s 1.36 cluster
+
+These comprehensive manifests include full networking and are marked with
+ `ci-skip-on-pr: "true"` to run only on manual workflow dispatch.
 
 ### Minimal Clusters (Run on PRs)
-- `single-node-no-cni.yaml` - **Single-node cluster without CNI** (core components only)
+
+- `smoketest.yaml` - **Single-node cluster with CNI**
   - **Runs automatically on all PRs** for fast validation
   - Perfect for testing core Kubernetes components in isolation
   - Single control-plane node (no workers)
-  - No CNI plugin (nodes will be NotReady, control plane components validated)
-  - Useful for CNI development, debugging, or learning
-  - See [single-node-no-cni.md](manifests/single-node-no-cni.md) for detailed documentation
 
 ### CI Strategy
-- **Pull Requests**: Fast validation with `single-node-no-cni.yaml` only (~5-10 minutes)
-- **Workflow Dispatch**: Comprehensive testing with all manifests (~45-90 minutes per manifest)
-- **Push to main**: Disabled (empty branches list) to avoid redundant runs after PR merge
+
+- **Pull Requests**: Fast validation with `smoketest.yaml` only (~5-10 minutes)
+- **Workflow Dispatch**: Comprehensive testing with all manifests
+  (~45-90 minutes per manifest)
 
 **Example**: Testing the minimal cluster
+
 ```bash
 # Inspect the manifest
-kube-galaxy test-manifest manifests/single-node-no-cni.yaml
+kube-galaxy validate
 
-# Setup the cluster (nodes will be NotReady without CNI)
-kube-galaxy setup manifests/single-node-no-cni.yaml
+# Setup the cluster
+kube-galaxy setup manifests/smoketest.yaml
 
 # Verify control plane is running
 kubectl get pods -n kube-system
@@ -123,81 +138,7 @@ kube-galaxy cleanup all
 
 ## 📋 Cluster Manifest Format
 
-Cluster manifests define Kubernetes clusters in simple YAML format:
-
-```yaml
-name: baseline-cluster
-description: "Standard 3-node cluster"
-nodes:
-  control-plane: 1
-  worker: 2
-kubernetes-version: "v1.29.0"
-components:
-  - name: containerd
-    release: "v1.7.0"
-    repo:
-      base-url: "https://github.com/containerd/containerd"
-    test: false
-  - name: kubeadm
-    release: "v1.29.0"
-    repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
-    test: false
-  - name: my-custom-cni
-    release: "main"
-    repo:
-      base-url: "https://github.com/myorg/custom-cni"
-    test: true
-  - name: monorepo-component
-    repo:
-      base-url: "https://github.com/myorg/monorepo"
-      subdir: "components/my-component"
-      ref: "feature-branch"
-    test: true
-networking:
-  - name: "calico"
-    service-cidr: "10.96.0.0/12"
-    pod-cidr: "192.168.0.0/16"
-```
-
-### Manifest Fields
-
-- **name**: Unique cluster identifier
-- **nodes**: Control plane and worker node counts
-- **kubernetes-version**: Kubernetes version (informational)
-- **components**: List of components to install
-  - **name**: Component identifier
-  - **release**: Git tag/branch to checkout (defaults to repo.ref if not specified)
-  - **repo**: Repository information object
-    - **base-url**: Git repository URL (required)
-    - **subdir**: Optional subdirectory path for monorepo components
-    - **ref**: Optional git reference (branch/tag/commit), defaults to release
-  - **test**: If `true`, component repository provides spread tests
-- **networking**: CNI and network settings
-
-### Repository Configuration
-
-The `repo` field is an object that provides flexible repository configuration:
-
-- **Simple component**: Only needs `base-url`
-  ```yaml
-  repo:
-    base-url: "https://github.com/containerd/containerd"
-  ```
-
-- **Monorepo component**: Add `subdir` to specify component location
-  ```yaml
-  repo:
-    base-url: "https://github.com/kubernetes/kubernetes"
-    subdir: "staging/src/k8s.io/kubectl"
-  ```
-
-- **Development branch**: Use `ref` to override the release tag
-  ```yaml
-  repo:
-    base-url: "https://github.com/myorg/component"
-    ref: "feature-branch"
-  ```
+See [ARCHITECTURE](.github/ARCHITECTURE.md)
 
 ## 🔧 Component Repositories
 
@@ -239,6 +180,7 @@ restore: |
 ### Architecture Support
 
 Component install scripts receive these environment variables:
+
 - `ARCH`: System architecture from `uname -m` (x86_64, aarch64, riscv64, etc.)
 - `K_ARCH`: Kubernetes architecture name (amd64, arm64, riscv64, etc.)
 - `COMPONENT_RELEASE`: The release version being installed
@@ -248,12 +190,14 @@ Component install scripts receive these environment variables:
 
 The project uses GitHub Actions workflows for automated testing:
 
-- **CI Triggers**: Pull requests run fast validation on `single-node-no-cni.yaml`
+- **CI Triggers**: Pull requests run fast validation on `smoketest.yaml`
 - **Manual Dispatch**: Baseline manifests run on manual `workflow_dispatch`
 - **Test Automation**: Workflows invoke `kube-galaxy` CLI directly
 - **Log Collection**: Failed runs preserve debug logs and cluster state
 
-See `.github/workflows/` for workflow definitions and [.github/copilot-instructions.md](.github/copilot-instructions.md) for architecture details.
+See `.github/workflows/` for workflow definitions and
+[.github/copilot-instructions.md](.github/copilot-instructions.md)
+for architecture details.
 
 ## 🏛️ Architecture Support
 
@@ -267,7 +211,9 @@ The infrastructure supports multiple CPU architectures:
 | ppc64le | ppc64le |
 | s390x | s390x |
 
-**Runtime Detection**: Architecture is detected at startup via `uname -m` and automatically mapped to Kubernetes naming conventions. Components receive the mapped architecture for correct binary selection.
+**Runtime Detection**: Architecture is detected at startup via `uname -m` and
+automatically mapped to Kubernetes naming conventions. Components receive the
+mapped architecture for correct binary selection.
 
 ## 🐛 Debugging
 
@@ -275,10 +221,12 @@ When tests fail:
 
 1. **Check logs**: Look at the test output and error messages
 2. **Inspect cluster state**:
+
    ```bash
    kubectl get pods -A
    kubectl describe nodes
    ```
+
 3. **Review preserved state**: Debug logs are collected before cleanup
 4. **See manifests**: Use `kube-galaxy test-manifest` to inspect configurations
 
@@ -304,4 +252,6 @@ The GitHub Actions workflows automatically test changes against the infrastructu
 
 ---
 
-**Note**: This infrastructure is designed for testing Kubernetes components at scale across multiple architectures. For production deployments, refer to official Kubernetes documentation.
+**Note**: This infrastructure is designed for testing Kubernetes components at
+scale across multiple architectures. For production deployments, refer to
+official Kubernetes documentation.
