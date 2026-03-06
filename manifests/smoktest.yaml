@@ -1,5 +1,5 @@
 name: smoke-test
-description: "Single-node Kubernetes cluster + calico - core components only"
+description: Single-node Kubernetes cluster + calico - core components only
 kubernetes-version: &k8s-version "1.35.2"
 
 components:
@@ -8,18 +8,18 @@ components:
     category: containerd
     release: "1.3.4"
     repo:
-      base-url: "https://github.com/opencontainers/runc"
+      base-url: https://github.com/opencontainers/runc
     installation:
-      method: "binary"
+      method: binary
       source-format: "{repo}/releases/download/v{release}/runc.{arch}"
 
   - name: containerd
     category: containerd
     release: "2.2.1"
     repo:
-      base-url: "https://github.com/containerd/containerd"
+      base-url: https://github.com/containerd/containerd
     installation:
-      method: "binary-archive"
+      method: binary-archive
       bin-path: "./bin/*"
       source-format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
 
@@ -28,9 +28,9 @@ components:
     category: container-networking
     release: "1.9.0"
     repo:
-      base-url: "https://github.com/containernetworking/plugins"
+      base-url: https://github.com/containernetworking/plugins
     installation:
-      method: "binary-archive"
+      method: binary-archive
       source-format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
 
   # Kubernetes core binaries
@@ -38,27 +38,27 @@ components:
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "binary"
+      method: binary
       source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubelet"
 
   - name: kubeadm
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "binary"
+      method: binary
       source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubeadm"
 
   - name: kubectl
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "binary"
+      method: binary
       source-format: "https://dl.k8s.io/release/v{release}/bin/linux/{arch}/kubectl"
 
   # Kubernetes control plane components
@@ -66,45 +66,45 @@ components:
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "registry.k8s.io/kube-apiserver:v{release}"
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "registry.k8s.io/kube-controller-manager:v{release}"
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "registry.k8s.io/kube-scheduler:v{release}"
 
   - name: kube-proxy
     category: kubernetes/kubernetes
     release: *k8s-version
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "registry.k8s.io/kube-proxy:v{release}"
 
   - name: pause
     category: kubernetes/kubernetes
     release: "3.10.1"
     repo:
-      base-url: "https://github.com/kubernetes/kubernetes"
+      base-url: https://github.com/kubernetes/kubernetes
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "registry.k8s.io/pause:{release}"
 
   # etcd - required for cluster state
@@ -112,9 +112,9 @@ components:
     category: etcd
     release: "3.6.6"
     repo:
-      base-url: "https://github.com/etcd-io/etcd"
+      base-url: https://github.com/etcd-io/etcd
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "registry.k8s.io/etcd:v{release}"
 
   # CoreDNS - required for cluster DNS
@@ -122,9 +122,9 @@ components:
     category: coredns
     release: "1.13.1"
     repo:
-      base-url: "https://github.com/coredns/coredns"
+      base-url: https://github.com/coredns/coredns
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "registry.k8s.io/coredns/coredns:v{release}"
 
   # Calico - required for cluster networking
@@ -132,36 +132,36 @@ components:
     category: projectcalico/calico
     release:  &calico-version "3.30.6"
     repo:
-      base-url: "https://github.com/projectcalico/calico"
+      base-url: https://github.com/projectcalico/calico
     installation:
-      method: "container-manifest"
+      method: container-manifest
       source-format: "raw.githubusercontent.com/projectcalico/calico/v{release}/manifests/calico.yaml"
 
   - name: calico-cni
     category: projectcalico/calico
     release: *calico-version
     repo:
-      base-url: "https://github.com/projectcalico/calico"
+      base-url: https://github.com/projectcalico/calico
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "docker.io/calico/cni:v{release}"
 
   - name: calico-node
     category: projectcalico/calico
     release: *calico-version
     repo:
-      base-url: "https://github.com/projectcalico/calico"
+      base-url: https://github.com/projectcalico/calico
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "docker.io/calico/cni:v{release}"
 
   - name: calico-kube-controllers
     category: projectcalico/calico
     release: *calico-version
     repo:
-      base-url: "https://github.com/projectcalico/calico"
+      base-url: https://github.com/projectcalico/calico
     installation:
-      method: "container-image"
+      method: container-image
       source-format: "docker.io/calico/kube-controllers:v{release}"
 
   # Test only component, nothing installed in the cluster
@@ -175,8 +175,8 @@ components:
     test: true
 
 networking:
-  - name: "default"
-    service-cidr: "10.96.0.0/12"
-    pod-cidr: "192.168.0.0/16"
+  - name: default
+    service-cidr: 10.96.0.0/12
+    pod-cidr: 192.168.0.0/16
   # Pods on different nodes will not be able to communicate
   # Only host network pods and single-node workloads will function
