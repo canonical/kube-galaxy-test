@@ -14,6 +14,7 @@ def test_component_creation():
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+        bin_path="./*",
     )
     config = ComponentConfig(
         name="test-comp",
@@ -44,6 +45,7 @@ def test_manifest_creation():
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+        bin_path="./*",
     )
     components = [
         ComponentConfig(
@@ -77,6 +79,7 @@ def test_manifest_get_component():
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+        bin_path="./*",
     )
     comp1 = ComponentConfig(
         name="comp1",

@@ -64,8 +64,6 @@ class ComponentBase:
     BOOTSTRAP_TIMEOUT = Timeouts.BOOTSTRAP_TIMEOUT
 
     # Component metadata - override in subclass
-    BIN_PATH = "./*"  # Default path inside archive where binaries are located
-
     LOCAL_REGISTRY: LiteralString = "registry.k8s.io"
 
     def __init__(
@@ -118,6 +116,18 @@ class ComponentBase:
             True if this component is responsible for cluster lifecycle management (e.g., kubeadm)
         """
         return isinstance(self, ClusterComponentBase)
+
+    @property
+    def bin_path(self) -> str:
+        """
+        Default path inside archives where binaries are located.
+
+        Override in subclass if binaries are located in a different path within the archive.
+        """
+
+        return format_component_pattern(
+            self.config.installation.bin_path, self.config, self.arch_info
+        )
 
     def get_cluster_manager(self) -> "ClusterComponentBase":
         """
@@ -208,7 +218,7 @@ class ComponentBase:
                     raise ComponentError(
                         f"{comp_name} archive not downloaded. Run download hook first."
                     )
-                for each in self.extracted_dir.glob(self.BIN_PATH):
+                for each in self.extracted_dir.glob(self.bin_path):
                     installed = self.install_downloaded_binary(each, each.name)
                     if each.name == comp_name:
                         self.install_path = installed

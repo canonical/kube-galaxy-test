@@ -49,7 +49,8 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         install_data = comp_data.get("installation", {})
         installation = InstallConfig(
             method=InstallMethod(install_data.get("method", "none")),
-            source_format=install_data.get("source_format", ""),
+            source_format=install_data.get("source-format", ""),
+            bin_path=install_data.get("bin-path", "./*"),
         )
 
         # Parse repo info

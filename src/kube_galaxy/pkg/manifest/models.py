@@ -22,6 +22,7 @@ class InstallConfig:
 
     method: InstallMethod  # Installation method
     source_format: str  # e.g., format string URL or path to binary, chart, or manifest
+    bin_path: str  # Default path inside archive where binaries
 
 
 @dataclass

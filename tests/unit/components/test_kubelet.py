@@ -29,7 +29,9 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
     # Prepare minimal manifest/config
     manifest = Manifest(name="m", description="d", kubernetes_version="1.24")
     install = InstallConfig(
-        method=InstallMethod.BINARY, source_format="https://example/{repo}/{release}/{arch}/kubelet"
+        method=InstallMethod.BINARY,
+        source_format="https://example/{repo}/{release}/{arch}/kubelet",
+        bin_path="./*",
     )
     repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     config = ComponentConfig(

@@ -94,7 +94,8 @@ Components that follow standard installation patterns can be defined purely in t
     base-url: "https://github.com/etcd-io/etcd"
   installation:
     method: "binary-archive"
-    source_format: "{repo}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
+    source-format: "{repo}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
+    bin-path: "./etcd-v{release}-linux-{arch}/etcd"
   test: false
 ```
 
