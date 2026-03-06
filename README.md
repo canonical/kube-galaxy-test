@@ -32,10 +32,10 @@ custom-built Kubernetes components using the canonical
 
 ### Development Setup
 
-1. **Install astral**:
+1. **Install uv tooling**:
 
    ```bash
-   sudo snap install astral-uv --classic
+   python3.12 -m pip install --user uv tox-uv
    ```
 
 2. **Clone the repository**:
@@ -89,7 +89,7 @@ custom-built Kubernetes components using the canonical
 
    ```bash
    # Run spread tests against active cluster
-   kube-galaxy test manifest/baseline-k8s-1.35.yaml
+   kube-galaxy test manifests/baseline-k8s-1.35.yaml
    ```
 
 ## 📦 Available Manifests
@@ -123,7 +123,7 @@ These comprehensive manifests include full networking and are marked with
 
 ```bash
 # Inspect the manifest
-kube-galaxy validate
+kube-galaxy validate --manifest manifests/smoketest.yaml
 
 # Setup the cluster
 kube-galaxy setup manifests/smoketest.yaml
@@ -181,9 +181,10 @@ restore: |
 
 Component install scripts receive these environment variables:
 
-- `ARCH`: System architecture from `uname -m` (x86_64, aarch64, riscv64, etc.)
-- `K_ARCH`: Kubernetes architecture name (amd64, arm64, riscv64, etc.)
-- `COMPONENT_RELEASE`: The release version being installed
+- `SYSTEM_ARCH`: System architecture from `uname -m` (x86_64, aarch64, riscv64, etc.)
+- `K8S_ARCH`: Kubernetes architecture name (amd64, arm64, riscv64, etc.)
+- `IMAGE_ARCH`: Container image architecture tag (amd64, arm64, riscv64, etc.)
+- `COMPONENT_VERSION`: The component version being installed
 - `COMPONENT_REPO`: The repository URL
 
 ## 🚀 GitHub Actions Integration
@@ -228,7 +229,7 @@ When tests fail:
    ```
 
 3. **Review preserved state**: Debug logs are collected before cleanup
-4. **See manifests**: Use `kube-galaxy test-manifest` to inspect configurations
+4. **See manifests**: Inspect the YAML files in `manifests/` or run `kube-galaxy validate --manifest path/to/manifest.yaml` to validate a specific configuration
 
 ## � References
 
