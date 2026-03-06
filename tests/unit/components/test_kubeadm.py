@@ -30,7 +30,9 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
     )
 
     install = InstallConfig(
-        method=InstallMethod.BINARY, source_format="https://example/{repo}/{release}/kubeadm"
+        method=InstallMethod.BINARY,
+        source_format="https://example/{repo}/{release}/kubeadm",
+        bin_path="./*",
     )
     repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     config = ComponentConfig(

@@ -19,6 +19,7 @@ def make_config(name: str = "example") -> ComponentConfig:
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="https://example/{repo}/{release}/{arch}/binary",
+        bin_path="./*",
     )
     repo = RepoInfo(base_url="https://example.com/r")
     return ComponentConfig(name=name, category="cat", release="v1", repo=repo, installation=install)
@@ -95,6 +96,7 @@ def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path, arch_
     cfg.installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example/{repo}/{release}/{arch}/archive.tar.gz",
+        bin_path="./*",
     )
     comp = ExampleComponent(
         {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info

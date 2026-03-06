@@ -28,6 +28,7 @@ def calico_config():
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
         source_format="raw.githubusercontent.com/projectcalico/calico/v{release}/manifests/calico.yaml",
+        bin_path="./*",
     )
     repo = RepoInfo(base_url="https://github.com/projectcalico/calico")
     return ComponentConfig(
@@ -89,6 +90,7 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
         source_format="{repo}/releases/{release}/manifest-{arch}.yaml",
+        bin_path="./*",
     )
     repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     config = ComponentConfig(
@@ -132,6 +134,7 @@ def test_download_hook_adds_https_prefix(manifest, arch_info, monkeypatch, tmp_p
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
         source_format="raw.githubusercontent.com/org/repo/v{release}/manifest.yaml",
+        bin_path="./*",
     )
     repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     config = ComponentConfig(
@@ -257,7 +260,11 @@ def test_delete_hook_preserves_manifest_file(component, tmp_path):
 
 def test_delete_hook_works_for_all_install_methods(manifest, arch_info):
     """Test that delete_hook base implementation works for all install methods."""
-    install = InstallConfig(method=InstallMethod.BINARY, source_format="https://example/{arch}/bin")
+    install = InstallConfig(
+        method=InstallMethod.BINARY,
+        source_format="https://example/{arch}/bin",
+        bin_path="./*",
+    )
     repo = RepoInfo(base_url="https://github.com/org/repo")
     config = ComponentConfig(
         name="test-binary", category="test", release="v1", repo=repo, installation=install
