@@ -16,7 +16,7 @@ def test_component_creation():
     """Test component config dataclass creation."""
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
-        source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+        source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -47,7 +47,7 @@ def test_manifest_creation():
     """Test manifest dataclass creation."""
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
-        source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+        source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
     )
     components = [
@@ -81,7 +81,7 @@ def test_manifest_get_component():
     """Test getting component config by name from manifest."""
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
-        source_format="https://example.com/{release}/{arch}/binary.tar.gz",
+        source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
     )
     comp1 = ComponentConfig(

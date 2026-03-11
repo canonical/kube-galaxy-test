@@ -57,7 +57,7 @@ spread can discover them.
 ```
 
 **Local source rules**:
-- `{repo.base-url}` in `source-format` resolves to `str(Path.cwd())`
+- `{{ repo.base_url }}` in `source-format` resolves to `str(Path.cwd())`
 - `task_path_for_component()` returns `cwd/components/<name>/spread/kube-galaxy/`
 - `download_tasks_from_config()` is skipped (no remote fetch needed)
 
@@ -69,17 +69,17 @@ The `installation.source-format` field supports the following placeholders:
 
 | Placeholder        | Resolves to                                                |
 |--------------------|------------------------------------------------------------|
-| `{arch}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, ...)   |
-| `{release}`        | Component release tag from the manifest                   |
+| `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, ...)   |
+| `{{ release }}`        | Component release tag from the manifest                   |
 | `{ref}`            | Git ref override, or empty string                         |
-| `{repo.base-url}`  | Repository base URL, or `str(cwd)` for local sources      |
-| `{repo.subdir}`    | Optional subdirectory within the repo (empty if unset)    |
-| `{repo.ref}`       | Git ref from the `repo` block (empty if unset)            |
+| `{{ repo.base_url }}`  | Repository base URL, or `str(cwd)` for local sources      |
+| `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty if unset)    |
+| `{{ repo.ref }}`       | Git ref from the `repo` block (empty if unset)            |
 
-**Implementation note**: Python's `str.format()` cannot handle dots or hyphens
-in format keys.  The helper `_preprocess_pattern()` in
-`src/kube_galaxy/pkg/utils/components.py` translates `{repo.base-url}` to the
-internal key `{repo_base_url}` before `.format()` is called.
+**Implementation note**: Source-format templates are rendered using **Jinja2**.
+Template variables are accessed with `{{ variable }}` syntax.  The `repo`
+context object supports attribute access: `{{ repo.base_url }}`,
+`{{ repo.subdir }}`, `{{ repo.ref }}`.
 
 ---
 

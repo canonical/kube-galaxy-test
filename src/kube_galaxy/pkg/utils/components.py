@@ -3,11 +3,13 @@ Utilities for component installation and management.
 """
 
 import hashlib
-import re
 import shutil
 import tarfile
 import urllib.request
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from jinja2 import Environment
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
@@ -130,40 +132,38 @@ def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_
         raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
 
 
+@dataclass
+class _RepoContext:
+    """Context object for Jinja2 template rendering of repo-related placeholders.
 
-
-def _preprocess_pattern(pattern: str) -> str:
-    """Translate ``{repo.*}`` placeholders to valid Python format-string keys.
-
-    Python's ``str.format()`` cannot handle dots or hyphens inside ``{...}``
-    keys.  This helper rewrites them to safe underscore-based names before
-    ``str.format()`` is called:
-
-    - ``{repo.base-url}``  →  ``{repo_base_url}``
-    - ``{repo.subdir}``    →  ``{repo_subdir}``
-    - ``{repo.ref}``       →  ``{repo_ref}``
+    Attributes:
+        base_url: Repository base URL.  For local sources this is the string
+            representation of the current working directory.
+        subdir:   Optional subdirectory within the repo (empty string if unset).
+        ref:      Optional git reference override (empty string if unset).
     """
-    return re.sub(
-        r"\{repo\.([^}]+)\}",
-        lambda m: "{repo_" + m.group(1).replace("-", "_") + "}",
-        pattern,
-    )
+
+    base_url: str
+    subdir: str = field(default="")
+    ref: str = field(default="")
 
 
 def format_component_pattern(
     filename_pattern: str, config: ComponentConfig, arch_info: ArchInfo
 ) -> str:
-    """Construct a resolved URL or path from a ``source-format`` template.
+    """Construct a resolved URL or path from a Jinja2 ``source-format`` template.
 
-    Supported placeholders:
+    Templates use standard Jinja2 ``{{ variable }}`` syntax.
 
-    - ``{arch}``          - Kubernetes architecture name (e.g. ``amd64``)
-    - ``{release}``       - component release tag (e.g. ``2.1.0``)
-    - ``{ref}``           - git ref override, or empty string
-    - ``{repo.base-url}`` - repository base URL, or ``str(Path.cwd())`` for
-                            local sources
-    - ``{repo.subdir}``   - optional subdirectory within the repo
-    - ``{repo.ref}``      - git ref from repo config, or empty string
+    Supported template variables:
+
+    - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
+    - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
+    - ``{{ ref }}``            - git ref override, or empty string
+    - ``{{ repo.base_url }}``  - repository base URL, or ``str(Path.cwd())`` for
+                                 local sources
+    - ``{{ repo.subdir }}``    - optional subdirectory within the repo
+    - ``{{ repo.ref }}``       - git ref from repo config, or empty string
 
     Args:
         filename_pattern: The ``source-format`` template string from the manifest.
@@ -173,13 +173,16 @@ def format_component_pattern(
     Returns:
         The fully-resolved string with all placeholders substituted.
     """
-    repo_base_url = str(Path.cwd()) if config.repo.is_local else config.repo.base_url
-    formatting = {
-        "arch": arch_info.k8s,
-        "release": config.release,
-        "ref": config.repo.ref or "",
-        "repo_base_url": repo_base_url,
-        "repo_subdir": config.repo.subdir or "",
-        "repo_ref": config.repo.ref or "",
-    }
-    return _preprocess_pattern(filename_pattern).format(**formatting)
+    env = Environment(autoescape=False)
+    template = env.from_string(filename_pattern)
+    repo = _RepoContext(
+        base_url=str(Path.cwd()) if config.repo.is_local else config.repo.base_url,
+        subdir=config.repo.subdir or "",
+        ref=config.repo.ref or "",
+    )
+    return template.render(
+        arch=arch_info.k8s,
+        release=config.release,
+        ref=config.repo.ref or "",
+        repo=repo,
+    )

@@ -9,7 +9,7 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     RepoInfo,
 )
-from kube_galaxy.pkg.utils.components import _preprocess_pattern, format_component_pattern
+from kube_galaxy.pkg.utils.components import format_component_pattern
 
 
 class ExampleComponent(ComponentBase):
@@ -19,7 +19,7 @@ class ExampleComponent(ComponentBase):
 def make_config(name: str = "example") -> ComponentConfig:
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="https://example/{repo.base-url}/{release}/{arch}/binary",
+        source_format="https://example/{{ repo.base_url }}/{{ release }}/{{ arch }}/binary",
         bin_path="./*",
     )
     repo = RepoInfo(base_url="https://example.com/r")
@@ -27,28 +27,15 @@ def make_config(name: str = "example") -> ComponentConfig:
 
 
 # ---------------------------------------------------------------------------
-# Formatter unit tests
+# Formatter unit tests (Jinja2 syntax: {{ variable }})
 # ---------------------------------------------------------------------------
 
 
-def test_preprocess_pattern_rewrites_repo_keys():
-    """_preprocess_pattern translates {repo.*} to valid Python format keys."""
-    pattern = "{repo.base-url}/releases/{repo.subdir}/{repo.ref}/{release}"
-    result = _preprocess_pattern(pattern)
-    assert result == "{repo_base_url}/releases/{repo_subdir}/{repo_ref}/{release}"
-
-
-def test_preprocess_pattern_passthrough():
-    """_preprocess_pattern leaves non-repo placeholders untouched."""
-    pattern = "https://example.com/{release}/{arch}/binary"
-    assert _preprocess_pattern(pattern) == pattern
-
-
 def test_format_component_pattern_remote(arch_info):
-    """format_component_pattern replaces {repo.base-url} with base_url for remote."""
+    """format_component_pattern replaces {{ repo.base_url }} with base_url for remote."""
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="{repo.base-url}/releases/download/v{release}/bin-{arch}",
+        source_format="{{ repo.base_url }}/releases/download/v{{ release }}/bin-{{ arch }}",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -63,11 +50,11 @@ def test_format_component_pattern_remote(arch_info):
 
 
 def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatch):
-    """format_component_pattern resolves {repo.base-url} to str(cwd) for local sources."""
+    """format_component_pattern resolves {{ repo.base_url }} to str(cwd) for local sources."""
     monkeypatch.chdir(tmp_path)
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="{repo.base-url}/mybin-{arch}",
+        source_format="{{ repo.base_url }}/mybin-{{ arch }}",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -82,10 +69,10 @@ def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatc
 
 
 def test_format_component_pattern_subdir_and_ref(arch_info):
-    """format_component_pattern handles {repo.subdir} and {repo.ref}."""
+    """format_component_pattern handles {{ repo.subdir }} and {{ repo.ref }}."""
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="{repo.base-url}/{repo.subdir}/{repo.ref}/{release}",
+        source_format="{{ repo.base_url }}/{{ repo.subdir }}/{{ repo.ref }}/{{ release }}",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -100,15 +87,15 @@ def test_format_component_pattern_subdir_and_ref(arch_info):
 
 
 def test_format_component_pattern_empty_subdir_and_ref(arch_info):
-    """Empty subdir and ref default to empty strings (no KeyError).
+    """Empty subdir and ref default to empty strings.
 
     Double slashes in the resulting URL are expected when optional fields are
     absent.  Callers should use full URLs directly in source-format when
-    {repo.subdir}/{repo.ref} are not applicable.
+    repo.subdir/repo.ref are not applicable.
     """
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="{repo.base-url}/{repo.subdir}/{repo.ref}",
+        source_format="{{ repo.base_url }}/{{ repo.subdir }}/{{ repo.ref }}",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -192,7 +179,7 @@ def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path, arch_
     cfg = make_config("foo")
     cfg.installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
-        source_format="https://example/{repo.base-url}/{release}/{arch}/archive.tar.gz",
+        source_format="https://example/{{ repo.base_url }}/{{ release }}/{{ arch }}/archive.tar.gz",
         bin_path="./*",
     )
     comp = ExampleComponent(

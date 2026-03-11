@@ -181,9 +181,8 @@ class ComponentBase:
                 )
         match self.config.test:
             case True:
-                if not self.config.repo.is_local:
-                    info(f"Downloaded test artifacts for {comp_name}")
-                    self.download_tasks_from_config(arch)
+                info(f"Downloading test artifacts for {comp_name}")
+                self.download_tasks_from_config(arch)
 
     def pre_install_hook(self) -> None:
         """
@@ -518,15 +517,48 @@ class ComponentBase:
             raise ComponentError(f"Unsupported archive format for {file_path.name}")
 
     def download_tasks_from_config(self, arch: str) -> None:
-        """
-        Download test suite definition for this component.
+        """Download or copy the spread test suite for this component to the tests root.
 
-        This is a placeholder for downloading test suite definitions, which may involve
-        fetching task.yaml files or similar artifacts based on the component configuration.
+        For **local** sources (``base-url: local``), the test suite is already
+        present in the repository at
+        ``cwd/components/<name>/spread/kube-galaxy/``.  This method copies it
+        to the shared tests root so that the spread orchestrator can discover it
+        alongside remotely-sourced test suites.
+
+        For **remote** sources, the test suite must be cloned from the component
+        repo.  The base implementation logs a placeholder message; subclasses or
+        future additions can override or extend this method to perform the actual
+        clone via GitPython.
+
+        Args:
+            arch: Architecture string (currently unused; reserved for future use).
         """
-        # For example, we could download a task.yaml file using the same source_format logic
-        # and place it in the appropriate tests directory for this component.
-        pass
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        comp_name = self.config.name
+        dest = SystemPaths.tests_root() / comp_name
+
+        if self.config.repo.is_local:
+            # Local source: copy cwd/components/<name>/ to tests_root/<name>/
+            local_suite = Path.cwd() / "components" / comp_name
+            if not local_suite.exists():
+                raise ComponentError(
+                    f"Local test suite not found for '{comp_name}': {local_suite}"
+                )
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(local_suite, dest)
+            info(f"Copied local test suite for '{comp_name}' to {dest}")
+        else:
+            # Remote source: placeholder — clone repo at release tag into tests root.
+            # Full implementation should use GitPython to clone and checkout the
+            # component repo at component.release, placing spread/ tasks at
+            # tests_root/<name>/spread/kube-galaxy/.
+            info(
+                f"Remote test suite download for '{comp_name}' not yet implemented; "
+                f"task.yaml must be placed manually at {dest}"
+            )
 
     def download_manifest_from_config(self, arch: str) -> Path:
         """

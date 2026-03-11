@@ -146,19 +146,19 @@ The `installation.source-format` field supports the following placeholders:
 
 | Placeholder        | Resolves to                                                      |
 |--------------------|------------------------------------------------------------------|
-| `{arch}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)           |
-| `{release}`        | Component release tag from the manifest                         |
+| `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)           |
+| `{{ release }}`        | Component release tag from the manifest                         |
 | `{ref}`            | Git ref override, or empty string                               |
-| `{repo.base-url}`  | Repository base URL, or `cwd` for local sources                 |
-| `{repo.subdir}`    | Optional subdirectory within the repo (empty string if unset)   |
-| `{repo.ref}`       | Git ref from the `repo` block (empty string if unset)           |
+| `{{ repo.base_url }}`  | Repository base URL, or `cwd` for local sources                 |
+| `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty string if unset)   |
+| `{{ repo.ref }}`       | Git ref from the `repo` block (empty string if unset)           |
 
 **Example:**
 
 ```yaml
 installation:
   method: binary-archive
-  source-format: "{repo.base-url}/releases/download/v{release}/tool-{release}-linux-{arch}.tar.gz"
+  source-format: "{{ repo.base_url }}/releases/download/v{{ release }}/tool-{{ release }}-linux-{{ arch }}.tar.gz"
 ```
 
 ### Local Component Sources
@@ -194,7 +194,7 @@ directly from the current working directory rather than a remote URL.
 
 When `base-url` is `local`:
 
-- `{repo.base-url}` in `source-format` expands to `str(Path.cwd())`
+- `{{ repo.base_url }}` in `source-format` expands to `str(Path.cwd())`
 - `task_path_for_component` returns `cwd/components/<name>/spread/kube-galaxy/`
 - The component's `install_hook` is expected to copy local test files to the
   shared tests root so that spread can orchestrate them

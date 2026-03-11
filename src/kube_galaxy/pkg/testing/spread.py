@@ -15,6 +15,7 @@ from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
+    task_path_for_component,
     validate_component_test_structure,
 )
 from kube_galaxy.pkg.utils.client import create_namespace, delete_namespace, verify_connectivity
@@ -190,15 +191,24 @@ def _generate_orchestration_spread_yaml(
         }
 
         # Generate component suites section.
-        # All components (local or remote) are expected to have their task definitions
-        # installed under tests_root by the time tests run (local components copy there
-        # via their install_hook; remote components clone there via download_tasks_from_config).
+        # By the time tests run, all task definitions are installed under tests_root
+        # (local sources are copied by download_tasks_from_config; remote sources are
+        # cloned there too).
         for each in components:
-            suite_path = SystemPaths.tests_root() / each.name / "spread/kube-galaxy/"
+            suite_path = task_path_for_component(each)
             task = suite_path / "task.yaml"
             suite = yaml.safe_load(task.read_text())  # Load for name and summary
             rel = suite_path.relative_to(SystemPaths.tests_root()).parent
-            suites[f"{rel}/"] = {"summary": suite.get("summary", "No summary")}
+            suites[f"{rel}/"] = {
+                "summary": suite.get("summary", "No summary"),
+                # Per-suite environment variables are forwarded to each task's
+                # `execute` block by spread, allowing task.yaml files to reference
+                # $COMPONENT_NAME and $COMPONENT_VERSION as shell variables.
+                "environment": {
+                    "COMPONENT_NAME": each.name,
+                    "COMPONENT_VERSION": each.release,
+                },
+            }
 
         spread_def["suites"] = suites
 

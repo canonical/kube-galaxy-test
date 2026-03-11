@@ -77,13 +77,19 @@ execute: |
     assert spread_components[0].test is True
 
 
-def test_task_path_for_component_remote(monkeypatch):
-    """Test task_path_for_component uses tests_root for remote repos."""
+def test_task_path_for_component_always_uses_tests_root(monkeypatch):
+    """task_path_for_component always returns tests_root/<name>/spread/kube-galaxy/.
+
+    This holds for both local and remote sources — by test time all task
+    definitions must be installed under tests_root.
+    """
     fake_root = Path("/fake/tests")
     monkeypatch.setattr(SystemPaths, "tests_root", lambda: fake_root)
 
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
-    comp = ComponentConfig(
+
+    # Remote source
+    remote_comp = ComponentConfig(
         name="mycomp",
         category="test",
         release="1.0.0",
@@ -91,15 +97,10 @@ def test_task_path_for_component_remote(monkeypatch):
         installation=install,
         test=True,
     )
-    path = task_path_for_component(comp)
-    assert path == fake_root / "mycomp" / "spread/kube-galaxy/"
+    assert task_path_for_component(remote_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
 
-
-def test_task_path_for_component_local(tmp_path, monkeypatch):
-    """Test task_path_for_component uses cwd/components/<name> for local sources."""
-    monkeypatch.chdir(tmp_path)
-    install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
-    comp = ComponentConfig(
+    # Local source — same result
+    local_comp = ComponentConfig(
         name="mycomp",
         category="test",
         release="1.0.0",
@@ -107,16 +108,20 @@ def test_task_path_for_component_local(tmp_path, monkeypatch):
         installation=install,
         test=True,
     )
-    path = task_path_for_component(comp)
-    assert path == tmp_path / "components" / "mycomp" / "spread/kube-galaxy/"
+    assert task_path_for_component(local_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
 
 
 def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
-    """Test get_components_with_spread resolves local source via cwd."""
-    monkeypatch.chdir(tmp_path)
+    """Test get_components_with_spread finds a local component via tests_root.
 
-    # Create local task.yaml at cwd/components/localcomp/spread/kube-galaxy/
-    task_dir = tmp_path / "components" / "localcomp" / "spread" / "kube-galaxy"
+    The download_tasks_from_config flow copies the local suite to tests_root;
+    here we simulate that by pre-populating tests_root and patching the path.
+    """
+    tests_root = tmp_path / "tests"
+    monkeypatch.setattr(SystemPaths, "tests_root", lambda: tests_root)
+
+    # Simulate the copy that download_tasks_from_config would do
+    task_dir = tests_root / "localcomp" / "spread" / "kube-galaxy"
     task_dir.mkdir(parents=True)
     (task_dir / "task.yaml").write_text("summary: local test\nexecute: |\n    echo done\n")
 
