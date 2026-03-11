@@ -140,11 +140,32 @@ kube-galaxy cleanup all
 
 See [ARCHITECTURE](.github/ARCHITECTURE.md)
 
+### Source-Format Placeholders
+
+The `installation.source-format` field supports the following placeholders:
+
+| Placeholder        | Resolves to                                                      |
+|--------------------|------------------------------------------------------------------|
+| `{arch}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)           |
+| `{release}`        | Component release tag from the manifest                         |
+| `{ref}`            | Git ref override, or empty string                               |
+| `{repo.base-url}`  | Repository base URL, or `cwd` for local sources                 |
+| `{repo.subdir}`    | Optional subdirectory within the repo (empty string if unset)   |
+| `{repo.ref}`       | Git ref from the `repo` block (empty string if unset)           |
+
+**Example:**
+
+```yaml
+installation:
+  method: binary-archive
+  source-format: "{repo.base-url}/releases/download/v{release}/tool-{release}-linux-{arch}.tar.gz"
+```
+
 ### Local Component Sources
 
-A component's `repo` field normally points to a remote Git repository.  You can
-also mark a component as **local** so that its test definitions are read
-directly from the local filesystem instead of a remote URL.
+A component's `repo` field normally points to a remote Git repository.  You
+can also mark a component as **local** so that its test definitions are read
+directly from the current working directory rather than a remote URL.
 
 #### Shorthand — `repo: local`
 
@@ -152,34 +173,36 @@ directly from the local filesystem instead of a remote URL.
 - name: mycomp
   category: example
   release: "1.2.3"
-  repo: local          # resolves to components/<name>/ next to the manifest file
+  repo: local          # equivalent to repo: {base-url: local}
   installation:
     method: none
   test: true
 ```
 
-The shorthand resolves the local path to `<manifest-directory>/components/<name>`.
-
-#### Explicit path — `repo: {local: <path>}`
+#### Object syntax — `repo: {base-url: local}`
 
 ```yaml
 - name: mycomp
   category: example
   release: "1.2.3"
   repo:
-    local: path/to/mycomp   # relative to the manifest file (or absolute)
+    base-url: local
   installation:
     method: none
   test: true
 ```
 
-Relative paths are resolved relative to the directory containing the manifest
-file.  Absolute paths are used as-is.
+When `base-url` is `local`:
+
+- `{repo.base-url}` in `source-format` expands to `str(Path.cwd())`
+- `task_path_for_component` returns `cwd/components/<name>/spread/kube-galaxy/`
+- The component's `install_hook` is expected to copy local test files to the
+  shared tests root so that spread can orchestrate them
 
 #### Local test structure
 
-When `repo` is local the spread test task must exist at
-`<local-path>/spread/kube-galaxy/task.yaml`:
+Test tasks for local components must exist at
+`<cwd>/components/<name>/spread/kube-galaxy/task.yaml`:
 
 ```
 components/
@@ -195,7 +218,7 @@ Inside `task.yaml` you can reference environment variables set by kube-galaxy:
 |---------------------|-----------------------------------------------|
 | `COMPONENT_VERSION` | Release tag from the manifest                 |
 | `COMPONENT_NAME`    | Component name                                |
-| `K8S_ARCH`          | Kubernetes architecture (amd64, arm64, …)     |
+| `K8S_ARCH`          | Kubernetes architecture (`amd64`, `arm64`, …) |
 | `SYSTEM_ARCH`       | Raw `uname -m` architecture                   |
 | `IMAGE_ARCH`        | Container image architecture tag              |
 | `KUBECONFIG`        | Path to shared kubeconfig                     |
@@ -203,17 +226,21 @@ Inside `task.yaml` you can reference environment variables set by kube-galaxy:
 Example `task.yaml`:
 
 ```yaml
-summary: My component test
+summary: My component conformance test
 execute: |
-  wget https://example.com/releases/v${COMPONENT_VERSION}/tool_linux_${K8S_ARCH}.tar.gz -O tool.tar.gz
+  wget --tries=3 https://example.com/releases/v${COMPONENT_VERSION}/tool_linux_${K8S_ARCH}.tar.gz \
+      -O tool.tar.gz || exit 1
   tar -xvf tool.tar.gz
   ./tool --version
 ```
 
-> **Note**: The `{repo}` placeholder in `installation.source-format` resolves
-> to the local path string for local sources, and to the remote `base-url` for
-> remote sources.  For components where the binary is downloaded from a fixed
-> URL, use the full URL directly in `source-format` rather than `{repo}`.
+#### Adding a local component (the sonobuoy pattern)
+
+1. Create `components/<name>/spread/kube-galaxy/task.yaml`
+2. Add the component to the manifest with `repo: local` and `test: true`
+3. Optionally add a custom Python component class under
+   `src/kube_galaxy/pkg/components/<name>.py` that copies the local suite to
+   the spread tests root in its `install_hook`
 
 ## 🔧 Component Repositories
 

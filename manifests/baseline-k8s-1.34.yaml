@@ -13,7 +13,7 @@ components:
       base-url: https://github.com/opencontainers/runc
     installation:
       method: binary
-      source-format: "{repo}/releases/download/v{release}/runc.{arch}"
+      source-format: "{repo.base-url}/releases/download/v{release}/runc.{arch}"
 
   - name: containerd
     category: containerd
@@ -23,7 +23,7 @@ components:
     installation:
       method: binary-archive
       bin-path: "./bin/*"
-      source-format: "{repo}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
+      source-format: "{repo.base-url}/releases/download/v{release}/containerd-{release}-linux-{arch}.tar.gz"
 
   # cni-plugins
   - name: cni-plugins
@@ -33,7 +33,7 @@ components:
       base-url: https://github.com/containernetworking/plugins
     installation:
       method: binary-archive
-      source-format: "{repo}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
+      source-format: "{repo.base-url}/releases/download/v{release}/cni-plugins-linux-{arch}-v{release}.tgz"
 
   - name: kubelet
     category: kubernetes/kubernetes
@@ -137,7 +137,7 @@ components:
     installation:
       method: binary-archive
       bin-path: "./etcd-v{release}-linux-{arch}/etcdctl"
-      source-format: "{repo}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
+      source-format: "{repo.base-url}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
 
   # Kubernetes addons
   - name: cluster-autoscaler

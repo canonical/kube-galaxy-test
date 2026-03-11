@@ -94,17 +94,59 @@ Components that follow standard installation patterns can be defined purely in t
     base-url: "https://github.com/etcd-io/etcd"
   installation:
     method: "binary-archive"
-    source-format: "{repo}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
+    source-format: "{repo.base-url}/releases/download/v{release}/etcd-v{release}-linux-{arch}.tar.gz"
     bin-path: "./etcd-v{release}-linux-{arch}/etcd"
   test: false
 ```
+
+**`source-format` placeholders**:
+
+| Placeholder        | Resolves to                                                |
+|--------------------|------------------------------------------------------------|
+| `{arch}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)     |
+| `{release}`        | Component release tag from the manifest                   |
+| `{ref}`            | Git ref override, or empty string                         |
+| `{repo.base-url}`  | Repository base URL (or `cwd` for local sources)          |
+| `{repo.subdir}`    | Optional subdirectory within the repo (empty if unset)    |
+| `{repo.ref}`       | Git ref from the `repo` block (empty if unset)            |
 
 **Supported installation methods**:
 - `binary`: Download direct binary artifacts
 - `binary-archive`: Download and extract binary archives
 - `container-image`: Pull and register container images
 - `container-image-archive`: Pull and register container images from a tar
-- `none`: Component installs nothing directly into the cluster (eg. test-only)
+- `none`: Component installs nothing directly into the cluster (e.g. test-only)
+
+### Local Components
+
+Components with `base-url: local` (or the shorthand `repo: local`) source
+their test definitions from the current working directory rather than a remote
+URL.  The resolved path is `cwd/components/<name>/spread/kube-galaxy/`.
+
+```yaml
+- name: sonobuoy
+  category: vmware-tanzu/sonobuoy
+  release: "0.57.3"
+  repo:
+    base-url: local          # shorthand: repo: local
+  installation:
+    method: none
+  test: true
+```
+
+The corresponding task file must exist at:
+
+```
+components/
+  sonobuoy/
+    spread/
+      kube-galaxy/
+        task.yaml
+```
+
+A local component's `install_hook` is responsible for copying the local task
+files into the shared tests root so that spread can discover them.  See
+`src/kube_galaxy/pkg/components/sonobuoy.py` for the reference implementation.
 
 ### Custom Components (Requires Python Class)
 

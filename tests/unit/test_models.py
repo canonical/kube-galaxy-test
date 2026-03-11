@@ -130,22 +130,29 @@ def test_repo_info_remote():
     """Test RepoInfo for a remote repository."""
     repo = RepoInfo(base_url="https://github.com/org/repo")
     assert repo.base_url == "https://github.com/org/repo"
-    assert repo.local is None
     assert repo.is_local is False
 
 
-def test_repo_info_local_path():
-    """Test RepoInfo for a local filesystem source."""
-    local_path = Path("/some/local/path")
-    repo = RepoInfo(local=local_path)
-    assert repo.local == local_path
-    assert repo.base_url == ""
+def test_repo_info_local_sentinel():
+    """Test that base_url='local' triggers is_local."""
+    repo = RepoInfo(base_url="local")
     assert repo.is_local is True
 
 
 def test_repo_info_local_with_subdir():
-    """Test RepoInfo local source with subdir."""
-    local_path = Path("/project/components/mycomp")
-    repo = RepoInfo(local=local_path, subdir="sub")
+    """Test RepoInfo local source with optional subdir."""
+    repo = RepoInfo(base_url="local", subdir="sub")
     assert repo.is_local is True
     assert repo.subdir == "sub"
+
+
+def test_repo_info_empty_base_url_is_not_local():
+    """An empty base_url is not considered local."""
+    repo = RepoInfo()
+    assert repo.is_local is False
+
+
+def test_manifest_path_default():
+    """Manifest.path defaults to empty Path."""
+    m = Manifest(name="x", kubernetes_version="1.35.0")
+    assert m.path == Path("")

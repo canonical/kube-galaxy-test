@@ -91,7 +91,7 @@ def download_hook(self):
     archive_format = self.archive_format
 
     # Use custom URL if provided, otherwise construct default
-    url = custom_url or f"{repo}/releases/download/{release}/binary.tar.gz"
+    url = custom_url or f"{repo.base_url}/releases/download/{release}/binary.tar.gz"
 ```
 
 ### State Management

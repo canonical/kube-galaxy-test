@@ -12,12 +12,13 @@ from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 def task_path_for_component(component: ComponentConfig) -> Path:
     """Get the expected path to the component's test task definition.
 
-    For components with a local repo source, the task definition is looked up
-    directly from the local path (``<local>/spread/kube-galaxy/``).  For remote
-    sources the task definition lives under the shared tests root.
+    For components with a local repo source (``base-url: local``), the task
+    definition is discovered relative to the current working directory at
+    ``components/<name>/spread/kube-galaxy/``.  For remote sources the task
+    definition lives under the shared system tests root.
     """
-    if component.repo.is_local and component.repo.local is not None:
-        return component.repo.local / "spread/kube-galaxy/"
+    if component.repo.is_local:
+        return Path.cwd() / "components" / component.name / "spread/kube-galaxy/"
     return SystemPaths.tests_root() / component.name / "spread/kube-galaxy/"
 
 

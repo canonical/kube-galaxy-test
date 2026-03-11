@@ -181,8 +181,9 @@ class ComponentBase:
                 )
         match self.config.test:
             case True:
-                info(f"Downloaded test artifacts for {comp_name}")
-                self.download_tasks_from_config(arch)
+                if not self.config.repo.is_local:
+                    info(f"Downloaded test artifacts for {comp_name}")
+                    self.download_tasks_from_config(arch)
 
     def pre_install_hook(self) -> None:
         """

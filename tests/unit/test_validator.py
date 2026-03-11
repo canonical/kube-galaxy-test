@@ -1,5 +1,7 @@
 """Unit tests for manifest validator."""
 
+from pathlib import Path
+
 import pytest
 
 from kube_galaxy.pkg.literals import SystemPaths
@@ -75,8 +77,11 @@ execute: |
     assert spread_components[0].test is True
 
 
-def test_task_path_for_component_remote():
+def test_task_path_for_component_remote(monkeypatch):
     """Test task_path_for_component uses tests_root for remote repos."""
+    fake_root = Path("/fake/tests")
+    monkeypatch.setattr(SystemPaths, "tests_root", lambda: fake_root)
+
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
     comp = ComponentConfig(
         name="mycomp",
@@ -87,30 +92,31 @@ def test_task_path_for_component_remote():
         test=True,
     )
     path = task_path_for_component(comp)
-    assert str(path) == str(SystemPaths.tests_root() / "mycomp" / "spread/kube-galaxy/")
+    assert path == fake_root / "mycomp" / "spread/kube-galaxy/"
 
 
-def test_task_path_for_component_local(tmp_path):
-    """Test task_path_for_component resolves to local repo path for local sources."""
-    local_source = tmp_path / "components" / "mycomp"
+def test_task_path_for_component_local(tmp_path, monkeypatch):
+    """Test task_path_for_component uses cwd/components/<name> for local sources."""
+    monkeypatch.chdir(tmp_path)
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
     comp = ComponentConfig(
         name="mycomp",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(local=local_source),
+        repo=RepoInfo(base_url="local"),
         installation=install,
         test=True,
     )
     path = task_path_for_component(comp)
-    assert path == local_source / "spread/kube-galaxy/"
+    assert path == tmp_path / "components" / "mycomp" / "spread/kube-galaxy/"
 
 
-def test_get_components_with_spread_local_source(tmp_path):
-    """Test get_components_with_spread works with local sources."""
-    # Create local task.yaml directly in the local source directory
-    local_source = tmp_path / "components" / "localcomp"
-    task_dir = local_source / "spread" / "kube-galaxy"
+def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
+    """Test get_components_with_spread resolves local source via cwd."""
+    monkeypatch.chdir(tmp_path)
+
+    # Create local task.yaml at cwd/components/localcomp/spread/kube-galaxy/
+    task_dir = tmp_path / "components" / "localcomp" / "spread" / "kube-galaxy"
     task_dir.mkdir(parents=True)
     (task_dir / "task.yaml").write_text("summary: local test\nexecute: |\n    echo done\n")
 
@@ -119,7 +125,7 @@ def test_get_components_with_spread_local_source(tmp_path):
         name="localcomp",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(local=local_source),
+        repo=RepoInfo(base_url="local"),
         installation=install,
         test=True,
     )

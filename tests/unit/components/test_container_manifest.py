@@ -89,7 +89,7 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
     """Test that download_hook properly formats URLs with release, repo, and arch placeholders."""
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
-        source_format="{repo}/releases/{release}/manifest-{arch}.yaml",
+        source_format="{repo.base-url}/releases/{release}/manifest-{arch}.yaml",
         bin_path="./*",
     )
     repo = RepoInfo(base_url="https://github.com/myorg/myrepo")

@@ -15,7 +15,6 @@ from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
-    task_path_for_component,
     validate_component_test_structure,
 )
 from kube_galaxy.pkg.utils.client import create_namespace, delete_namespace, verify_connectivity
@@ -190,9 +189,12 @@ def _generate_orchestration_spread_yaml(
             },
         }
 
-        # Generate component suites section
+        # Generate component suites section.
+        # All components (local or remote) are expected to have their task definitions
+        # installed under tests_root by the time tests run (local components copy there
+        # via their install_hook; remote components clone there via download_tasks_from_config).
         for each in components:
-            suite_path = task_path_for_component(each)
+            suite_path = SystemPaths.tests_root() / each.name / "spread/kube-galaxy/"
             task = suite_path / "task.yaml"
             suite = yaml.safe_load(task.read_text())  # Load for name and summary
             rel = suite_path.relative_to(SystemPaths.tests_root()).parent

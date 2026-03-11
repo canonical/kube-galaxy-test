@@ -3,6 +3,7 @@ Utilities for component installation and management.
 """
 
 import hashlib
+import re
 import shutil
 import tarfile
 import urllib.request
@@ -129,28 +130,56 @@ def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_
         raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
 
 
+
+
+def _preprocess_pattern(pattern: str) -> str:
+    """Translate ``{repo.*}`` placeholders to valid Python format-string keys.
+
+    Python's ``str.format()`` cannot handle dots or hyphens inside ``{...}``
+    keys.  This helper rewrites them to safe underscore-based names before
+    ``str.format()`` is called:
+
+    - ``{repo.base-url}``  →  ``{repo_base_url}``
+    - ``{repo.subdir}``    →  ``{repo_subdir}``
+    - ``{repo.ref}``       →  ``{repo_ref}``
+    """
+    return re.sub(
+        r"\{repo\.([^}]+)\}",
+        lambda m: "{repo_" + m.group(1).replace("-", "_") + "}",
+        pattern,
+    )
+
+
 def format_component_pattern(
     filename_pattern: str, config: ComponentConfig, arch_info: ArchInfo
 ) -> str:
-    """
-    Construct component formatter
+    """Construct a resolved URL or path from a ``source-format`` template.
+
+    Supported placeholders:
+
+    - ``{arch}``          - Kubernetes architecture name (e.g. ``amd64``)
+    - ``{release}``       - component release tag (e.g. ``2.1.0``)
+    - ``{ref}``           - git ref override, or empty string
+    - ``{repo.base-url}`` - repository base URL, or ``str(Path.cwd())`` for
+                            local sources
+    - ``{repo.subdir}``   - optional subdirectory within the repo
+    - ``{repo.ref}``      - git ref from repo config, or empty string
 
     Args:
-        filename_pattern: Filename to download
-            supports placeholders {arch}, {release}, {ref}, {repo}
-        config: Component configuration
-        arch_info: Architecture information
+        filename_pattern: The ``source-format`` template string from the manifest.
+        config: Component configuration.
+        arch_info: Architecture information.
 
     Returns:
-        formatted pattern with placeholders replaced
+        The fully-resolved string with all placeholders substituted.
     """
-    repo_value = (
-        str(config.repo.local) if config.repo.is_local else config.repo.base_url
-    )
+    repo_base_url = str(Path.cwd()) if config.repo.is_local else config.repo.base_url
     formatting = {
         "arch": arch_info.k8s,
         "release": config.release,
         "ref": config.repo.ref or "",
-        "repo": repo_value,
+        "repo_base_url": repo_base_url,
+        "repo_subdir": config.repo.subdir or "",
+        "repo_ref": config.repo.ref or "",
     }
-    return filename_pattern.format(**formatting)
+    return _preprocess_pattern(filename_pattern).format(**formatting)
