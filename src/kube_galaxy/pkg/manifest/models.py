@@ -27,11 +27,24 @@ class InstallConfig:
 
 @dataclass
 class RepoInfo:
-    """Repository information for component source code."""
+    """Repository information for component source code.
 
-    base_url: str  # Base URL of the repository (e.g., https://github.com/org/repo)
+    Supports two source modes:
+    - Remote: set ``base_url`` to the repository URL (e.g. https://github.com/org/repo)
+    - Local:  set ``local`` to a Path on the local filesystem
+
+    Use the ``is_local`` property to distinguish between the two modes.
+    """
+
+    base_url: str = ""  # Base URL of the repository (e.g., https://github.com/org/repo)
+    local: Path | None = None  # Local filesystem path (set when source is local)
     subdir: str | None = None  # Optional subdirectory within repo for monorepos
     ref: str | None = None  # Optional git reference (branch/tag/commit), defaults to release
+
+    @property
+    def is_local(self) -> bool:
+        """Return True if this repository source is a local filesystem path."""
+        return self.local is not None
 
 
 @dataclass

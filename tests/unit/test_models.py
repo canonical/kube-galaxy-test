@@ -1,11 +1,14 @@
 """Unit tests for manifest models."""
 
+from pathlib import Path
+
 from kube_galaxy.pkg.manifest.models import (
     ComponentConfig,
     InstallConfig,
     InstallMethod,
     Manifest,
     NetworkConfig,
+    RepoInfo,
 )
 
 
@@ -20,7 +23,7 @@ def test_component_creation():
         name="test-comp",
         category="test",
         release="1.0.0",
-        repo="https://github.com/test/repo",
+        repo=RepoInfo(base_url="https://github.com/test/repo"),
         installation=installation,
         test=True,
     )
@@ -52,7 +55,7 @@ def test_manifest_creation():
             name="test",
             category="test",
             release="1.0.0",
-            repo="https://github.com/test/repo",
+            repo=RepoInfo(base_url="https://github.com/test/repo"),
             installation=installation,
         )
     ]
@@ -85,14 +88,14 @@ def test_manifest_get_component():
         name="comp1",
         category="test",
         release="1.0.0",
-        repo="https://github.com/test/repo1",
+        repo=RepoInfo(base_url="https://github.com/test/repo1"),
         installation=installation,
     )
     comp2 = ComponentConfig(
         name="comp2",
         category="test",
         release="1.0.0",
-        repo="https://github.com/test/repo2",
+        repo=RepoInfo(base_url="https://github.com/test/repo2"),
         installation=installation,
     )
 
@@ -121,3 +124,28 @@ def test_manifest_get_networking():
 
     assert manifest.get_networking("default") == net
     assert manifest.get_networking() == net  # First by default
+
+
+def test_repo_info_remote():
+    """Test RepoInfo for a remote repository."""
+    repo = RepoInfo(base_url="https://github.com/org/repo")
+    assert repo.base_url == "https://github.com/org/repo"
+    assert repo.local is None
+    assert repo.is_local is False
+
+
+def test_repo_info_local_path():
+    """Test RepoInfo for a local filesystem source."""
+    local_path = Path("/some/local/path")
+    repo = RepoInfo(local=local_path)
+    assert repo.local == local_path
+    assert repo.base_url == ""
+    assert repo.is_local is True
+
+
+def test_repo_info_local_with_subdir():
+    """Test RepoInfo local source with subdir."""
+    local_path = Path("/project/components/mycomp")
+    repo = RepoInfo(local=local_path, subdir="sub")
+    assert repo.is_local is True
+    assert repo.subdir == "sub"

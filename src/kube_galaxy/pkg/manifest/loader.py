@@ -55,7 +55,20 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
 
         # Parse repo info
         repo_data = comp_data.get("repo", {})
-        if isinstance(repo_data, dict) and (base_url := repo_data.get("base-url")):
+        comp_name = comp_data.get("name", "")
+        if repo_data == "local":
+            # Shorthand: local path defaults to components/<name> relative to the manifest file
+            repo_info = RepoInfo(local=path.parent / "components" / comp_name)
+        elif isinstance(repo_data, dict) and repo_data.get("local") is not None:
+            local_path = Path(repo_data["local"])
+            if not local_path.is_absolute():
+                local_path = path.parent / local_path
+            repo_info = RepoInfo(
+                local=local_path,
+                subdir=repo_data.get("subdir"),
+                ref=repo_data.get("ref"),
+            )
+        elif isinstance(repo_data, dict) and (base_url := repo_data.get("base-url")):
             repo_info = RepoInfo(
                 base_url=base_url,
                 subdir=repo_data.get("subdir"),
@@ -63,8 +76,8 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
             )
         else:
             raise ValueError(
-                f"Component {comp_data.get('name')}: 'repo' must be an object with 'base-url', "
-                "'subdir', and 'ref' fields"
+                f"Component {comp_name}: 'repo' must be an object with 'base-url' or 'local' "
+                f"field, or the string 'local', got: {repo_data!r}"
             )
 
         component = ComponentConfig(

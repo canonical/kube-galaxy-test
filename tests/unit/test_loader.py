@@ -76,3 +76,114 @@ kubernetes-version: "1.35.0"
     assert manifest.description == ""
     assert len(manifest.components) == 0
     assert len(manifest.networking) == 0
+
+
+def test_load_manifest_local_repo_shorthand(tmp_manifest_dir):
+    """Test that ``repo: local`` shorthand resolves to components/<name> next to the manifest."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: local-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    repo: local
+    installation:
+      method: none
+    test: true
+"""
+    )
+
+    manifest = load_manifest(manifest_file)
+
+    assert len(manifest.components) == 1
+    comp = manifest.components[0]
+    assert comp.repo.is_local is True
+    assert comp.repo.local == tmp_manifest_dir / "components" / "mycomp"
+
+
+def test_load_manifest_local_repo_explicit_path(tmp_manifest_dir):
+    """Test that ``repo: {local: <path>}`` resolves relative to the manifest directory."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: local-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    repo:
+      local: mysources/mycomp
+    installation:
+      method: none
+    test: true
+"""
+    )
+
+    manifest = load_manifest(manifest_file)
+
+    comp = manifest.components[0]
+    assert comp.repo.is_local is True
+    assert comp.repo.local == tmp_manifest_dir / "mysources" / "mycomp"
+
+
+def test_load_manifest_local_repo_absolute_path(tmp_manifest_dir):
+    """Test that an absolute ``repo.local`` path is kept as-is."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: local-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    repo:
+      local: /absolute/path/mycomp
+    installation:
+      method: none
+"""
+    )
+
+    manifest = load_manifest(manifest_file)
+
+    comp = manifest.components[0]
+    assert comp.repo.is_local is True
+    assert comp.repo.local is not None
+    assert comp.repo.local.is_absolute()
+    assert str(comp.repo.local) == "/absolute/path/mycomp"
+
+
+def test_load_manifest_invalid_repo(tmp_manifest_dir):
+    """Test error when repo field is invalid (missing base-url and local)."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: test
+kubernetes-version: "1.35.0"
+components:
+  - name: bad
+    category: test
+    release: "1.0"
+    repo:
+      subdir: something
+    installation:
+      method: none
+"""
+    )
+
+    with pytest.raises(ValueError, match="'repo' must be an object"):
+        load_manifest(manifest_file)
+
+
+def test_load_manifest_remote_repo_not_local(sample_manifest_file):
+    """Test that remote repos have is_local == False."""
+    manifest = load_manifest(sample_manifest_file)
+
+    for comp in manifest.components:
+        assert comp.repo.is_local is False
+        assert comp.repo.local is None
+        assert comp.repo.base_url != ""

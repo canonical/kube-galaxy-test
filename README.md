@@ -140,6 +140,81 @@ kube-galaxy cleanup all
 
 See [ARCHITECTURE](.github/ARCHITECTURE.md)
 
+### Local Component Sources
+
+A component's `repo` field normally points to a remote Git repository.  You can
+also mark a component as **local** so that its test definitions are read
+directly from the local filesystem instead of a remote URL.
+
+#### Shorthand — `repo: local`
+
+```yaml
+- name: mycomp
+  category: example
+  release: "1.2.3"
+  repo: local          # resolves to components/<name>/ next to the manifest file
+  installation:
+    method: none
+  test: true
+```
+
+The shorthand resolves the local path to `<manifest-directory>/components/<name>`.
+
+#### Explicit path — `repo: {local: <path>}`
+
+```yaml
+- name: mycomp
+  category: example
+  release: "1.2.3"
+  repo:
+    local: path/to/mycomp   # relative to the manifest file (or absolute)
+  installation:
+    method: none
+  test: true
+```
+
+Relative paths are resolved relative to the directory containing the manifest
+file.  Absolute paths are used as-is.
+
+#### Local test structure
+
+When `repo` is local the spread test task must exist at
+`<local-path>/spread/kube-galaxy/task.yaml`:
+
+```
+components/
+  mycomp/
+    spread/
+      kube-galaxy/
+        task.yaml   ← spread task definition
+```
+
+Inside `task.yaml` you can reference environment variables set by kube-galaxy:
+
+| Variable            | Description                                   |
+|---------------------|-----------------------------------------------|
+| `COMPONENT_VERSION` | Release tag from the manifest                 |
+| `COMPONENT_NAME`    | Component name                                |
+| `K8S_ARCH`          | Kubernetes architecture (amd64, arm64, …)     |
+| `SYSTEM_ARCH`       | Raw `uname -m` architecture                   |
+| `IMAGE_ARCH`        | Container image architecture tag              |
+| `KUBECONFIG`        | Path to shared kubeconfig                     |
+
+Example `task.yaml`:
+
+```yaml
+summary: My component test
+execute: |
+  wget https://example.com/releases/v${COMPONENT_VERSION}/tool_linux_${K8S_ARCH}.tar.gz -O tool.tar.gz
+  tar -xvf tool.tar.gz
+  ./tool --version
+```
+
+> **Note**: The `{repo}` placeholder in `installation.source-format` resolves
+> to the local path string for local sources, and to the remote `base-url` for
+> remote sources.  For components where the binary is downloaded from a fixed
+> URL, use the full URL directly in `source-format` rather than `{repo}`.
+
 ## 🔧 Component Repositories
 
 Each component repository must contain a `spread.yaml` file that defines:

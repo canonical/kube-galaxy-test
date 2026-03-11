@@ -144,10 +144,13 @@ def format_component_pattern(
     Returns:
         formatted pattern with placeholders replaced
     """
+    repo_value = (
+        str(config.repo.local) if config.repo.is_local else config.repo.base_url
+    )
     formatting = {
         "arch": arch_info.k8s,
         "release": config.release,
         "ref": config.repo.ref or "",
-        "repo": config.repo.base_url,
+        "repo": repo_value,
     }
     return filename_pattern.format(**formatting)

@@ -166,12 +166,12 @@ components:
 
   # Test only component, nothing installed in the cluster
   - name: sonobuoy
-    category: kubernetes/kubernetes
+    category: vmware-tanzu/sonobuoy
     release: "0.57.3"
     repo:
-      base-url: https://github.com/vmware-tanzu/sonobuoy
+      local: ../components/sonobuoy
     installation:
-      source-format: "{repo}/releases/download/v{release}/sonobuoy_{release}_linux_{arch}.tar.gz"
+      method: none
     test: true
 
 networking:
