@@ -17,7 +17,7 @@ from kube_galaxy.pkg.utils.logging import info
 TASK = """
 summary: Sonobuoy CNCF execution
 execute: |
-    wget  {url} -O sonobuoy.tar.gz
+    wget {url} -O sonobuoy.tar.gz
     tar -xvf sonobuoy.tar.gz
     ./sonobuoy delete --kubeconfig=$KUBECONFIG
     ./sonobuoy run --kubeconfig=$KUBECONFIG --mode=quick --wait=$TEST_TIMEOUT_M
