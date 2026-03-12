@@ -158,46 +158,36 @@ The `installation.source-format` field supports the following placeholders:
 ```yaml
 installation:
   method: binary-archive
+  repo:
+    base-url: "https://github.com/org/tool"
   source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/tool-{{ release }}-linux-{{ arch }}.tar.gz"
 ```
 
 ### Local Component Sources
 
-A component's `repo` field normally points to a remote Git repository.  You
-can also mark a component as **local** so that its test definitions are read
-directly from the current working directory rather than a remote URL.
-
-#### Shorthand — `repo: local`
+A component whose test suite lives inside this repository uses `base-url: local`
+in its `test.repo` block.  The `source-format` template resolves to a path
+under the current working directory.
 
 ```yaml
 - name: mycomp
   category: example
   release: "1.2.3"
-  repo: local          # equivalent to repo: {base-url: local}
   installation:
     method: none
-  test: true
-```
-
-#### Object syntax — `repo: {base-url: local}`
-
-```yaml
-- name: mycomp
-  category: example
-  release: "1.2.3"
-  repo:
-    base-url: local
-  installation:
-    method: none
-  test: true
+  test:
+    method: spread
+    repo:
+      base-url: local
+    source-format: "{{ repo.base-url }}/components/{{ name }}"
 ```
 
 When `base-url` is `local`:
 
 - `{{ repo.base-url }}` in `source-format` expands to `str(Path.cwd())`
 - `task_path_for_component` returns `cwd/components/<name>/spread/kube-galaxy/`
-- The component's `install_hook` is expected to copy local test files to the
-  shared tests root so that spread can orchestrate them
+- The `download_hook` automatically copies the resolved local suite to the
+  shared tests root so that spread can discover it
 
 #### Local test structure
 
@@ -237,17 +227,16 @@ execute: |
 #### Adding a local component (the sonobuoy pattern)
 
 1. Create `components/<name>/spread/kube-galaxy/task.yaml`
-2. Add the component to the manifest with `repo: local` and `test: true`
-3. Optionally add a custom Python component class under
-   `src/kube_galaxy/pkg/components/<name>.py` that copies the local suite to
-   the spread tests root in its `install_hook`
+2. Add the component to the manifest with `test.method: spread`,
+   `test.repo.base-url: local`, and a `test.source-format` pointing to the
+   local directory
 
 ## 🔧 Component Repositories
 
 Each component repository must contain a `spread.yaml` file that defines:
 
 1. **Install instructions** (required if component is used)
-2. **Test definitions** (required if `test: true`)
+2. **Test definitions** (required if `test.method: spread`)
 
 ### Example Component spread.yaml
 

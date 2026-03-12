@@ -65,7 +65,7 @@ cluster provisioning, component installation, and test execution.
                │
 ┌──────────────▼──────────────────────────────────────┐
 │ 5. Execute Tests (kube-galaxy test)                │
-│    • Identify components with test: true           │
+│    • Identify components with test.method: spread  │
 │    • Discover spread test tasks                    │
 │    • Execute tests in LXD containers via spread    │
 │    • Collect and report results                    │
@@ -90,13 +90,12 @@ Components that follow standard installation patterns can be defined purely in t
 - name: etcdctl
   category: etcd
   release: "3.5.0"
-  repo:
-    base-url: "https://github.com/etcd-io/etcd"
   installation:
     method: "binary-archive"
+    repo:
+      base-url: "https://github.com/etcd-io/etcd"
     source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/etcd-v{{ release }}-linux-{{ arch }}.tar.gz"
     bin-path: "./etcd-v{{ release }}-linux-{{ arch }}/etcd"
-  test: false
 ```
 
 **`source-format` placeholders**:
@@ -119,19 +118,21 @@ Components that follow standard installation patterns can be defined purely in t
 
 ### Local Components
 
-Components with `base-url: local` (or the shorthand `repo: local`) source
-their test definitions from the current working directory rather than a remote
-URL.  The resolved path is `cwd/components/<name>/spread/kube-galaxy/`.
+Components whose test suite lives inside this repository use `base-url: local`
+in their `test.repo` block.  The `source-format` template resolves to a path
+under the current working directory.
 
 ```yaml
 - name: sonobuoy
   category: vmware-tanzu/sonobuoy
   release: "0.57.3"
-  repo:
-    base-url: local          # shorthand: repo: local
   installation:
     method: none
-  test: true
+  test:
+    method: spread
+    repo:
+      base-url: local
+    source-format: "{{ repo.base-url }}/components/{{ name }}"
 ```
 
 The corresponding task file must exist at:
@@ -144,9 +145,8 @@ components/
         task.yaml
 ```
 
-A local component's `install_hook` is responsible for copying the local task
-files into the shared tests root so that spread can discover them.  See
-`src/kube_galaxy/pkg/components/sonobuoy.py` for the reference implementation.
+The `download_hook` automatically copies the local suite (resolved via
+`source-format`) to the shared tests root so that spread can discover it.
 
 ### Custom Components (Requires Python Class)
 
@@ -240,7 +240,7 @@ The `kube-galaxy` CLI tool (built with Python and Typer) provides commands that 
 
 **Usage**: `kube-galaxy test <manifest-path>`
 
-**Purpose**: Execute spread tests for components marked with `test: true`
+**Purpose**: Execute spread tests for components whose `test.method` is `spread`
 
 **Steps**:
 1. Scan manifest for test-enabled components
@@ -251,28 +251,6 @@ The `kube-galaxy` CLI tool (built with Python and Typer) provides commands that 
 6. Execute spread tests in isolated LXD containers
 7. Collect and aggregate results
 8. Cleanup test namespaces
-
-**Current State**: Tests run from local `tests/` directory
-
-**Future Vision**: Fetch test tasks from component repositories:
-```yaml
-- name: mycomponent
-  repo:
-    base-url: "https://github.com/org/component"  # Component source
-    test-url: "https://github.com/org/component"  # Test source (optional, defaults to base-url)
-  test: true
-```
-
-Expected test structure in component repos:
-```
-component-repo/
-└── spread/
-    └── kube-galaxy/
-        ├── basic/
-        │   └── task.yaml
-        └── advanced/
-            └── task.yaml
-```
 
 **Key Features**:
 - Spread framework integration for reproducible tests
@@ -373,7 +351,7 @@ Manifests are validated for:
    kube-galaxy cleanup all --manifest manifests/my-test.yaml
    ```
 
-3. **Test component with spread tests** (if `test: true`):
+3. **Test component with spread tests** (if `test.method: spread`):
    ```bash
    # Ensure spread and LXD are installed
    go install github.com/snapcore/spread/cmd/spread@latest
@@ -457,10 +435,10 @@ components:
   - name: my-kube-maker
     category: kubernetes/kube-maker
     release: "1.0.0"
-    repo:
-      base-url: "https://github.com/org/my-kube-maker"
     installation:
       method: "binary-archive"
+      repo:
+        base-url: "https://github.com/org/my-kube-maker"
 ```
 
 ### Supporting New Architectures
