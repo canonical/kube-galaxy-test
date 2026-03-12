@@ -56,7 +56,7 @@ tox -e lint,unit
 tox
 ```
 
-> **Note**: There is no `tox -e test` or `tox -e type` environment. Use `tox -e unit` for tests and `tox -e lint` for type checking (mypy runs as part of lint).
+> **Note**: `tox -e test` exists only as a compatibility alias for `tox -e unit`; prefer `tox -e unit` for running tests. There is no separate `tox -e type` environment — use `tox -e lint` for type checking (mypy runs as part of lint).
 
 ## Essential Workflows & Patterns
 
