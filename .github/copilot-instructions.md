@@ -28,6 +28,36 @@ Scalable Kubernetes testing infrastructure that validates custom-built component
 - Direct CLI invocation with no custom action wrappers needed
 - Automatic debug log collection and issue creation on failures
 
+## Development & Testing Commands
+
+These commands mirror the CI workflows in `.github/workflows/` exactly.
+
+**Prerequisites** (one-time):
+```bash
+# Install tox with uv backend (matches CI setup in .github/workflows/*.yml)
+uv tool install tox --with tox-uv
+```
+
+**Available tox environments** (defined in `tox.ini`):
+| Command | What it runs | CI workflow |
+|---|---|---|
+| `tox -e unit` | pytest with coverage (`tests/`) | `.github/workflows/test.yml` |
+| `tox -e lint` | ruff check + mypy --strict | `.github/workflows/lint.yml` |
+| `tox -e format` | ruff format + ruff check --fix (autoformat) | — |
+| `tox -e build` | Build wheel and sdist | — |
+
+**Before committing — always run:**
+```bash
+tox -e lint,unit
+```
+
+**Run all environments:**
+```bash
+tox
+```
+
+> **Note**: There is no `tox -e test` or `tox -e type` environment. Use `tox -e unit` for tests and `tox -e lint` for type checking (mypy runs as part of lint).
+
 ## Essential Workflows & Patterns
 
 ### Manifest Anatomy
@@ -152,7 +182,7 @@ Architecture detection happens at runtime in `pkg/cluster/setup.py`:
 **When Modifying Python Modules**:
 1. Follow existing patterns in `pkg/` modules for business logic
 2. Use `pkg/utils/errors.py` custom exceptions for error handling
-3. Test locally with `tox -e test` before committing
+3. Test locally with `tox -e lint,unit` before committing
 4. Update docstrings and type hints for all functions
 5. Use manifest parsing (`load_manifest()` from loader) instead of hardcoding
 

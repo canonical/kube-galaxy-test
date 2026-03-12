@@ -44,7 +44,7 @@ cd kube-galaxy-test
 pip install tox-uv
 
 # 3. Verify setup works
-tox -e test
+tox -e unit
 ```
 
 ### Before Committing Changes
@@ -52,13 +52,13 @@ tox -e test
 **ALWAYS run these checks before committing:**
 
 ```bash
-# Run all checks (type, lint, test)
-tox -e type,lint,test
+# Run all checks (lint + unit tests)
+tox -e lint,unit
 
 # Or run individually:
-tox -e type    # Type checking with mypy
-tox -e lint    # Linting with ruff
-tox -e test    # Unit tests with pytest
+tox -e lint    # Linting with ruff + type checking with mypy
+tox -e unit    # Unit tests with pytest
+tox -e format  # Auto-format code with ruff
 ```
 
 ### Common Development Tasks
@@ -66,13 +66,13 @@ tox -e test    # Unit tests with pytest
 #### Install Package in Development Mode
 ```bash
 # Let tox handle this
-tox -e test  # Installs package automatically
+tox -e unit  # Installs package automatically
 ```
 
 #### Run Unit Tests
 ```bash
 # All tests
-tox -e test
+tox -e unit
 
 # For quick iteration, you can use pytest directly
 # (but tox is recommended for consistency)
@@ -81,8 +81,8 @@ pytest tests/unit/test_arch.py -v
 
 #### Run Type Checking
 ```bash
-# Type check with mypy
-tox -e type
+# Type check with mypy (runs as part of lint)
+tox -e lint
 ```
 
 #### Run Linter
@@ -100,8 +100,8 @@ tox -e build
 
 When working with this repository:
 
-1. **ALWAYS install tox-uv first**: `pip install tox-uv`
-2. **ALWAYS run checks before committing**: `tox -e type,lint,test`
+1. **Install tox-uv first**: `uv tool install tox --with tox-uv`
+2. **ALWAYS run checks before committing**: `tox -e lint,unit`
 3. **Use tox commands, not direct tool calls**: Prefer `tox -e lint` over `ruff check`
 4. **Follow the type hints**: This project uses strict type checking
 
@@ -138,14 +138,14 @@ pip install tox-uv
 ### "ModuleNotFoundError" when running tests
 ```bash
 # Sync dependencies
-tox -e test
+tox -e unit
 # tox will handle dependencies automatically
 ```
 
 ### Type checking errors
 ```bash
-# Run type checker
-tox -e type
+# Run type checker (mypy runs as part of lint)
+tox -e lint
 ```
 
 ### Linting errors
@@ -168,7 +168,7 @@ Check `.github/workflows/` for workflow definitions.
 
 1. Create a feature branch
 2. Make your changes
-3. **Run `tox -e type,lint,test`** ✅
+3. **Run `tox -e lint,unit`** ✅
 4. Commit with descriptive message
 5. Push and create a pull request
 6. Wait for CI checks to pass
