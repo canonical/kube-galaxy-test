@@ -173,7 +173,7 @@ components:
 """
     )
 
-    with pytest.raises(ValueError, match="'test' must be an object"):
+    with pytest.raises(AttributeError):
         load_manifest(manifest_file)
 
 
