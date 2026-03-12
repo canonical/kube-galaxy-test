@@ -105,7 +105,7 @@ Components that follow standard installation patterns can be defined purely in t
 | `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)     |
 | `{{ release }}`        | Component release tag from the manifest                   |
 | `{{ ref }}`            | Git ref override, or empty string                         |
-| `{{ repo.base-url }}`  | Repository base URL (or `cwd` for local sources)          |
+| `{{ repo.base-url }}`  | Repository base URL, `cwd` for local sources, or artifact name for `gh-artifact` sources |
 | `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty if unset)    |
 | `{{ repo.ref }}`       | Git ref from the `repo` block (empty if unset)            |
 
@@ -115,6 +115,33 @@ Components that follow standard installation patterns can be defined purely in t
 - `container-image`: Pull and register container images
 - `container-image-archive`: Pull and register container images from a tar
 - `none`: Component installs nothing directly into the cluster (e.g. test-only)
+
+### GitHub Actions Artifact Components
+
+Components whose test suite is uploaded as a GitHub Actions artifact in a
+previous workflow step use `base-url: gh-artifact` in their `test.repo` block.
+The `source-format` template resolves to the **artifact name** queried via the
+GitHub Artifacts REST API.
+
+```yaml
+- name: mycomp
+  category: example
+  release: "1.2.3"
+  installation:
+    method: none
+  test:
+    method: spread
+    repo:
+      base-url: gh-artifact
+    source-format: "mycomp-spread-suite"
+```
+
+Requirements:
+- `GITHUB_TOKEN` env var must be set (provided automatically in GHA workflows)
+- `GITHUB_REPOSITORY` env var must be set (provided automatically in GHA workflows)
+- The feature only works inside a GitHub Actions workflow context
+
+The artifact is downloaded as a zip file to the component's temp directory.
 
 ### Local Components
 

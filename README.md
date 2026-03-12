@@ -149,7 +149,7 @@ The `installation.source-format` field supports the following placeholders:
 | `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)           |
 | `{{ release }}`        | Component release tag from the manifest                         |
 | `{{ ref }}`            | Git ref override, or empty string                               |
-| `{{ repo.base-url }}`  | Repository base URL, or `cwd` for local sources                 |
+| `{{ repo.base-url }}`  | Repository base URL, `cwd` for local sources, or artifact name for `gh-artifact` sources |
 | `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty string if unset)   |
 | `{{ repo.ref }}`       | Git ref from the `repo` block (empty string if unset)           |
 
@@ -162,6 +162,39 @@ installation:
     base-url: "https://github.com/org/tool"
   source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/tool-{{ release }}-linux-{{ arch }}.tar.gz"
 ```
+
+### GitHub Actions Artifact Sources
+
+A component whose test suite is uploaded as a GitHub Actions artifact in a
+previous workflow step uses `base-url: gh-artifact` in its `test.repo` block.
+The `source-format` template resolves to the **artifact name** to look up via
+the GitHub REST API.
+
+```yaml
+- name: mycomp
+  category: example
+  release: "1.2.3"
+  installation:
+    method: none
+  test:
+    method: spread
+    repo:
+      base-url: gh-artifact
+    source-format: "mycomp-spread-suite"
+```
+
+When `base-url` is `gh-artifact`:
+
+- `{{ repo.base-url }}` in `source-format` is **not** a URL — the rendered
+  string is the artifact name passed to the GitHub Artifacts REST API
+- The `GITHUB_TOKEN` environment variable must be set (workflows provide this
+  automatically via `${{ secrets.GITHUB_TOKEN }}`)
+- The `GITHUB_REPOSITORY` environment variable must be set (set automatically
+  in GitHub Actions)
+- The artifact is downloaded as a zip file to the component's temp directory;
+  callers are responsible for extracting it as needed
+- The feature only works inside a GitHub Actions workflow (`GITHUB_OUTPUT` must
+  be set). Running locally will raise an error.
 
 ### Local Component Sources
 
@@ -230,6 +263,25 @@ execute: |
 2. Add the component to the manifest with `test.method: spread`,
    `test.repo.base-url: local`, and a `test.source-format` pointing to the
    local directory
+
+#### Adding a gh-artifact component
+
+1. Upload the spread test suite as a GitHub Actions artifact in an earlier
+   workflow step (e.g. `actions/upload-artifact`)
+2. Add the component to the manifest with `test.method: spread`,
+   `test.repo.base-url: gh-artifact`, and a `test.source-format` set to the
+   artifact name (without `{{ repo.base-url }}`):
+
+   ```yaml
+   test:
+     method: spread
+     repo:
+       base-url: gh-artifact
+     source-format: "mycomp-spread-suite"
+   ```
+
+3. Ensure `GITHUB_TOKEN` and `GITHUB_REPOSITORY` are available in the workflow
+   environment (both are set automatically in GitHub Actions)
 
 ## 🔧 Component Repositories
 
