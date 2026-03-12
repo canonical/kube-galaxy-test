@@ -90,7 +90,10 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         )
 
         # Parse test block (mirrors install config; absent / false → method: none)
-        test_data = comp_data.get("test", {})
+        raw_test = comp_data.get("test", {})
+        if not isinstance(raw_test, dict):
+            raw_test = {}
+        test_data = raw_test
         test_config = TestConfig(
             method=TestMethod(test_data.get("method", "none")),
             source_format=test_data.get("source-format", ""),
