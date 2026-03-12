@@ -9,7 +9,7 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     RepoInfo,
 )
-from kube_galaxy.pkg.utils.components import _normalize_template, format_component_pattern
+from kube_galaxy.pkg.utils.components import format_component_pattern
 
 
 class ExampleComponent(ComponentBase):
@@ -27,37 +27,31 @@ def make_config(name: str = "example") -> ComponentConfig:
 
 
 # ---------------------------------------------------------------------------
-# Formatter unit tests (Jinja2 syntax: {{ variable }})
+# Formatter unit tests (Mustache syntax: {{ variable }})
 # ---------------------------------------------------------------------------
 
 
-def test_normalize_template_rewrites_hyphenated_attrs():
-    """_normalize_template converts dot-accessed repo.base-url to repo.base_url inside {{ }}."""
-    pattern = "{{ repo.base-url }}/releases/{{ repo.sub-dir }}/{{ release }}"
-    result = _normalize_template(pattern)
-    assert result == "{{ repo.base_url }}/releases/{{ repo.sub_dir }}/{{ release }}"
+def test_format_component_pattern_hyphenated_key_native(arch_info):
+    """Chevron natively resolves {{ repo.base-url }} via nested dict lookup.
 
-
-def test_normalize_template_passthrough():
-    """_normalize_template leaves templates without dot-accessed hyphenated names unchanged."""
-    pattern = "https://example.com/{{ release }}/{{ arch }}/binary"
-    assert _normalize_template(pattern) == pattern
-
-
-def test_normalize_template_literal_hyphen_unchanged():
-    """_normalize_template does not alter hyphens in literal text outside {{ }}."""
-    pattern = "https://example-host.com/{{ repo.base-url }}/path"
-    result = _normalize_template(pattern)
-    assert result == "https://example-host.com/{{ repo.base_url }}/path"
-
-
-def test_normalize_template_top_level_var_hyphen_unchanged():
-    """_normalize_template does not alter hyphens in top-level (non-dotted) variable names."""
-    # Hypothetical: {{ my-var }} is NOT a dot-access so should be left as-is
-    pattern = "{{ my-var }}/something"
-    result = _normalize_template(pattern)
-    # my-var has no dot access so hyphen is NOT replaced
-    assert result == "{{ my-var }}/something"
+    This is the key advantage over Jinja2: no preprocessing step is needed.
+    Chevron splits on '.' and looks up 'base-url' in the repo dict, which
+    Python happily stores as a hyphenated string key.
+    """
+    install = InstallConfig(
+        method=InstallMethod.BINARY,
+        source_format="{{ repo.base-url }}/path",
+        bin_path="./*",
+    )
+    config = ComponentConfig(
+        name="tool",
+        category="test",
+        release="1.0",
+        repo=RepoInfo(base_url="https://example.com"),
+        installation=install,
+    )
+    result = format_component_pattern(install.source_format, config, arch_info)
+    assert result == "https://example.com/path"
 
 
 def test_format_component_pattern_remote(arch_info):
@@ -65,24 +59,6 @@ def test_format_component_pattern_remote(arch_info):
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/releases/download/v{{ release }}/bin-{{ arch }}",
-        bin_path="./*",
-    )
-    config = ComponentConfig(
-        name="mybin",
-        category="test",
-        release="1.2.3",
-        repo=RepoInfo(base_url="https://github.com/org/mybin"),
-        installation=install,
-    )
-    result = format_component_pattern(install.source_format, config, arch_info)
-    assert result == f"https://github.com/org/mybin/releases/download/v1.2.3/bin-{arch_info.k8s}"
-
-
-def test_format_component_pattern_underscore_alias(arch_info):
-    """format_component_pattern also accepts {{ repo.base_url }} (underscore) as an alias."""
-    install = InstallConfig(
-        method=InstallMethod.BINARY,
-        source_format="{{ repo.base_url }}/releases/download/v{{ release }}/bin-{{ arch }}",
         bin_path="./*",
     )
     config = ComponentConfig(

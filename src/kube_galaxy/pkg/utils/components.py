@@ -3,14 +3,12 @@ Utilities for component installation and management.
 """
 
 import hashlib
-import re
 import shutil
 import tarfile
 import urllib.request
-from dataclasses import dataclass, field
 from pathlib import Path
 
-from jinja2 import Environment
+import chevron  # type: ignore[import-untyped]
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
@@ -132,67 +130,27 @@ def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_
     except Exception as e:
         raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
 
-def _normalize_template(template: str) -> str:
-    """Normalise Jinja2 template expressions that use YAML-style hyphenated names.
-
-    Jinja2 treats ``-`` as arithmetic inside ``{{ ... }}``, so
-    ``{{ repo.base-url }}`` would be parsed as ``repo.base`` minus ``url``.
-    This function rewrites hyphenated dot-accessed attribute names to underscored
-    equivalents *before* Jinja2 sees the template, preserving the YAML naming
-    convention in manifests while keeping the implementation clean:
-
-    - ``repo.base-url``  → ``repo.base_url``
-    - ``repo.sub-dir``   → ``repo.sub_dir``   (future-proofing)
-
-    Only ``object.attr-name`` patterns within ``{{ }}`` blocks are affected;
-    literal text and other template constructs are left unchanged.
-    """
-
-    def _replace_in_expression(m: re.Match[str]) -> str:
-        expr = m.group(1)
-        # Replace hyphens only in dot-accessed attribute names, e.g. .base-url
-        # Pattern: a dot followed by word chars, a hyphen, then more word chars
-        expr = re.sub(r"(\.\w+)-(\w+)", r"\1_\2", expr)
-        return "{{" + expr + "}}"
-
-    return re.sub(r"\{\{([^}]*)\}\}", _replace_in_expression, template)
-
-
-@dataclass
-class _RepoContext:
-    """Context object for Jinja2 template rendering of repo-related placeholders.
-
-    Attributes:
-        base_url: Repository base URL.  For local sources this is the string
-            representation of the current working directory.
-        subdir:   Optional subdirectory within the repo (empty string if unset).
-        ref:      Optional git reference override (empty string if unset).
-    """
-
-    base_url: str
-    subdir: str = field(default="")
-    ref: str = field(default="")
 
 
 def format_component_pattern(
     filename_pattern: str, config: ComponentConfig, arch_info: ArchInfo
 ) -> str:
-    """Construct a resolved URL or path from a Jinja2 ``source-format`` template.
+    """Construct a resolved URL or path from a Mustache ``source-format`` template.
 
-    Templates use standard Jinja2 ``{{ variable }}`` syntax.  Attribute names
-    that contain hyphens (matching YAML naming conventions) are supported and
-    automatically normalised before rendering — e.g. ``{{ repo.base-url }}``
-    is equivalent to ``{{ repo.base_url }}``.
+    Templates use Mustache ``{{ variable }}`` syntax rendered via the
+    ``chevron`` library.  Chevron performs nested dict lookups using ``dot``
+    notation, so ``{{ repo.base-url }}`` naturally resolves the ``"base-url"``
+    key inside the ``repo`` context dict — no preprocessing is required.
 
     Supported template variables:
 
-    - ``{{ arch }}``            - Kubernetes architecture name (e.g. ``amd64``)
-    - ``{{ release }}``         - component release tag (e.g. ``2.1.0``)
-    - ``{{ ref }}``             - git ref override, or empty string
-    - ``{{ repo.base-url }}``   - repository base URL, or ``str(Path.cwd())`` for
-                                  local sources (``{{ repo.base_url }}`` also works)
-    - ``{{ repo.subdir }}``     - optional subdirectory within the repo
-    - ``{{ repo.ref }}``        - git ref from repo config, or empty string
+    - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
+    - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
+    - ``{{ ref }}``            - git ref override, or empty string
+    - ``{{ repo.base-url }}``  - repository base URL, or ``str(Path.cwd())`` for
+                                 local sources
+    - ``{{ repo.subdir }}``    - optional subdirectory within the repo
+    - ``{{ repo.ref }}``       - git ref from repo config, or empty string
 
     Args:
         filename_pattern: The ``source-format`` template string from the manifest.
@@ -202,16 +160,14 @@ def format_component_pattern(
     Returns:
         The fully-resolved string with all placeholders substituted.
     """
-    env = Environment(autoescape=False)
-    template = env.from_string(_normalize_template(filename_pattern))
-    repo = _RepoContext(
-        base_url=str(Path.cwd()) if config.repo.is_local else config.repo.base_url,
-        subdir=config.repo.subdir or "",
-        ref=config.repo.ref or "",
-    )
-    return template.render(
-        arch=arch_info.k8s,
-        release=config.release,
-        ref=config.repo.ref or "",
-        repo=repo,
-    )
+    data = {
+        "arch": arch_info.k8s,
+        "release": config.release,
+        "ref": config.repo.ref or "",
+        "repo": {
+            "base-url": str(Path.cwd()) if config.repo.is_local else config.repo.base_url,
+            "subdir": config.repo.subdir or "",
+            "ref": config.repo.ref or "",
+        },
+    }
+    return str(chevron.render(filename_pattern, data))

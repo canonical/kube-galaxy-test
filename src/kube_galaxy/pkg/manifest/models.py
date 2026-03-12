@@ -36,8 +36,8 @@ class RepoInfo:
 
     Use the ``is_local`` property to distinguish between the two modes.
     When local, the working directory is used as the root for resolving
-    paths (e.g. ``{{ repo.base-url }}`` in a ``source-format`` template
-    expands to ``str(Path.cwd())``).
+    paths (e.g. ``{{ repo.base-url }}`` in a ``source-format`` Mustache
+    template expands to ``str(Path.cwd())``).
     """
 
     base_url: str = ""  # Repository URL, or the sentinel value "local"

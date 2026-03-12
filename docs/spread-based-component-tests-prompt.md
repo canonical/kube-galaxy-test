@@ -76,11 +76,10 @@ The `installation.source-format` field supports the following placeholders:
 | `{{ repo.subdir }}`   | Optional subdirectory within the repo (empty if unset)    |
 | `{{ repo.ref }}`      | Git ref from the `repo` block (empty if unset)            |
 
-**Implementation note**: Source-format templates are rendered using **Jinja2**.
-Template variables use `{{ variable }}` syntax.  Hyphenated attribute names like
-`{{ repo.base-url }}` are automatically normalised before rendering (hyphens
-within expressions are converted to underscores), matching the YAML naming
-convention in manifests.
+**Implementation note**: Source-format templates are rendered using **Mustache**
+(via the `chevron` library).  Chevron performs nested dict lookups using dot
+notation, so `{{ repo.base-url }}` naturally resolves the `base-url` key inside
+the `repo` context — no preprocessing required.
 
 ---
 
@@ -166,7 +165,7 @@ execute: |
    [pkg/components/sonobuoy.py](src/kube_galaxy/pkg/components/sonobuoy.py)
    for the reference implementation
 
-   - No need for Jinja2 - use Python's `string.Template` for substitution
+   - Use `{{ variable }}` Mustache syntax (rendered by `chevron`) for `source-format` values
 
 4. **Generate kube-galaxy orchestration spread.yaml** in
    [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py)
