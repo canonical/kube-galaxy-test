@@ -142,14 +142,20 @@ def format_component_pattern(
     notation, so ``{{ repo.base-url }}`` naturally resolves the ``"base-url"``
     key inside the ``repo`` context dict — no preprocessing is required.
 
+    ``repo.subdir`` is itself rendered as a Mustache template with ``name`` in
+    context before being placed into the data dict, so it may contain
+    ``{{ name }}`` to derive the subdirectory from the component name.
+
     Supported template variables:
 
+    - ``{{ name }}``           - component name (e.g. ``sonobuoy``)
     - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
     - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
     - ``{{ ref }}``            - git ref override, or empty string
     - ``{{ repo.base-url }}``  - repository base URL, or ``str(Path.cwd())`` for
                                  local sources
-    - ``{{ repo.subdir }}``    - optional subdirectory within the repo
+    - ``{{ repo.subdir }}``    - optional subdirectory within the repo (may
+                                 itself contain ``{{ name }}``)
     - ``{{ repo.ref }}``       - git ref from repo config, or empty string
 
     Args:
@@ -160,13 +166,19 @@ def format_component_pattern(
     Returns:
         The fully-resolved string with all placeholders substituted.
     """
+    # Pre-render repo.subdir so {{ name }} within it is expanded first.
+    # Fall back to empty string when subdir is None to avoid passing None to chevron.render.
+    raw_subdir = config.repo.subdir or ""
+    subdir = str(chevron.render(raw_subdir, {"name": config.name}))
+
     data = {
+        "name": config.name,
         "arch": arch_info.k8s,
         "release": config.release,
         "ref": config.repo.ref or "",
         "repo": {
             "base-url": str(Path.cwd()) if config.repo.is_local else config.repo.base_url,
-            "subdir": config.repo.subdir or "",
+            "subdir": subdir,
             "ref": config.repo.ref or "",
         },
     }

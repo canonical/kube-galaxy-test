@@ -132,6 +132,99 @@ def test_format_component_pattern_empty_subdir_and_ref(arch_info):
     assert result == "https://github.com/org/repo//"
 
 
+def test_format_component_pattern_name_variable(arch_info):
+    """format_component_pattern supports {{ name }} as the component name."""
+    install = InstallConfig(
+        method=InstallMethod.BINARY,
+        source_format="{{ repo.base-url }}/components/{{ name }}/bin",
+        bin_path="./*",
+    )
+    config = ComponentConfig(
+        name="mytool",
+        category="test",
+        release="1.0",
+        repo=RepoInfo(base_url="https://example.com"),
+        installation=install,
+    )
+    result = format_component_pattern(install.source_format, config, arch_info)
+    assert result == "https://example.com/components/mytool/bin"
+
+
+def test_format_component_pattern_prerender_name_in_subdir(arch_info, tmp_path, monkeypatch):
+    """{{ name }} in repo.subdir is expanded before the subdir is used in the template."""
+    monkeypatch.chdir(tmp_path)
+    install = InstallConfig(
+        method=InstallMethod.NONE,
+        source_format="{{ repo.base-url }}/{{ repo.subdir }}",
+        bin_path="./*",
+    )
+    config = ComponentConfig(
+        name="sonobuoy",
+        category="test",
+        release="0.57.3",
+        repo=RepoInfo(base_url="local", subdir="components/{{ name }}"),
+        installation=install,
+    )
+    result = format_component_pattern(install.source_format, config, arch_info)
+    assert result == f"{tmp_path}/components/sonobuoy"
+
+
+def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):
+    """{{ name }} in repo.subdir is also expanded for remote (non-local) sources."""
+    install = InstallConfig(
+        method=InstallMethod.BINARY,
+        source_format="{{ repo.base-url }}/{{ repo.subdir }}/release-{{ release }}",
+        bin_path="./*",
+    )
+    config = ComponentConfig(
+        name="mytool",
+        category="test",
+        release="3.0",
+        repo=RepoInfo(base_url="https://example.com", subdir="tools/{{ name }}"),
+        installation=install,
+    )
+    result = format_component_pattern(install.source_format, config, arch_info)
+    assert result == "https://example.com/tools/mytool/release-3.0"
+
+
+def test_download_tasks_from_config_uses_source_format(
+    monkeypatch, tmp_path, arch_info
+) -> None:
+    """download_tasks_from_config copies from the path resolved by source-format."""
+    monkeypatch.chdir(tmp_path)
+
+    # Create the local test suite at the path that source-format will resolve to
+    suite_src = tmp_path / "components" / "sonobuoy"
+    suite_src.mkdir(parents=True)
+    (suite_src / "spread.yaml").write_text("suites: {}")
+
+    install = InstallConfig(
+        method=InstallMethod.NONE,
+        source_format="{{ repo.base-url }}/{{ repo.subdir }}",
+        bin_path="./*",
+    )
+    config = ComponentConfig(
+        name="sonobuoy",
+        category="test",
+        release="0.57.3",
+        repo=RepoInfo(base_url="local", subdir="components/{{ name }}"),
+        installation=install,
+    )
+
+    tests_root = tmp_path / "tests_root"
+    tests_root.mkdir()
+    monkeypatch.setattr(SystemPaths, "tests_root", classmethod(lambda cls: tests_root))
+
+    comp = ExampleComponent(
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), config, arch_info
+    )
+    comp.download_tasks_from_config("amd64")
+
+    dest = tests_root / "sonobuoy"
+    assert dest.exists()
+    assert (dest / "spread.yaml").read_text() == "suites: {}"
+
+
 def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
     comp = ExampleComponent(
         {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info

@@ -69,17 +69,20 @@ The `installation.source-format` field supports the following placeholders:
 
 | Placeholder           | Resolves to                                                |
 |-----------------------|------------------------------------------------------------|
+| `{{ name }}`          | Component name from the manifest                          |
 | `{{ arch }}`          | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, ...)   |
 | `{{ release }}`       | Component release tag from the manifest                   |
 | `{{ ref }}`           | Git ref override, or empty string                         |
 | `{{ repo.base-url }}` | Repository base URL, or `str(cwd)` for local sources      |
-| `{{ repo.subdir }}`   | Optional subdirectory within the repo (empty if unset)    |
+| `{{ repo.subdir }}`   | Optional subdirectory within the repo (empty if unset); `{{ name }}` within the `subdir` YAML field is also expanded |
 | `{{ repo.ref }}`      | Git ref from the `repo` block (empty if unset)            |
 
 **Implementation note**: Source-format templates are rendered using **Mustache**
 (via the `chevron` library).  Chevron performs nested dict lookups using dot
 notation, so `{{ repo.base-url }}` naturally resolves the `base-url` key inside
-the `repo` context — no preprocessing required.
+the `repo` context — no preprocessing required.  The `repo.subdir` value is
+itself pre-rendered with `{{ name }}` in scope, so you can write
+`subdir: "components/{{ name }}"` and the component name will be substituted.
 
 ---
 

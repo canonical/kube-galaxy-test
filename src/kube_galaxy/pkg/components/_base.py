@@ -520,15 +520,16 @@ class ComponentBase:
         """Download or copy the spread test suite for this component to the tests root.
 
         For **local** sources (``base-url: local``), the test suite is already
-        present in the repository at
-        ``cwd/components/<name>/spread/kube-galaxy/``.  This method copies it
-        to the shared tests root so that the spread orchestrator can discover it
-        alongside remotely-sourced test suites.
+        present in the repository.  The ``source-format`` field in the
+        installation config is rendered via :func:`format_component_pattern` to
+        produce the source path, which is then copied to the shared tests root so
+        that the spread orchestrator can discover it alongside remotely-sourced
+        test suites.
 
         For **remote** sources, the test suite must be cloned from the component
-        repo.  The base implementation logs a placeholder message; subclasses or
-        future additions can override or extend this method to perform the actual
-        clone via GitPython.
+        repo.  The base implementation raises :class:`NotImplementedError`;
+        subclasses or future additions can override this method to perform the
+        actual clone via GitPython.
 
         Args:
             arch: Architecture string (currently unused; reserved for future use).
@@ -540,8 +541,12 @@ class ComponentBase:
         dest = SystemPaths.tests_root() / comp_name
 
         if self.config.repo.is_local:
-            # Local source: copy cwd/components/<name>/ to tests_root/<name>/
-            local_suite = Path.cwd() / "components" / comp_name
+            # Local source: resolve path via source-format template and copy to tests_root.
+            local_suite = Path(
+                format_component_pattern(
+                    self.config.installation.source_format, self.config, self.arch_info
+                )
+            )
             if not local_suite.exists():
                 raise ComponentError(
                     f"Local test suite not found for '{comp_name}': {local_suite}"
