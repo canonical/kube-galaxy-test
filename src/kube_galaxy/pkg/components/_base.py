@@ -181,9 +181,9 @@ class ComponentBase:
                     f"{self.config.installation.method}"
                 )
         match self.config.test:
-            case test_cfg if test_cfg and test_cfg.method == TestMethod.SPREAD:
+            case test_cfg if test_cfg.method == TestMethod.SPREAD:
                 info(f"Downloading test artifacts for {comp_name}")
-                self.download_tasks_from_config(arch)
+                self.download_tasks_from_config()
 
     def pre_install_hook(self) -> None:
         """
@@ -518,7 +518,7 @@ class ComponentBase:
         else:
             raise ComponentError(f"Unsupported archive format for {file_path.name}")
 
-    def download_tasks_from_config(self, arch: str) -> None:
+    def download_tasks_from_config(self) -> None:
         """Download or copy the spread test suite for this component to the tests root.
 
         For **local** sources (``base-url: local``), the test suite is already
@@ -532,9 +532,6 @@ class ComponentBase:
         repo.  The base implementation raises :class:`NotImplementedError`;
         subclasses or future additions can override this method to perform the
         actual clone via GitPython.
-
-        Args:
-            arch: Architecture string (currently unused; reserved for future use).
         """
         if not self.config:
             raise ComponentError("Component config required for download")

@@ -233,7 +233,7 @@ def test_download_tasks_from_config_uses_source_format(
     comp = ExampleComponent(
         {}, Manifest(name="m", description="d", kubernetes_version="1.0"), config, arch_info
     )
-    comp.download_tasks_from_config("amd64")
+    comp.download_tasks_from_config()
 
     dest = tests_root / "sonobuoy"
     assert dest.exists()
