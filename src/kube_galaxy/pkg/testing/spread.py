@@ -330,7 +330,7 @@ def _run_component_tests(
     ):
         section(f"Testing Component [{i}/{len(spread_components)}]: {component.name}")
         info(f"  Release: {component.release}")
-        info(f"  Repo: {component.test.repo.base_url if component.test else ''}")
+        info(f"  Repo: {component.test.repo.base_url}")
 
         # Component-specific directories
         log_dir = work_dir / "logs" / component.name

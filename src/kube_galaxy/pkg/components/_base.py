@@ -181,7 +181,7 @@ class ComponentBase:
                     f"{self.config.installation.method}"
                 )
         match self.config.test:
-            case test_cfg if test_cfg is not None and test_cfg.method == TestMethod.SPREAD:
+            case test_cfg if test_cfg and test_cfg.method == TestMethod.SPREAD:
                 info(f"Downloading test artifacts for {comp_name}")
                 self.download_tasks_from_config(arch)
 
@@ -540,7 +540,7 @@ class ComponentBase:
             raise ComponentError("Component config required for download")
 
         test_cfg = self.config.test
-        if test_cfg is None or test_cfg.method != TestMethod.SPREAD:
+        if test_cfg.method != TestMethod.SPREAD:
             raise ComponentError(
                 f"download_tasks_from_config called for component "
                 f"'{self.config.name}' which has no spread test configuration"

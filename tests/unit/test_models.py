@@ -41,7 +41,7 @@ def test_component_creation():
 
 
 def test_component_no_test():
-    """Test component config with no test config."""
+    """Test component config with no test config defaults to method=none."""
     installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/binary.tar.gz",
@@ -53,7 +53,7 @@ def test_component_no_test():
         release="1.0.0",
         installation=installation,
     )
-    assert config.test is None
+    assert config.test.method == TestMethod.NONE
 
 
 def test_network_config_creation():

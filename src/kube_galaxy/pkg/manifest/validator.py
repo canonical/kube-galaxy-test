@@ -52,8 +52,8 @@ def validate_component_test_structure(component: ComponentConfig) -> list[str]:
     """
     errors: list[str] = []
 
-    if component.test is None:
-        return errors  # No validation needed for components without tests
+    if component.test.method != TestMethod.SPREAD:
+        return errors  # No validation needed for components without spread tests
 
     # Validate task yaml is valid YAML and has required fields (name, execute)
     task_path = task_path_for_component(component) / "task.yaml"
@@ -87,7 +87,7 @@ def get_components_with_spread(manifest: Manifest) -> list[ComponentConfig]:
     """
 
     def has_spread_test(comp: ComponentConfig) -> bool:
-        if comp.test is None or comp.test.method != TestMethod.SPREAD:
+        if comp.test.method != TestMethod.SPREAD:
             return False
         path_to_tasks = task_path_for_component(comp)
         return path_to_tasks.exists() and any(path_to_tasks.glob("task.yaml"))

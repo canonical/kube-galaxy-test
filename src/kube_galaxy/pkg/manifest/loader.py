@@ -89,20 +89,19 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
             repo=_parse_repo(install_data.get("repo"), comp_name),
         )
 
-        # Parse test block — None when absent or explicitly false
-        test_config: TestConfig | None = None
-        test_data = comp_data.get("test")
-        if isinstance(test_data, dict):
-            test_config = TestConfig(
-                method=TestMethod(test_data.get("method", TestMethod.SPREAD)),
-                source_format=test_data.get("source-format", ""),
-                repo=_parse_repo(test_data.get("repo"), comp_name),
-            )
-        elif test_data not in (None, False):
+        # Parse test block (mirrors install config; absent / false → method: none)
+        raw_test = comp_data.get("test")
+        if isinstance(raw_test, bool) and raw_test:
             raise ValueError(
                 f"Component {comp_name}: 'test' must be an object with 'method' field "
-                f"or be absent, got: {test_data!r}"
+                f"or be absent, got: {raw_test!r}"
             )
+        test_data = raw_test if isinstance(raw_test, dict) else {}
+        test_config = TestConfig(
+            method=TestMethod(test_data.get("method", "none")),
+            source_format=test_data.get("source-format", ""),
+            repo=_parse_repo(test_data.get("repo"), comp_name),
+        )
 
         component = ComponentConfig(
             name=comp_data["name"],

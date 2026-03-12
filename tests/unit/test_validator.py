@@ -76,7 +76,6 @@ execute: |
 
     assert len(spread_components) == 1
     assert spread_components[0].name == "coredns"
-    assert spread_components[0].test is not None
     assert spread_components[0].test.method == TestMethod.SPREAD
 
 

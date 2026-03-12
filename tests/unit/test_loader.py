@@ -22,9 +22,8 @@ def test_load_manifest_components(sample_manifest_file):
 
     assert len(manifest.components) == 2
     assert manifest.components[0].name == "containerd"
-    assert manifest.components[0].test is None
+    assert manifest.components[0].test.method == TestMethod.NONE
     assert manifest.components[1].name == "coredns"
-    assert manifest.components[1].test is not None
     assert manifest.components[1].test.method == TestMethod.SPREAD
 
 
@@ -105,7 +104,6 @@ components:
 
     assert len(manifest.components) == 1
     comp = manifest.components[0]
-    assert comp.test is not None
     assert comp.test.repo.is_local is True
     assert comp.test.repo.base_url == "local"
     assert comp.test.source_format == "{{ repo.base-url }}/components/{{ name }}"

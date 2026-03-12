@@ -19,6 +19,7 @@ class InstallMethod(StrEnum):
 class TestMethod(StrEnum):
     """Test execution method for components."""
 
+    NONE = "none"  # No tests for this component
     SPREAD = "spread"  # Spread test suite
 
 
@@ -81,7 +82,9 @@ class ComponentConfig:
     category: str
     release: str
     installation: InstallConfig
-    test: TestConfig | None = None  # None means no tests for this component
+    test: TestConfig = field(
+        default_factory=lambda: TestConfig(method=TestMethod.NONE, source_format="")
+    )  # Defaults to no-test config; set method=spread to enable spread tests
 
     # Component lifecycle configuration
     dependencies: list[str] = field(default_factory=list)  # Must install after these components
