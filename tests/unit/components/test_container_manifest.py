@@ -29,8 +29,7 @@ def calico_config():
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
         source_format=(
-            "raw.githubusercontent.com/projectcalico/calico"
-            "/v{{ release }}/manifests/calico.yaml"
+            "raw.githubusercontent.com/projectcalico/calico/v{{ release }}/manifests/calico.yaml"
         ),
         bin_path="./*",
         repo=repo,
@@ -141,9 +140,7 @@ def test_download_hook_adds_https_prefix(manifest, arch_info, monkeypatch, tmp_p
         bin_path="./*",
         repo=repo,
     )
-    config = ComponentConfig(
-        name="test", category="test", release="1.0", installation=install
-    )
+    config = ComponentConfig(name="test", category="test", release="1.0", installation=install)
 
     monkeypatch.setattr(
         SystemPaths,

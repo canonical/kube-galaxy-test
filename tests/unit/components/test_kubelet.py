@@ -35,9 +35,7 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
         bin_path="./*",
         repo=repo,
     )
-    config = ComponentConfig(
-        name="kubelet", category="k8s", release="v1", installation=install
-    )
+    config = ComponentConfig(name="kubelet", category="k8s", release="v1", installation=install)
 
     comp = Kubelet({}, manifest, config, arch_info)
     # set an install path so replace works

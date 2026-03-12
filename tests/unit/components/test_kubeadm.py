@@ -36,9 +36,7 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
         bin_path="./*",
         repo=repo,
     )
-    config = ComponentConfig(
-        name="kubeadm", category="k8s", release="v1", installation=install
-    )
+    config = ComponentConfig(name="kubeadm", category="k8s", release="v1", installation=install)
 
     comp = Kubeadm({}, manifest, config, arch_info)
 

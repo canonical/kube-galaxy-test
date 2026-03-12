@@ -126,7 +126,9 @@ class ComponentBase:
         """
 
         return format_component_pattern(
-            self.config.installation.bin_path, self.config, self.arch_info,
+            self.config.installation.bin_path,
+            self.config,
+            self.arch_info,
             self.config.installation.repo,
         )
 
@@ -160,19 +162,18 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for download")
 
-        arch = self.arch_info.k8s
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY:
                 self.binary_path = self.download_filename_from_config()
             case InstallMethod.BINARY_ARCHIVE:
-                self.download_and_extract_archive(arch)
+                self.download_and_extract_archive()
             case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
-                self.download_image_archive(arch)
+                self.download_image_archive()
             case InstallMethod.CONTAINER_IMAGE:
-                self.container_format_repo_and_tag(arch)
+                self.container_format_repo_and_tag()
             case InstallMethod.CONTAINER_MANIFEST:
-                self.manifest_path = self.download_manifest_from_config(arch)
+                self.manifest_path = self.download_manifest_from_config()
             case InstallMethod.NONE:
                 pass
             case _:
@@ -180,10 +181,16 @@ class ComponentBase:
                     f"Unsupported installation method for {comp_name}: "
                     f"{self.config.installation.method}"
                 )
-        match self.config.test:
-            case test_cfg if test_cfg.method == TestMethod.SPREAD:
+        match self.config.test.method:
+            case TestMethod.SPREAD:
                 info(f"Downloading test artifacts for {comp_name}")
                 self.download_tasks_from_config()
+            case InstallMethod.NONE:
+                pass
+            case _:
+                raise ComponentError(
+                    f"Unsupported test method for {comp_name}: {self.config.test.method}"
+                )
 
     def pre_install_hook(self) -> None:
         """
@@ -455,7 +462,9 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         url = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info,
+            self.config.installation.source_format,
+            self.config,
+            self.arch_info,
             self.config.installation.repo,
         )
         filename = url.split("/")[-1]
@@ -467,7 +476,7 @@ class ComponentBase:
 
         return filepath
 
-    def download_and_extract_archive(self, arch: str) -> Path:
+    def download_and_extract_archive(self) -> Path:
         """
         Download and extract archive from config.
 
@@ -490,7 +499,7 @@ class ComponentBase:
 
         return self.extracted_dir
 
-    def download_image_archive(self, arch: str) -> None:
+    def download_image_archive(self) -> None:
         """
         Download container image archive for this component.
 
@@ -554,9 +563,7 @@ class ComponentBase:
                 )
             )
             if not local_suite.exists():
-                raise ComponentError(
-                    f"Local test suite not found for '{comp_name}': {local_suite}"
-                )
+                raise ComponentError(f"Local test suite not found for '{comp_name}': {local_suite}")
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(local_suite, dest)
@@ -572,12 +579,9 @@ class ComponentBase:
                 f"or manually place a task.yaml at {dest}/spread/kube-galaxy/task.yaml."
             )
 
-    def download_manifest_from_config(self, arch: str) -> Path:
+    def download_manifest_from_config(self) -> Path:
         """
         Download Kubernetes manifest using component config source_format.
-
-        Args:
-            arch: Architecture string for URL template
 
         Returns:
             Path to downloaded manifest file
@@ -590,7 +594,9 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         url = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info,
+            self.config.installation.source_format,
+            self.config,
+            self.arch_info,
             self.config.installation.repo,
         )
 
@@ -627,13 +633,11 @@ class ComponentBase:
         self.install_path = install_binary(binary_path, name, self.name)
         return self.install_path
 
-    def container_format_repo_and_tag(self, arch: str) -> None:
+    def container_format_repo_and_tag(self) -> None:
         """
         Format container image repository and tag from config.
 
         Sets self.image_repository and self.image_tag based on config values.
-        Args:
-            arch: Architecture string (e.g., 'amd64')
 
         Returns:
             Path to extraction directory
@@ -647,7 +651,9 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         full = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info,
+            self.config.installation.source_format,
+            self.config,
+            self.arch_info,
             self.config.installation.repo,
         )
         split = full.rsplit(":", 1)

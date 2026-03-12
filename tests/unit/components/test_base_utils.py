@@ -197,9 +197,7 @@ def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):
     assert result == "https://example.com/tools/mytool/release-3.0"
 
 
-def test_download_tasks_from_config_uses_source_format(
-    monkeypatch, tmp_path, arch_info
-) -> None:
+def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, arch_info) -> None:
     """download_tasks_from_config copies from the path resolved by test.source-format."""
     monkeypatch.chdir(tmp_path)
 
@@ -341,7 +339,7 @@ def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path, arch_
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
 
-    dest = comp.download_and_extract_archive("amd64")
+    dest = comp.download_and_extract_archive()
     assert any(e[0] == "extract" for e in events)
     assert (dest / "foo").exists()
 

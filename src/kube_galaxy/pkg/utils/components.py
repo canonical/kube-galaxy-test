@@ -131,7 +131,6 @@ def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_
         raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
 
 
-
 def format_component_pattern(
     filename_pattern: str,
     config: ComponentConfig,
