@@ -17,7 +17,7 @@ import yaml
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
-from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest, TestMethod
 from kube_galaxy.pkg.utils.client import apply_manifest
 from kube_galaxy.pkg.utils.components import (
     download_file,
@@ -126,7 +126,10 @@ class ComponentBase:
         """
 
         return format_component_pattern(
-            self.config.installation.bin_path, self.config, self.arch_info
+            self.config.installation.bin_path,
+            self.config,
+            self.arch_info,
+            self.config.installation.repo,
         )
 
     def get_cluster_manager(self) -> "ClusterComponentBase":
@@ -159,19 +162,18 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for download")
 
-        arch = self.arch_info.k8s
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY:
                 self.binary_path = self.download_filename_from_config()
             case InstallMethod.BINARY_ARCHIVE:
-                self.download_and_extract_archive(arch)
+                self.download_and_extract_archive()
             case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
-                self.download_image_archive(arch)
+                self.download_image_archive()
             case InstallMethod.CONTAINER_IMAGE:
-                self.container_format_repo_and_tag(arch)
+                self.container_format_repo_and_tag()
             case InstallMethod.CONTAINER_MANIFEST:
-                self.manifest_path = self.download_manifest_from_config(arch)
+                self.manifest_path = self.download_manifest_from_config()
             case InstallMethod.NONE:
                 pass
             case _:
@@ -179,10 +181,16 @@ class ComponentBase:
                     f"Unsupported installation method for {comp_name}: "
                     f"{self.config.installation.method}"
                 )
-        match self.config.test:
-            case True:
-                info(f"Downloaded test artifacts for {comp_name}")
-                self.download_tasks_from_config(arch)
+        match self.config.test.method:
+            case TestMethod.SPREAD:
+                info(f"Downloading test artifacts for {comp_name}")
+                self.download_tasks_from_config()
+            case TestMethod.NONE:
+                pass
+            case _:
+                raise ComponentError(
+                    f"Unsupported test method for {comp_name}: {self.config.test.method}"
+                )
 
     def pre_install_hook(self) -> None:
         """
@@ -454,7 +462,10 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         url = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info
+            self.config.installation.source_format,
+            self.config,
+            self.arch_info,
+            self.config.installation.repo,
         )
         filename = url.split("/")[-1]
 
@@ -465,7 +476,7 @@ class ComponentBase:
 
         return filepath
 
-    def download_and_extract_archive(self, arch: str) -> Path:
+    def download_and_extract_archive(self) -> Path:
         """
         Download and extract archive from config.
 
@@ -488,7 +499,7 @@ class ComponentBase:
 
         return self.extracted_dir
 
-    def download_image_archive(self, arch: str) -> None:
+    def download_image_archive(self) -> None:
         """
         Download container image archive for this component.
 
@@ -516,23 +527,61 @@ class ComponentBase:
         else:
             raise ComponentError(f"Unsupported archive format for {file_path.name}")
 
-    def download_tasks_from_config(self, arch: str) -> None:
-        """
-        Download test suite definition for this component.
+    def download_tasks_from_config(self) -> None:
+        """Download or copy the spread test suite for this component to the tests root.
 
-        This is a placeholder for downloading test suite definitions, which may involve
-        fetching task.yaml files or similar artifacts based on the component configuration.
-        """
-        # For example, we could download a task.yaml file using the same source_format logic
-        # and place it in the appropriate tests directory for this component.
-        pass
+        For **local** sources (``base-url: local``), the test suite is already
+        present in the repository.  The ``source-format`` field in the test
+        config is rendered via :func:`format_component_pattern` to produce the
+        source path, which is then copied to the shared tests root so that the
+        spread orchestrator can discover it alongside remotely-sourced test
+        suites.
 
-    def download_manifest_from_config(self, arch: str) -> Path:
+        For **remote** sources, the test suite must be cloned from the component
+        repo.  The base implementation raises :class:`NotImplementedError`;
+        subclasses or future additions can override this method to perform the
+        actual clone via GitPython.
+        """
+        if not self.config:
+            raise ComponentError("Component config required for download")
+
+        test_cfg = self.config.test
+        if test_cfg.method != TestMethod.SPREAD:
+            raise ComponentError(
+                f"download_tasks_from_config called for component "
+                f"'{self.config.name}' which has no spread test configuration"
+            )
+
+        comp_name = self.config.name
+        dest = SystemPaths.tests_root() / comp_name
+
+        if test_cfg.repo.is_local:
+            # Local source: resolve path via source-format template and copy to tests_root.
+            local_suite = Path(
+                format_component_pattern(
+                    test_cfg.source_format, self.config, self.arch_info, test_cfg.repo
+                )
+            )
+            if not local_suite.exists():
+                raise ComponentError(f"Local test suite not found for '{comp_name}': {local_suite}")
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(local_suite, dest)
+            info(f"Copied local test suite for '{comp_name}' to {dest}")
+        else:
+            # Remote source: clone repo at release tag into tests root.
+            # Full implementation should use GitPython to clone and checkout the
+            # component repo at component.release, placing spread/ tasks at
+            # tests_root/<name>/spread/kube-galaxy/.
+            raise NotImplementedError(
+                f"Remote test suite download is not yet implemented for '{comp_name}'. "
+                f"Use 'base-url: local' in the test block to ship test tasks inside this repo, "
+                f"or manually place a task.yaml at {dest}/spread/kube-galaxy/task.yaml."
+            )
+
+    def download_manifest_from_config(self) -> Path:
         """
         Download Kubernetes manifest using component config source_format.
-
-        Args:
-            arch: Architecture string for URL template
 
         Returns:
             Path to downloaded manifest file
@@ -545,7 +594,10 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         url = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info
+            self.config.installation.source_format,
+            self.config,
+            self.arch_info,
+            self.config.installation.repo,
         )
 
         # Ensure https:// prefix for URLs like raw.githubusercontent.com
@@ -581,13 +633,11 @@ class ComponentBase:
         self.install_path = install_binary(binary_path, name, self.name)
         return self.install_path
 
-    def container_format_repo_and_tag(self, arch: str) -> None:
+    def container_format_repo_and_tag(self) -> None:
         """
         Format container image repository and tag from config.
 
         Sets self.image_repository and self.image_tag based on config values.
-        Args:
-            arch: Architecture string (e.g., 'amd64')
 
         Returns:
             Path to extraction directory
@@ -601,7 +651,10 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         full = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info
+            self.config.installation.source_format,
+            self.config,
+            self.arch_info,
+            self.config.installation.repo,
         )
         split = full.rsplit(":", 1)
         if len(split) != 2:

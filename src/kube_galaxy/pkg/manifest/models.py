@@ -16,6 +16,38 @@ class InstallMethod(StrEnum):
     NONE = "none"  # No installation, component has no installable artifacts
 
 
+class TestMethod(StrEnum):
+    """Test execution method for components."""
+
+    NONE = "none"  # No tests for this component
+    SPREAD = "spread"  # Spread test suite
+
+
+@dataclass
+class RepoInfo:
+    """Repository information for component source code.
+
+    Supports two source modes:
+    - Remote: set ``base_url`` to the repository URL
+      (e.g. ``https://github.com/org/repo``)
+    - Local:  set ``base_url`` to the string ``"local"``
+
+    Use the ``is_local`` property to distinguish between the two modes.
+    When local, the working directory is used as the root for resolving
+    paths (e.g. ``{{ repo.base-url }}`` in a ``source-format`` Mustache
+    template expands to ``str(Path.cwd())``).
+    """
+
+    base_url: str = ""  # Repository URL, or the sentinel value "local"
+    subdir: str | None = None  # Optional subdirectory within repo for monorepos
+    ref: str | None = None  # Optional git reference (branch/tag/commit), defaults to release
+
+    @property
+    def is_local(self) -> bool:
+        """Return True when this repository source is a local (cwd-based) path."""
+        return self.base_url == "local"
+
+
 @dataclass
 class InstallConfig:
     """Kubernetes component installation configuration."""
@@ -23,15 +55,23 @@ class InstallConfig:
     method: InstallMethod  # Installation method
     source_format: str  # e.g., format string URL or path to binary, chart, or manifest
     bin_path: str  # Default path inside archive where binaries
+    repo: RepoInfo = field(default_factory=RepoInfo)  # Repository for this install artefact
 
 
 @dataclass
-class RepoInfo:
-    """Repository information for component source code."""
+class TestConfig:
+    """Spread test configuration for a component.
 
-    base_url: str  # Base URL of the repository (e.g., https://github.com/org/repo)
-    subdir: str | None = None  # Optional subdirectory within repo for monorepos
-    ref: str | None = None  # Optional git reference (branch/tag/commit), defaults to release
+    Describes how to locate and run the component's spread test suite.
+    The ``repo`` field identifies where to find the test tasks (local or
+    remote), and ``source_format`` is a Mustache template that resolves to
+    the root directory of the test suite (e.g.
+    ``{{ repo.base-url }}/components/{{ name }}``).
+    """
+
+    method: TestMethod  # Test execution method
+    source_format: str  # Mustache template resolving to the test suite root
+    repo: RepoInfo = field(default_factory=RepoInfo)  # Repository hosting the test suite
 
 
 @dataclass
@@ -41,9 +81,10 @@ class ComponentConfig:
     name: str
     category: str
     release: str
-    repo: RepoInfo
     installation: InstallConfig
-    test: bool = False
+    test: TestConfig = field(
+        default_factory=lambda: TestConfig(method=TestMethod.NONE, source_format="")
+    )  # Defaults to no-test config; set method=spread to enable spread tests
 
     # Component lifecycle configuration
     dependencies: list[str] = field(default_factory=list)  # Must install after these components

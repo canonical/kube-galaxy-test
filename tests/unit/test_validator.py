@@ -1,12 +1,23 @@
 """Unit tests for manifest validator."""
 
+from pathlib import Path
+
 import pytest
 
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import Manifest
+from kube_galaxy.pkg.manifest.models import (
+    ComponentConfig,
+    InstallConfig,
+    InstallMethod,
+    Manifest,
+    RepoInfo,
+    TestConfig,
+    TestMethod,
+)
 from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
+    task_path_for_component,
     validate_manifest,
 )
 
@@ -65,4 +76,85 @@ execute: |
 
     assert len(spread_components) == 1
     assert spread_components[0].name == "coredns"
-    assert spread_components[0].test is True
+    assert spread_components[0].test.method == TestMethod.SPREAD
+
+
+def test_task_path_for_component_always_uses_tests_root(monkeypatch):
+    """task_path_for_component always returns tests_root/<name>/spread/kube-galaxy/.
+
+    This holds for both local and remote sources — by test time all task
+    definitions must be installed under tests_root.
+    """
+    fake_root = Path("/fake/tests")
+    monkeypatch.setattr(SystemPaths, "tests_root", lambda: fake_root)
+
+    install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    test = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/spread/kube-galaxy",
+        repo=RepoInfo(base_url="https://github.com/org/repo"),
+    )
+
+    # Remote source
+    remote_comp = ComponentConfig(
+        name="mycomp",
+        category="test",
+        release="1.0.0",
+        installation=install,
+        test=test,
+    )
+    assert task_path_for_component(remote_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
+
+    # Local source — same result
+    local_test = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/components/mycomp",
+        repo=RepoInfo(base_url="local"),
+    )
+    local_comp = ComponentConfig(
+        name="mycomp",
+        category="test",
+        release="1.0.0",
+        installation=install,
+        test=local_test,
+    )
+    assert task_path_for_component(local_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
+
+
+def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
+    """Test get_components_with_spread finds a local component via tests_root.
+
+    The download_tasks_from_config flow copies the local suite to tests_root;
+    here we simulate that by pre-populating tests_root and patching the path.
+    """
+    tests_root = tmp_path / "tests"
+    monkeypatch.setattr(SystemPaths, "tests_root", lambda: tests_root)
+
+    # Simulate the copy that download_tasks_from_config would do
+    task_dir = tests_root / "localcomp" / "spread" / "kube-galaxy"
+    task_dir.mkdir(parents=True)
+    (task_dir / "task.yaml").write_text("summary: local test\nexecute: |\n    echo done\n")
+
+    install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    test = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/components/{{ name }}",
+        repo=RepoInfo(base_url="local"),
+    )
+    comp = ComponentConfig(
+        name="localcomp",
+        category="test",
+        release="1.0.0",
+        installation=install,
+        test=test,
+    )
+    manifest = Manifest(
+        name="test",
+        description="test",
+        kubernetes_version="1.35.0",
+        components=[comp],
+    )
+
+    spread_components = get_components_with_spread(manifest)
+    assert len(spread_components) == 1
+    assert spread_components[0].name == "localcomp"

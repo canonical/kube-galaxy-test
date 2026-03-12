@@ -6,11 +6,17 @@ from typing import Any
 import yaml
 
 from kube_galaxy.pkg.literals import SystemPaths
-from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, TestMethod
 
 
 def task_path_for_component(component: ComponentConfig) -> Path:
-    """Get the expected path to the component's test task definition."""
+    """Get the expected path to the component's test task definition.
+
+    By the time tests run, all component task definitions — whether from a
+    remote repo (cloned by ``download_tasks_from_config``) or a local source
+    (copied by ``download_tasks_from_config``) — must be installed under the
+    shared system tests root.
+    """
     return SystemPaths.tests_root() / component.name / "spread/kube-galaxy/"
 
 
@@ -46,8 +52,8 @@ def validate_component_test_structure(component: ComponentConfig) -> list[str]:
     """
     errors: list[str] = []
 
-    if not component.test:
-        return errors  # No validation needed for components without tests
+    if component.test.method != TestMethod.SPREAD:
+        return errors  # No validation needed for components without spread tests
 
     # Validate task yaml is valid YAML and has required fields (name, execute)
     task_path = task_path_for_component(component) / "task.yaml"
@@ -71,17 +77,19 @@ def validate_component_test_structure(component: ComponentConfig) -> list[str]:
 
 
 def get_components_with_spread(manifest: Manifest) -> list[ComponentConfig]:
-    """Get all components marked with test=true that have a spread test suite defined.
+    """Get all components with a spread test suite defined.
 
     Args:
         manifest: Manifest to query
 
     Returns:
-        List of component configs with runnable tests
+        List of component configs with runnable spread tests
     """
 
     def has_spread_test(comp: ComponentConfig) -> bool:
+        if comp.test.method != TestMethod.SPREAD:
+            return False
         path_to_tasks = task_path_for_component(comp)
-        return comp.test and path_to_tasks.exists() and any(path_to_tasks.glob("task.yaml"))
+        return path_to_tasks.exists() and any(path_to_tasks.glob("task.yaml"))
 
     return [comp for comp in manifest.components if has_spread_test(comp)]

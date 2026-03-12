@@ -8,9 +8,11 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
+import chevron  # type: ignore[import-untyped]
+
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
-from kube_galaxy.pkg.manifest.models import ComponentConfig
+from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.shell import run
 
@@ -130,24 +132,61 @@ def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_
 
 
 def format_component_pattern(
-    filename_pattern: str, config: ComponentConfig, arch_info: ArchInfo
+    filename_pattern: str,
+    config: ComponentConfig,
+    arch_info: ArchInfo,
+    repo: RepoInfo | None = None,
 ) -> str:
-    """
-    Construct component formatter
+    """Construct a resolved URL or path from a Mustache ``source-format`` template.
+
+    Templates use Mustache ``{{ variable }}`` syntax rendered via the
+    ``chevron`` library.  Chevron performs nested dict lookups using ``dot``
+    notation, so ``{{ repo.base-url }}`` naturally resolves the ``"base-url"``
+    key inside the ``repo`` context dict — no preprocessing is required.
+
+    ``repo.subdir`` is itself rendered as a Mustache template with ``name`` in
+    context before being placed into the data dict, so it may contain
+    ``{{ name }}`` to derive the subdirectory from the component name.
+
+    Supported template variables:
+
+    - ``{{ name }}``           - component name (e.g. ``sonobuoy``)
+    - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
+    - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
+    - ``{{ ref }}``            - git ref override, or empty string
+    - ``{{ repo.base-url }}``  - repository base URL, or ``str(Path.cwd())`` for
+                                 local sources
+    - ``{{ repo.subdir }}``    - optional subdirectory within the repo (may
+                                 itself contain ``{{ name }}``)
+    - ``{{ repo.ref }}``       - git ref from repo config, or empty string
 
     Args:
-        filename_pattern: Filename to download
-            supports placeholders {arch}, {release}, {ref}, {repo}
-        config: Component configuration
-        arch_info: Architecture information
+        filename_pattern: The ``source-format`` template string from the manifest.
+        config: Component configuration (provides ``name``, ``release``, ``arch``).
+        arch_info: Architecture information.
+        repo: Repository context for ``{{ repo.* }}`` variables.  When *None*,
+              an empty :class:`~kube_galaxy.pkg.manifest.models.RepoInfo` is
+              used (all ``{{ repo.* }}`` variables expand to empty strings).
 
     Returns:
-        formatted pattern with placeholders replaced
+        The fully-resolved string with all placeholders substituted.
     """
-    formatting = {
+    effective_repo = repo if repo is not None else RepoInfo()
+
+    # Pre-render repo.subdir so {{ name }} within it is expanded first.
+    # Fall back to empty string when subdir is None to avoid passing None to chevron.render.
+    raw_subdir = effective_repo.subdir or ""
+    subdir = str(chevron.render(raw_subdir, {"name": config.name}))
+
+    data = {
+        "name": config.name,
         "arch": arch_info.k8s,
         "release": config.release,
-        "ref": config.repo.ref or "",
-        "repo": config.repo.base_url,
+        "ref": effective_repo.ref or "",
+        "repo": {
+            "base-url": str(Path.cwd()) if effective_repo.is_local else effective_repo.base_url,
+            "subdir": subdir,
+            "ref": effective_repo.ref or "",
+        },
     }
-    return filename_pattern.format(**formatting)
+    return str(chevron.render(filename_pattern, data))

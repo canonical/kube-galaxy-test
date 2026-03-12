@@ -31,21 +31,24 @@ components:
   - name: containerd
     category: containerd
     release: "2.1.0"
-    repo:
-      base-url: "https://github.com/containerd/containerd"
     installation:
       source-format: "Binary"
       method: "binary-archive"
-    test: false
+      repo:
+        base-url: "https://github.com/containerd/containerd"
   - name: coredns
     category: dns
     release: "1.10.1"
-    repo:
-      base-url: "https://github.com/coredns/coredns"
     installation:
       source-format: "Binary"
       method: "binary-archive"
-    test: true
+      repo:
+        base-url: "https://github.com/coredns/coredns"
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/coredns/coredns"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
 networking:
   - name: default
     service-cidr: "10.96.0.0/12"

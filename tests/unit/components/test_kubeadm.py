@@ -29,15 +29,14 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
         networking=[net],
     )
 
+    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="https://example/{repo}/{release}/kubeadm",
+        source_format="https://example/{{ repo.base-url }}/{{ release }}/kubeadm",
         bin_path="./*",
+        repo=repo,
     )
-    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
-    config = ComponentConfig(
-        name="kubeadm", category="k8s", release="v1", repo=repo, installation=install
-    )
+    config = ComponentConfig(name="kubeadm", category="k8s", release="v1", installation=install)
 
     comp = Kubeadm({}, manifest, config, arch_info)
 

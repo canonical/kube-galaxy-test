@@ -190,13 +190,25 @@ def _generate_orchestration_spread_yaml(
             },
         }
 
-        # Generate component suites section
+        # Generate component suites section.
+        # By the time tests run, all task definitions are installed under tests_root
+        # (local sources are copied by download_tasks_from_config; remote sources are
+        # cloned there too).
         for each in components:
             suite_path = task_path_for_component(each)
             task = suite_path / "task.yaml"
             suite = yaml.safe_load(task.read_text())  # Load for name and summary
             rel = suite_path.relative_to(SystemPaths.tests_root()).parent
-            suites[f"{rel}/"] = {"summary": suite.get("summary", "No summary")}
+            suites[f"{rel}/"] = {
+                "summary": suite.get("summary", "No summary"),
+                # Per-suite environment variables are forwarded to each task's
+                # `execute` block by spread, allowing task.yaml files to reference
+                # $COMPONENT_NAME and $COMPONENT_VERSION as shell variables.
+                "environment": {
+                    "COMPONENT_NAME": each.name,
+                    "COMPONENT_VERSION": each.release,
+                },
+            }
 
         spread_def["suites"] = suites
 
@@ -318,7 +330,7 @@ def _run_component_tests(
     ):
         section(f"Testing Component [{i}/{len(spread_components)}]: {component.name}")
         info(f"  Release: {component.release}")
-        info(f"  Repo: {component.repo.base_url}")
+        info(f"  Repo: {component.test.repo.base_url}")
 
         # Component-specific directories
         log_dir = work_dir / "logs" / component.name

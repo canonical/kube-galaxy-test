@@ -1,20 +1,19 @@
 # Plan: Component Spread Test Integration via Isolated Directory Structure
 
-This plan establishes a structured approach for kube-galaxy to execute
+This document describes the approach kube-galaxy uses to execute
 component-specific spread tests without depending on each component repo's
-top-level spread.yaml. Instead, components provide tests at
-`/spread/kube-galaxy/` which kube-galaxy orchestrates through its own
-spread.yaml.
+top-level `spread.yaml`.  Components provide tests at `spread/kube-galaxy/`
+which kube-galaxy orchestrates through its own `spread.yaml`.
 
 **Context**: Components (like containerd, kubelet, etc.) maintain their own
 spread tests for their CI. kube-galaxy needs to run component tests against an
 existing Kubernetes cluster without interfering with or depending on each
 component's spread configuration.
 
-**Key Design Principle**: Isolation through directory structure — each
+**Key Design Principle**: Isolation through directory structure - each
 component's tests live in
-`/opt/kube-galaxy/tests/<component>/origin/spread/kube-galaxy/` and are
-orchestrated by kube-galaxy's primary spread.yaml at
+`/opt/kube-galaxy/tests/<component>/spread/kube-galaxy/` and are
+orchestrated by kube-galaxy's primary `spread.yaml` at
 `/opt/kube-galaxy/tests/spread.yaml`.
 
 **Design Decisions Incorporated**:
@@ -25,30 +24,163 @@ orchestrated by kube-galaxy's primary spread.yaml at
 
 ---
 
-## Steps
+## Source Modes
 
-1. **Define directory structure conventions** in
-   [pkg/literals.py](src/kube_galaxy/pkg/literals.py)
-   - Add `SPREAD_TEST_ROOT = "/opt/kube-galaxy/tests"` constant
-   - Add `SPREAD_MANIFEST_PATH = "/opt/kube-galaxy/tests/spread.yaml"`
-   - Add component test path helper: `get_component_test_dir(name: str) -> Path`
-   - Structure: `/opt/kube-galaxy/tests/<component>/origin/spread/kube-galaxy/`
+Components have two source modes controlled by the `test.repo.base-url` field.
+Each component now has a separate `test:` section that specifies how to locate
+and execute its spread tests, independently of the `installation:` section.
 
-2. **Implement component repo checkout** in
-   [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py)
-   - Add `_checkout_component_repo(component: ComponentConfig, dest_path: Path)
-     -> None` function
-   - Use GitPython (already in dependencies) to clone `component.repo`
-   - Checkout specific `component.release` tag/ref
-   - Validate `/spread/kube-galaxy/` directory exists in repo (error if missing)
-   - Clone to `/opt/kube-galaxy/tests/<component.name>/origin/`
+### Remote source (`test.repo.base-url: https://...`)
 
-3. **Create spread.yaml template file**
-   - Create `src/kube_galaxy/pkg/testing/spread.yaml.tmpl` as template
-   - Use Python string template format (e.g., `${variable}` placeholders)
-   - Template fields: `project`, `path`, `kubeconfig`, `namespace`, `system_arch`,
-     `k8s_arch`, `image_arch`, `component_suites`
-   - No need for Jinja2 - use Python's `string.Template` for substitution
+Tests are cloned from the component repository during setup:
+
+```yaml
+- name: containerd
+  installation:
+    method: binary-archive
+    repo:
+      base-url: https://github.com/containerd/containerd
+    source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/containerd-{{ release }}-linux-{{ arch }}.tar.gz"
+  test:
+    method: spread
+    repo:
+      base-url: https://github.com/containerd/containerd
+    source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+```
+
+During `kube-galaxy setup`, `download_tasks_from_config()` clones the repo and
+places the tests under `tests_root/<name>/spread/kube-galaxy/`.
+
+### Local source (`test.repo.base-url: local`)
+
+Tests live in the kube-galaxy-test repository itself at
+`components/<name>/spread/kube-galaxy/task.yaml`.
+
+```yaml
+- name: sonobuoy
+  installation:
+    method: none
+  test:
+    method: spread
+    repo:
+      base-url: local
+    source-format: "{{ repo.base-url }}/components/{{ name }}"
+```
+
+**Local source rules**:
+- `{{ repo.base-url }}` in `test.source-format` resolves to `str(Path.cwd())`
+- `download_tasks_from_config()` copies the resolved path to `tests_root/<name>/`
+- `task_path_for_component()` returns `tests_root/<name>/spread/kube-galaxy/` (same as remote)
+
+---
+
+## `source-format` Placeholders
+
+The `installation.source-format` and `test.source-format` fields support the
+following placeholders:
+
+| Placeholder           | Resolves to                                                |
+|-----------------------|------------------------------------------------------------|
+| `{{ name }}`          | Component name from the manifest                          |
+| `{{ arch }}`          | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, ...)   |
+| `{{ release }}`       | Component release tag from the manifest                   |
+| `{{ ref }}`           | Git ref override, or empty string                         |
+| `{{ repo.base-url }}` | Repository base URL, or `str(cwd)` for local sources      |
+| `{{ repo.subdir }}`   | Optional subdirectory within the repo (empty if unset); `{{ name }}` within the `subdir` YAML field is also expanded |
+| `{{ repo.ref }}`      | Git ref from the `repo` block (empty if unset)            |
+
+**Implementation note**: Source-format templates are rendered using **Mustache**
+(via the `chevron` library).  Chevron performs nested dict lookups using dot
+notation, so `{{ repo.base-url }}` naturally resolves the `base-url` key inside
+the `repo` context — no preprocessing required.  The `repo.subdir` value is
+itself pre-rendered with `{{ name }}` in scope, so you can write
+`subdir: "components/{{ name }}"` and the component name will be substituted.
+
+---
+
+## Test Directory Structure
+
+After `kube-galaxy setup` all component test tasks must live under:
+
+```
+/opt/kube-galaxy/tests/
+  spread.yaml            <- generated orchestration manifest
+  <component>/
+    spread/
+      kube-galaxy/
+        task.yaml        <- component spread task
+```
+
+For remote sources this is populated by `download_tasks_from_config()`.
+For local sources (`base-url: local`) this is populated by `download_tasks_from_config()`
+which copies `cwd/components/<name>/` → `tests_root/<name>/`.
+
+---
+
+## Environment Variables Available to `task.yaml`
+
+When spread executes a component's `task.yaml`, the following shell environment
+variables are available in the `execute` block in addition to the standard
+spread-level variables:
+
+| Variable            | Value                                     |
+|---------------------|-------------------------------------------|
+| `COMPONENT_NAME`    | Component name from the manifest          |
+| `COMPONENT_VERSION` | Component release tag from the manifest   |
+| `KUBECONFIG`        | Path to the kubeconfig file               |
+| `SYSTEM_ARCH`       | Raw `uname -m` architecture string        |
+| `K8S_ARCH`          | Kubernetes arch format (`amd64`, `arm64`) |
+| `IMAGE_ARCH`        | Container image arch tag format           |
+| `TEST_TIMEOUT_M`    | Test timeout in minutes                   |
+| `TEST_TIMEOUT_S`    | Test timeout in seconds                   |
+
+Example `task.yaml` using `COMPONENT_VERSION` and `K8S_ARCH`:
+
+```yaml
+summary: My component conformance tests
+execute: |
+    wget https://example.com/releases/v${COMPONENT_VERSION}/tool-linux-${K8S_ARCH}.tar.gz
+    tar xf tool-linux-${K8S_ARCH}.tar.gz
+    ./tool --kubeconfig=$KUBECONFIG run --wait=$TEST_TIMEOUT_M
+```
+
+`COMPONENT_NAME` and `COMPONENT_VERSION` are injected per-suite by
+`_generate_orchestration_spread_yaml()` in
+[pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py).
+
+---
+
+## Steps (Implementation Reference)
+
+1. **Directory structure constants** in
+   [pkg/literals.py](src/kube_galaxy/pkg/literals.py) - `tests_root()`,
+   `tests_spread_yaml()`
+
+2. **Component repo checkout** in
+   [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py) -
+   `_checkout_component_repo()` uses GitPython to clone and checkout
+   `component.release` tag/ref into `tests_root/<name>/`
+
+3. **Orchestration spread.yaml generation** in
+   [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py) -
+   `_generate_orchestration_spread_yaml()` reads each component's `task.yaml`
+   from `tests_root/<name>/spread/kube-galaxy/` and builds a spread manifest
+
+4. **Local source handling** in
+   [pkg/components/_base.py](src/kube_galaxy/pkg/components/_base.py) -
+   `download_tasks_from_config()` checks `config.test.repo.is_local` to
+   determine whether to copy a local path or clone a remote repo
+
+5. **Validator path resolution** in
+   [pkg/manifest/validator.py](src/kube_galaxy/pkg/manifest/validator.py) -
+   `task_path_for_component()` always returns `tests_root/<name>/spread/kube-galaxy/`
+   regardless of local or remote source
+
+6. **Local test suite copy** — `download_tasks_from_config()` in
+   [pkg/components/_base.py](src/kube_galaxy/pkg/components/_base.py)
+   for the reference implementation
+
+   - Use `{{ variable }}` Mustache syntax (rendered by `chevron`) for `source-format` values
 
 4. **Generate kube-galaxy orchestration spread.yaml** in
    [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py)

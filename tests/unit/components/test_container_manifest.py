@@ -25,17 +25,19 @@ def manifest():
 @pytest.fixture
 def calico_config():
     """Create a Calico component config with container-manifest method."""
+    repo = RepoInfo(base_url="https://github.com/projectcalico/calico")
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
-        source_format="raw.githubusercontent.com/projectcalico/calico/v{release}/manifests/calico.yaml",
+        source_format=(
+            "raw.githubusercontent.com/projectcalico/calico/v{{ release }}/manifests/calico.yaml"
+        ),
         bin_path="./*",
+        repo=repo,
     )
-    repo = RepoInfo(base_url="https://github.com/projectcalico/calico")
     return ComponentConfig(
         name="calico",
         category="projectcalico/calico",
         release="3.30.6",
-        repo=repo,
         installation=install,
     )
 
@@ -87,17 +89,17 @@ def test_download_hook_downloads_manifest(component, monkeypatch, tmp_path):
 
 def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkeypatch, tmp_path):
     """Test that download_hook properly formats URLs with release, repo, and arch placeholders."""
+    repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
-        source_format="{repo}/releases/{release}/manifest-{arch}.yaml",
+        source_format="{{ repo.base-url }}/releases/{{ release }}/manifest-{{ arch }}.yaml",
         bin_path="./*",
+        repo=repo,
     )
-    repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     config = ComponentConfig(
         name="test-component",
         category="test",
         release="v1.2.3",
-        repo=repo,
         installation=install,
     )
 
@@ -131,15 +133,14 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
 
 def test_download_hook_adds_https_prefix(manifest, arch_info, monkeypatch, tmp_path):
     """Test that download_hook adds https:// prefix when URL doesn't have protocol."""
+    repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
-        source_format="raw.githubusercontent.com/org/repo/v{release}/manifest.yaml",
+        source_format="raw.githubusercontent.com/org/repo/v{{ release }}/manifest.yaml",
         bin_path="./*",
+        repo=repo,
     )
-    repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
-    config = ComponentConfig(
-        name="test", category="test", release="1.0", repo=repo, installation=install
-    )
+    config = ComponentConfig(name="test", category="test", release="1.0", installation=install)
 
     monkeypatch.setattr(
         SystemPaths,
@@ -260,14 +261,15 @@ def test_delete_hook_preserves_manifest_file(component, tmp_path):
 
 def test_delete_hook_works_for_all_install_methods(manifest, arch_info):
     """Test that delete_hook base implementation works for all install methods."""
+    repo = RepoInfo(base_url="https://github.com/org/repo")
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="https://example/{arch}/bin",
+        source_format="https://example/{{ arch }}/bin",
         bin_path="./*",
+        repo=repo,
     )
-    repo = RepoInfo(base_url="https://github.com/org/repo")
     config = ComponentConfig(
-        name="test-binary", category="test", release="v1", repo=repo, installation=install
+        name="test-binary", category="test", release="v1", installation=install
     )
 
     comp = ComponentBase({}, manifest, config, arch_info)

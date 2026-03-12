@@ -140,12 +140,103 @@ kube-galaxy cleanup all
 
 See [ARCHITECTURE](.github/ARCHITECTURE.md)
 
+### Source-Format Placeholders
+
+The `installation.source-format` field supports the following placeholders:
+
+| Placeholder        | Resolves to                                                      |
+|--------------------|------------------------------------------------------------------|
+| `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)           |
+| `{{ release }}`        | Component release tag from the manifest                         |
+| `{{ ref }}`            | Git ref override, or empty string                               |
+| `{{ repo.base-url }}`  | Repository base URL, or `cwd` for local sources                 |
+| `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty string if unset)   |
+| `{{ repo.ref }}`       | Git ref from the `repo` block (empty string if unset)           |
+
+**Example:**
+
+```yaml
+installation:
+  method: binary-archive
+  repo:
+    base-url: "https://github.com/org/tool"
+  source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/tool-{{ release }}-linux-{{ arch }}.tar.gz"
+```
+
+### Local Component Sources
+
+A component whose test suite lives inside this repository uses `base-url: local`
+in its `test.repo` block.  The `source-format` template resolves to a path
+under the current working directory.
+
+```yaml
+- name: mycomp
+  category: example
+  release: "1.2.3"
+  installation:
+    method: none
+  test:
+    method: spread
+    repo:
+      base-url: local
+    source-format: "{{ repo.base-url }}/components/{{ name }}"
+```
+
+When `base-url` is `local`:
+
+- `{{ repo.base-url }}` in `source-format` expands to `str(Path.cwd())`
+- `task_path_for_component` returns `cwd/components/<name>/spread/kube-galaxy/`
+- The `download_hook` automatically copies the resolved local suite to the
+  shared tests root so that spread can discover it
+
+#### Local test structure
+
+Test tasks for local components must exist at
+`<cwd>/components/<name>/spread/kube-galaxy/task.yaml`:
+
+```
+components/
+  mycomp/
+    spread/
+      kube-galaxy/
+        task.yaml   ← spread task definition
+```
+
+Inside `task.yaml` you can reference environment variables set by kube-galaxy:
+
+| Variable            | Description                                   |
+|---------------------|-----------------------------------------------|
+| `COMPONENT_VERSION` | Release tag from the manifest                 |
+| `COMPONENT_NAME`    | Component name                                |
+| `K8S_ARCH`          | Kubernetes architecture (`amd64`, `arm64`, …) |
+| `SYSTEM_ARCH`       | Raw `uname -m` architecture                   |
+| `IMAGE_ARCH`        | Container image architecture tag              |
+| `KUBECONFIG`        | Path to shared kubeconfig                     |
+
+Example `task.yaml`:
+
+```yaml
+summary: My component conformance test
+execute: |
+  wget --tries=3 https://example.com/releases/v${COMPONENT_VERSION}/tool_linux_${K8S_ARCH}.tar.gz \
+      -O tool.tar.gz || exit 1
+  tar -xvf tool.tar.gz
+  ./tool --version
+```
+
+#### Adding a local component (the sonobuoy pattern)
+
+1. Create `components/<name>/spread/kube-galaxy/task.yaml`
+2. Add the component to the manifest with `test.method: spread`,
+   `test.repo.base-url: local`, and a `test.source-format` pointing to the
+   local directory
+
 ## 🔧 Component Repositories
 
 Each component repository must contain a `spread.yaml` file that defines:
 
 1. **Install instructions** (required if component is used)
-2. **Test definitions** (required if `test: true`)
+2. **Test definitions** (required if `test.method: spread`)
 
 ### Example Component spread.yaml
 
