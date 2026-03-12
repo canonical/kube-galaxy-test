@@ -9,6 +9,8 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     NetworkConfig,
     RepoInfo,
+    TestConfig,
+    TestMethod,
 )
 
 
@@ -18,18 +20,40 @@ def test_component_creation():
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
+        repo=RepoInfo(base_url="https://github.com/test/repo"),
+    )
+    test = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/spread/kube-galaxy",
+        repo=RepoInfo(base_url="https://github.com/test/repo"),
     )
     config = ComponentConfig(
         name="test-comp",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(base_url="https://github.com/test/repo"),
         installation=installation,
-        test=True,
+        test=test,
     )
     assert config.name == "test-comp"
-    assert config.test is True
+    assert config.test is not None
+    assert config.test.method == TestMethod.SPREAD
     assert config.installation.method == InstallMethod.BINARY_ARCHIVE
+
+
+def test_component_no_test():
+    """Test component config with no test config."""
+    installation = InstallConfig(
+        method=InstallMethod.BINARY_ARCHIVE,
+        source_format="https://example.com/binary.tar.gz",
+        bin_path="./*",
+    )
+    config = ComponentConfig(
+        name="test-comp",
+        category="test",
+        release="1.0.0",
+        installation=installation,
+    )
+    assert config.test is None
 
 
 def test_network_config_creation():
@@ -49,13 +73,13 @@ def test_manifest_creation():
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
+        repo=RepoInfo(base_url="https://github.com/test/repo"),
     )
     components = [
         ComponentConfig(
             name="test",
             category="test",
             release="1.0.0",
-            repo=RepoInfo(base_url="https://github.com/test/repo"),
             installation=installation,
         )
     ]
@@ -83,20 +107,24 @@ def test_manifest_get_component():
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
+        repo=RepoInfo(base_url="https://github.com/test/repo1"),
     )
     comp1 = ComponentConfig(
         name="comp1",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(base_url="https://github.com/test/repo1"),
         installation=installation,
     )
     comp2 = ComponentConfig(
         name="comp2",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(base_url="https://github.com/test/repo2"),
-        installation=installation,
+        installation=InstallConfig(
+            method=InstallMethod.BINARY_ARCHIVE,
+            source_format="https://example.com/binary.tar.gz",
+            bin_path="./*",
+            repo=RepoInfo(base_url="https://github.com/test/repo2"),
+        ),
     )
 
     manifest = Manifest(
@@ -156,3 +184,17 @@ def test_manifest_path_default():
     """Manifest.path defaults to empty Path."""
     m = Manifest(name="x", kubernetes_version="1.35.0")
     assert m.path == Path("")
+
+
+def test_install_config_default_repo():
+    """InstallConfig.repo defaults to empty RepoInfo."""
+    install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    assert install.repo.base_url == ""
+    assert install.repo.is_local is False
+
+
+def test_test_config_default_repo():
+    """TestConfig.repo defaults to empty RepoInfo."""
+    test = TestConfig(method=TestMethod.SPREAD, source_format="")
+    assert test.repo.base_url == ""
+    assert test.repo.is_local is False

@@ -8,6 +8,8 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     RepoInfo,
+    TestConfig,
+    TestMethod,
 )
 from kube_galaxy.pkg.utils.components import format_component_pattern
 
@@ -21,9 +23,9 @@ def make_config(name: str = "example") -> ComponentConfig:
         method=InstallMethod.BINARY,
         source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/binary",
         bin_path="./*",
+        repo=RepoInfo(base_url="https://example.com/r"),
     )
-    repo = RepoInfo(base_url="https://example.com/r")
-    return ComponentConfig(name=name, category="cat", release="v1", repo=repo, installation=install)
+    return ComponentConfig(name=name, category="cat", release="v1", installation=install)
 
 
 # ---------------------------------------------------------------------------
@@ -38,74 +40,78 @@ def test_format_component_pattern_hyphenated_key_native(arch_info):
     Chevron splits on '.' and looks up 'base-url' in the repo dict, which
     Python happily stores as a hyphenated string key.
     """
+    repo = RepoInfo(base_url="https://example.com")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/path",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="tool",
         category="test",
         release="1.0",
-        repo=RepoInfo(base_url="https://example.com"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == "https://example.com/path"
 
 
 def test_format_component_pattern_remote(arch_info):
     """format_component_pattern supports {{ repo.base-url }} (hyphen) for remote sources."""
+    repo = RepoInfo(base_url="https://github.com/org/mybin")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/releases/download/v{{ release }}/bin-{{ arch }}",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="mybin",
         category="test",
         release="1.2.3",
-        repo=RepoInfo(base_url="https://github.com/org/mybin"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == f"https://github.com/org/mybin/releases/download/v1.2.3/bin-{arch_info.k8s}"
 
 
 def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatch):
     """format_component_pattern resolves {{ repo.base-url }} to str(cwd) for local sources."""
     monkeypatch.chdir(tmp_path)
+    repo = RepoInfo(base_url="local")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/mybin-{{ arch }}",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="mybin",
         category="test",
         release="1.0",
-        repo=RepoInfo(base_url="local"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == f"{tmp_path}/mybin-{arch_info.k8s}"
 
 
 def test_format_component_pattern_subdir_and_ref(arch_info):
     """format_component_pattern handles {{ repo.subdir }} and {{ repo.ref }}."""
+    repo = RepoInfo(base_url="https://github.com/org/repo", subdir="pkg/tool", ref="v2-branch")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}/{{ release }}",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="tool",
         category="test",
         release="2.0",
-        repo=RepoInfo(base_url="https://github.com/org/repo", subdir="pkg/tool", ref="v2-branch"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == "https://github.com/org/repo/pkg/tool/v2-branch/2.0"
 
 
@@ -116,81 +122,85 @@ def test_format_component_pattern_empty_subdir_and_ref(arch_info):
     absent.  Callers should use full URLs directly in source-format when
     repo.subdir/repo.ref are not applicable.
     """
+    repo = RepoInfo(base_url="https://github.com/org/repo")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="tool",
         category="test",
         release="1.0",
-        repo=RepoInfo(base_url="https://github.com/org/repo"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == "https://github.com/org/repo//"
 
 
 def test_format_component_pattern_name_variable(arch_info):
     """format_component_pattern supports {{ name }} as the component name."""
+    repo = RepoInfo(base_url="https://example.com")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/components/{{ name }}/bin",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="mytool",
         category="test",
         release="1.0",
-        repo=RepoInfo(base_url="https://example.com"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == "https://example.com/components/mytool/bin"
 
 
 def test_format_component_pattern_prerender_name_in_subdir(arch_info, tmp_path, monkeypatch):
     """{{ name }} in repo.subdir is expanded before the subdir is used in the template."""
     monkeypatch.chdir(tmp_path)
+    repo = RepoInfo(base_url="local", subdir="components/{{ name }}")
     install = InstallConfig(
         method=InstallMethod.NONE,
         source_format="{{ repo.base-url }}/{{ repo.subdir }}",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="sonobuoy",
         category="test",
         release="0.57.3",
-        repo=RepoInfo(base_url="local", subdir="components/{{ name }}"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == f"{tmp_path}/components/sonobuoy"
 
 
 def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):
     """{{ name }} in repo.subdir is also expanded for remote (non-local) sources."""
+    repo = RepoInfo(base_url="https://example.com", subdir="tools/{{ name }}")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/release-{{ release }}",
         bin_path="./*",
+        repo=repo,
     )
     config = ComponentConfig(
         name="mytool",
         category="test",
         release="3.0",
-        repo=RepoInfo(base_url="https://example.com", subdir="tools/{{ name }}"),
         installation=install,
     )
-    result = format_component_pattern(install.source_format, config, arch_info)
+    result = format_component_pattern(install.source_format, config, arch_info, repo)
     assert result == "https://example.com/tools/mytool/release-3.0"
 
 
 def test_download_tasks_from_config_uses_source_format(
     monkeypatch, tmp_path, arch_info
 ) -> None:
-    """download_tasks_from_config copies from the path resolved by source-format."""
+    """download_tasks_from_config copies from the path resolved by test.source-format."""
     monkeypatch.chdir(tmp_path)
 
     # Create the local test suite at the path that source-format will resolve to
@@ -200,15 +210,20 @@ def test_download_tasks_from_config_uses_source_format(
 
     install = InstallConfig(
         method=InstallMethod.NONE,
-        source_format="{{ repo.base-url }}/{{ repo.subdir }}",
+        source_format="",
         bin_path="./*",
+    )
+    test_cfg = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/components/{{ name }}",
+        repo=RepoInfo(base_url="local"),
     )
     config = ComponentConfig(
         name="sonobuoy",
         category="test",
         release="0.57.3",
-        repo=RepoInfo(base_url="local", subdir="components/{{ name }}"),
         installation=install,
+        test=test_cfg,
     )
 
     tests_root = tmp_path / "tests_root"

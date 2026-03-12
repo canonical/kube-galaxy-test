@@ -26,46 +26,58 @@ orchestrated by kube-galaxy's primary `spread.yaml` at
 
 ## Source Modes
 
-Components have two source modes controlled by the `repo.base-url` field:
+Components have two source modes controlled by the `test.repo.base-url` field.
+Each component now has a separate `test:` section that specifies how to locate
+and execute its spread tests, independently of the `installation:` section.
 
-### Remote source (`repo.base-url: https://...`)
+### Remote source (`test.repo.base-url: https://...`)
 
 Tests are cloned from the component repository during setup:
 
 ```yaml
 - name: containerd
-  repo:
-    base-url: https://github.com/containerd/containerd
-  test: true
+  installation:
+    method: binary-archive
+    repo:
+      base-url: https://github.com/containerd/containerd
+    source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/containerd-{{ release }}-linux-{{ arch }}.tar.gz"
+  test:
+    method: spread
+    repo:
+      base-url: https://github.com/containerd/containerd
+    source-format: "{{ repo.base-url }}/spread/kube-galaxy"
 ```
 
 During `kube-galaxy setup`, `download_tasks_from_config()` clones the repo and
 places the tests under `tests_root/<name>/spread/kube-galaxy/`.
 
-### Local source (`repo.base-url: local` or `repo: local`)
+### Local source (`test.repo.base-url: local`)
 
 Tests live in the kube-galaxy-test repository itself at
-`components/<name>/spread/kube-galaxy/task.yaml`.  The component's
-`install_hook` is responsible for copying them to `tests_root` so that
-spread can discover them.
+`components/<name>/spread/kube-galaxy/task.yaml`.
 
 ```yaml
 - name: sonobuoy
-  repo:
-    base-url: local    # or shorthand: repo: local
-  test: true
+  installation:
+    method: none
+  test:
+    method: spread
+    repo:
+      base-url: local
+    source-format: "{{ repo.base-url }}/components/{{ name }}"
 ```
 
 **Local source rules**:
-- `{{ repo.base-url }}` in `source-format` resolves to `str(Path.cwd())`
-- `download_tasks_from_config()` copies `cwd/components/<name>/` to `tests_root/<name>/`
+- `{{ repo.base-url }}` in `test.source-format` resolves to `str(Path.cwd())`
+- `download_tasks_from_config()` copies the resolved path to `tests_root/<name>/`
 - `task_path_for_component()` returns `tests_root/<name>/spread/kube-galaxy/` (same as remote)
 
 ---
 
 ## `source-format` Placeholders
 
-The `installation.source-format` field supports the following placeholders:
+The `installation.source-format` and `test.source-format` fields support the
+following placeholders:
 
 | Placeholder           | Resolves to                                                |
 |-----------------------|------------------------------------------------------------|
@@ -154,18 +166,18 @@ execute: |
    `_generate_orchestration_spread_yaml()` reads each component's `task.yaml`
    from `tests_root/<name>/spread/kube-galaxy/` and builds a spread manifest
 
-4. **Local source skips remote fetch** in
+4. **Local source handling** in
    [pkg/components/_base.py](src/kube_galaxy/pkg/components/_base.py) -
-   `download_hook()` skips `download_tasks_from_config()` when
-   `config.repo.is_local`
+   `download_tasks_from_config()` checks `config.test.repo.is_local` to
+   determine whether to copy a local path or clone a remote repo
 
-5. **Validator uses cwd for local** in
+5. **Validator path resolution** in
    [pkg/manifest/validator.py](src/kube_galaxy/pkg/manifest/validator.py) -
-   `task_path_for_component()` returns `cwd/components/<name>/spread/kube-galaxy/`
-   for local sources (pre-install validation)
+   `task_path_for_component()` always returns `tests_root/<name>/spread/kube-galaxy/`
+   regardless of local or remote source
 
-6. **Local component install_hook copies to tests_root** - see
-   [pkg/components/sonobuoy.py](src/kube_galaxy/pkg/components/sonobuoy.py)
+6. **Local test suite copy** — `download_tasks_from_config()` in
+   [pkg/components/_base.py](src/kube_galaxy/pkg/components/_base.py)
    for the reference implementation
 
    - Use `{{ variable }}` Mustache syntax (rendered by `chevron`) for `source-format` values

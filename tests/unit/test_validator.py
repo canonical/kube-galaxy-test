@@ -12,6 +12,8 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     RepoInfo,
+    TestConfig,
+    TestMethod,
 )
 from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
@@ -52,7 +54,7 @@ def test_validate_manifest_no_k8s_version():
 
 
 def test_get_components_with_spread(sample_manifest_file, tmp_path, monkeypatch):
-    """Test getting components with spread enabled (remote repo)."""
+    """Test getting components with spread enabled."""
     # Create test directory structure
     tests_root = tmp_path / "tests"
     coredns_test_path = tests_root / "coredns" / "spread" / "kube-galaxy"
@@ -74,7 +76,8 @@ execute: |
 
     assert len(spread_components) == 1
     assert spread_components[0].name == "coredns"
-    assert spread_components[0].test is True
+    assert spread_components[0].test is not None
+    assert spread_components[0].test.method == TestMethod.SPREAD
 
 
 def test_task_path_for_component_always_uses_tests_root(monkeypatch):
@@ -87,26 +90,34 @@ def test_task_path_for_component_always_uses_tests_root(monkeypatch):
     monkeypatch.setattr(SystemPaths, "tests_root", lambda: fake_root)
 
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    test = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/spread/kube-galaxy",
+        repo=RepoInfo(base_url="https://github.com/org/repo"),
+    )
 
     # Remote source
     remote_comp = ComponentConfig(
         name="mycomp",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(base_url="https://github.com/org/repo"),
         installation=install,
-        test=True,
+        test=test,
     )
     assert task_path_for_component(remote_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
 
     # Local source — same result
+    local_test = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/components/mycomp",
+        repo=RepoInfo(base_url="local"),
+    )
     local_comp = ComponentConfig(
         name="mycomp",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(base_url="local"),
         installation=install,
-        test=True,
+        test=local_test,
     )
     assert task_path_for_component(local_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
 
@@ -126,13 +137,17 @@ def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
     (task_dir / "task.yaml").write_text("summary: local test\nexecute: |\n    echo done\n")
 
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    test = TestConfig(
+        method=TestMethod.SPREAD,
+        source_format="{{ repo.base-url }}/components/{{ name }}",
+        repo=RepoInfo(base_url="local"),
+    )
     comp = ComponentConfig(
         name="localcomp",
         category="test",
         release="1.0.0",
-        repo=RepoInfo(base_url="local"),
         installation=install,
-        test=True,
+        test=test,
     )
     manifest = Manifest(
         name="test",

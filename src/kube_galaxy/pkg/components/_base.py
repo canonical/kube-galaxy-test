@@ -17,7 +17,7 @@ import yaml
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
-from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest, TestMethod
 from kube_galaxy.pkg.utils.client import apply_manifest
 from kube_galaxy.pkg.utils.components import (
     download_file,
@@ -126,7 +126,8 @@ class ComponentBase:
         """
 
         return format_component_pattern(
-            self.config.installation.bin_path, self.config, self.arch_info
+            self.config.installation.bin_path, self.config, self.arch_info,
+            self.config.installation.repo,
         )
 
     def get_cluster_manager(self) -> "ClusterComponentBase":
@@ -180,7 +181,7 @@ class ComponentBase:
                     f"{self.config.installation.method}"
                 )
         match self.config.test:
-            case True:
+            case test_cfg if test_cfg is not None and test_cfg.method == TestMethod.SPREAD:
                 info(f"Downloading test artifacts for {comp_name}")
                 self.download_tasks_from_config(arch)
 
@@ -454,7 +455,8 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         url = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info
+            self.config.installation.source_format, self.config, self.arch_info,
+            self.config.installation.repo,
         )
         filename = url.split("/")[-1]
 
@@ -520,11 +522,11 @@ class ComponentBase:
         """Download or copy the spread test suite for this component to the tests root.
 
         For **local** sources (``base-url: local``), the test suite is already
-        present in the repository.  The ``source-format`` field in the
-        installation config is rendered via :func:`format_component_pattern` to
-        produce the source path, which is then copied to the shared tests root so
-        that the spread orchestrator can discover it alongside remotely-sourced
-        test suites.
+        present in the repository.  The ``source-format`` field in the test
+        config is rendered via :func:`format_component_pattern` to produce the
+        source path, which is then copied to the shared tests root so that the
+        spread orchestrator can discover it alongside remotely-sourced test
+        suites.
 
         For **remote** sources, the test suite must be cloned from the component
         repo.  The base implementation raises :class:`NotImplementedError`;
@@ -537,14 +539,21 @@ class ComponentBase:
         if not self.config:
             raise ComponentError("Component config required for download")
 
+        test_cfg = self.config.test
+        if test_cfg is None or test_cfg.method != TestMethod.SPREAD:
+            raise ComponentError(
+                f"download_tasks_from_config called for component "
+                f"'{self.config.name}' which has no spread test configuration"
+            )
+
         comp_name = self.config.name
         dest = SystemPaths.tests_root() / comp_name
 
-        if self.config.repo.is_local:
+        if test_cfg.repo.is_local:
             # Local source: resolve path via source-format template and copy to tests_root.
             local_suite = Path(
                 format_component_pattern(
-                    self.config.installation.source_format, self.config, self.arch_info
+                    test_cfg.source_format, self.config, self.arch_info, test_cfg.repo
                 )
             )
             if not local_suite.exists():
@@ -562,7 +571,7 @@ class ComponentBase:
             # tests_root/<name>/spread/kube-galaxy/.
             raise NotImplementedError(
                 f"Remote test suite download is not yet implemented for '{comp_name}'. "
-                f"Use 'base-url: local' in the manifest to ship test tasks inside this repo, "
+                f"Use 'base-url: local' in the test block to ship test tasks inside this repo, "
                 f"or manually place a task.yaml at {dest}/spread/kube-galaxy/task.yaml."
             )
 
@@ -584,7 +593,8 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         url = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info
+            self.config.installation.source_format, self.config, self.arch_info,
+            self.config.installation.repo,
         )
 
         # Ensure https:// prefix for URLs like raw.githubusercontent.com
@@ -640,7 +650,8 @@ class ComponentBase:
 
         # Construct download URL from source_format template
         full = format_component_pattern(
-            self.config.installation.source_format, self.config, self.arch_info
+            self.config.installation.source_format, self.config, self.arch_info,
+            self.config.installation.repo,
         )
         split = full.rsplit(":", 1)
         if len(split) != 2:

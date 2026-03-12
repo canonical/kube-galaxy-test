@@ -9,19 +9,19 @@ components:
   - name: runc
     category: containerd
     release: "1.3.0"
-    repo:
-      base-url: https://github.com/opencontainers/runc
     installation:
       method: binary
+      repo:
+        base-url: https://github.com/opencontainers/runc
       source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/runc.{{ arch }}"
 
   - name: containerd
     category: containerd
     release: "2.1.6"
-    repo:
-      base-url: https://github.com/containerd/containerd
     installation:
       method: binary-archive
+      repo:
+        base-url: https://github.com/containerd/containerd
       bin-path: "./bin/*"
       source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/containerd-{{ release }}-linux-{{ arch }}.tar.gz"
 
@@ -29,113 +29,113 @@ components:
   - name: cni-plugins
     category: container-networking
     release: "1.7.1"
-    repo:
-      base-url: https://github.com/containernetworking/plugins
     installation:
       method: binary-archive
+      repo:
+        base-url: https://github.com/containernetworking/plugins
       source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/cni-plugins-linux-{{ arch }}-v{{ release }}.tgz"
 
   - name: kubelet
     category: kubernetes/kubernetes
     release: *k8s-version
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: binary
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "https://dl.k8s.io/release/v{{ release }}/bin/linux/{{ arch }}/kubelet"
 
   # Kubernetes binaries
   - name: kubeadm
     category: kubernetes/kubernetes
     release: *k8s-version
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: binary
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "https://dl.k8s.io/release/v{{ release }}/bin/linux/{{ arch }}/kubeadm"
 
   - name: kubectl
     category: kubernetes/kubernetes
     release: *k8s-version
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: binary
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "https://dl.k8s.io/release/v{{ release }}/bin/linux/{{ arch }}/kubectl"
 
   # Kubernetes control plane components (container images)
   - name: kube-apiserver
     category: kubernetes/kubernetes
     release: *k8s-version
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-apiserver:v{{ release }}"
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
     release: *k8s-version
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-controller-manager:v{{ release }}"
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
     release: *k8s-version
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-scheduler:v{{ release }}"
 
   - name: kube-proxy
     category: kubernetes/kubernetes
     release: *k8s-version
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-proxy:v{{ release }}"
 
   - name: pause
     category: kubernetes/kubernetes
     release: "3.10.1"
-    repo:
-      base-url: https://github.com/kubernetes/kubernetes
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/pause:3.10"
 
   # etcd
   - name: etcd
     category: etcd
     release: &etcd-version "3.6.5"
-    repo:
-      base-url: https://github.com/etcd-io/etcd
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/etcd-io/etcd
       source-format: "registry.k8s.io/etcd:v{{ release }}"
 
   # CoreDNS
   - name: coredns
     category: coredns
     release: "1.12.1"
-    repo:
-      base-url: https://github.com/coredns/coredns
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/coredns/coredns
       source-format: "registry.k8s.io/coredns/coredns:v{{ release }}"
 
   - name: etcdctl
     category: etcd
     release: *etcd-version
-    repo:
-      base-url: https://github.com/etcd-io/etcd
     installation:
       method: binary-archive
+      repo:
+        base-url: https://github.com/etcd-io/etcd
       bin-path: "./etcd-v{{ release }}-linux-{{ arch }}/etcdctl"
       source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/etcd-v{{ release }}-linux-{{ arch }}.tar.gz"
 
@@ -143,19 +143,19 @@ components:
   - name: cluster-autoscaler
     category: kubernetes
     release: "1.34.3"
-    repo:
-      base-url: https://github.com/kubernetes/autoscaler
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/kubernetes/autoscaler
       source-format: "registry.k8s.io/autoscaling/cluster-autoscaler:v{{ release }}"
 
   - name: node-problem-detector
     category: kubernetes
     release: "0.8.21"
-    repo:
-      base-url: https://github.com/kubernetes/node-problem-detector
     installation:
       method: container-image
+      repo:
+        base-url: https://github.com/kubernetes/node-problem-detector
       source-format: "registry.k8s.io/node-problem-detector/node-problem-detector:v{{ release }}"
 
 networking:

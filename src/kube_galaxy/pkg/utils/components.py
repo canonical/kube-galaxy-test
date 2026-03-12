@@ -12,7 +12,7 @@ import chevron  # type: ignore[import-untyped]
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
-from kube_galaxy.pkg.manifest.models import ComponentConfig
+from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.shell import run
 
@@ -133,7 +133,10 @@ def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_
 
 
 def format_component_pattern(
-    filename_pattern: str, config: ComponentConfig, arch_info: ArchInfo
+    filename_pattern: str,
+    config: ComponentConfig,
+    arch_info: ArchInfo,
+    repo: RepoInfo | None = None,
 ) -> str:
     """Construct a resolved URL or path from a Mustache ``source-format`` template.
 
@@ -160,26 +163,31 @@ def format_component_pattern(
 
     Args:
         filename_pattern: The ``source-format`` template string from the manifest.
-        config: Component configuration.
+        config: Component configuration (provides ``name``, ``release``, ``arch``).
         arch_info: Architecture information.
+        repo: Repository context for ``{{ repo.* }}`` variables.  When *None*,
+              an empty :class:`~kube_galaxy.pkg.manifest.models.RepoInfo` is
+              used (all ``{{ repo.* }}`` variables expand to empty strings).
 
     Returns:
         The fully-resolved string with all placeholders substituted.
     """
+    effective_repo = repo if repo is not None else RepoInfo()
+
     # Pre-render repo.subdir so {{ name }} within it is expanded first.
     # Fall back to empty string when subdir is None to avoid passing None to chevron.render.
-    raw_subdir = config.repo.subdir or ""
+    raw_subdir = effective_repo.subdir or ""
     subdir = str(chevron.render(raw_subdir, {"name": config.name}))
 
     data = {
         "name": config.name,
         "arch": arch_info.k8s,
         "release": config.release,
-        "ref": config.repo.ref or "",
+        "ref": effective_repo.ref or "",
         "repo": {
-            "base-url": str(Path.cwd()) if config.repo.is_local else config.repo.base_url,
+            "base-url": str(Path.cwd()) if effective_repo.is_local else effective_repo.base_url,
             "subdir": subdir,
-            "ref": config.repo.ref or "",
+            "ref": effective_repo.ref or "",
         },
     }
     return str(chevron.render(filename_pattern, data))

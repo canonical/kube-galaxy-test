@@ -28,14 +28,15 @@ class ExampleResp:
 def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_path):
     # Prepare minimal manifest/config
     manifest = Manifest(name="m", description="d", kubernetes_version="1.24")
+    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/kubelet",
         bin_path="./*",
+        repo=repo,
     )
-    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
     config = ComponentConfig(
-        name="kubelet", category="k8s", release="v1", repo=repo, installation=install
+        name="kubelet", category="k8s", release="v1", installation=install
     )
 
     comp = Kubelet({}, manifest, config, arch_info)

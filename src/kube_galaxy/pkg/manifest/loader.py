@@ -12,6 +12,8 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     NetworkConfig,
     RepoInfo,
+    TestConfig,
+    TestMethod,
 )
 
 
@@ -41,43 +43,73 @@ def load_manifest(path: str | Path) -> Manifest:
     return _deserialize_manifest(data, manifest_path)
 
 
+def _parse_repo(repo_data: Any, comp_name: str) -> RepoInfo:
+    """Parse a ``repo`` block from a YAML dict or the ``local`` shorthand.
+
+    Args:
+        repo_data: The raw value of a ``repo`` key in the manifest.
+        comp_name: Component name used in error messages.
+
+    Returns:
+        A populated :class:`RepoInfo` instance.
+
+    Raises:
+        ValueError: When ``repo_data`` is not a recognised format.
+    """
+    if repo_data is None:
+        return RepoInfo()
+    if repo_data == "local":
+        # Shorthand: repo: local  →  base-url: local
+        return RepoInfo(base_url="local")
+    if isinstance(repo_data, dict) and (base_url := repo_data.get("base-url")):
+        return RepoInfo(
+            base_url=base_url,
+            subdir=repo_data.get("subdir"),
+            ref=repo_data.get("ref"),
+        )
+    raise ValueError(
+        f"Component {comp_name}: 'repo' must be an object with 'base-url' field, "
+        f"or the string 'local', got: {repo_data!r}"
+    )
+
+
 def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     """Deserialize manifest dictionary to Manifest dataclass."""
     # Parse components
     components: list[ComponentConfig] = []
     for comp_data in data.get("components", []):
+        comp_name = comp_data.get("name", "")
+
+        # Parse installation block (repo lives inside installation)
         install_data = comp_data.get("installation", {})
         installation = InstallConfig(
             method=InstallMethod(install_data.get("method", "none")),
             source_format=install_data.get("source-format", ""),
             bin_path=install_data.get("bin-path", "./*"),
+            repo=_parse_repo(install_data.get("repo"), comp_name),
         )
 
-        # Parse repo info
-        repo_data = comp_data.get("repo", {})
-        comp_name = comp_data.get("name", "")
-        if repo_data == "local":
-            # Shorthand: repo: local  →  base-url: local
-            repo_info = RepoInfo(base_url="local")
-        elif isinstance(repo_data, dict) and (base_url := repo_data.get("base-url")):
-            repo_info = RepoInfo(
-                base_url=base_url,
-                subdir=repo_data.get("subdir"),
-                ref=repo_data.get("ref"),
+        # Parse test block — None when absent or explicitly false
+        test_config: TestConfig | None = None
+        test_data = comp_data.get("test")
+        if isinstance(test_data, dict):
+            test_config = TestConfig(
+                method=TestMethod(test_data.get("method", TestMethod.SPREAD)),
+                source_format=test_data.get("source-format", ""),
+                repo=_parse_repo(test_data.get("repo"), comp_name),
             )
-        else:
+        elif test_data not in (None, False):
             raise ValueError(
-                f"Component {comp_name}: 'repo' must be an object with 'base-url' field, "
-                f"or the string 'local', got: {repo_data!r}"
+                f"Component {comp_name}: 'test' must be an object with 'method' field "
+                f"or be absent, got: {test_data!r}"
             )
 
         component = ComponentConfig(
             name=comp_data["name"],
             category=comp_data.get("category", ""),
             release=comp_data["release"],
-            repo=repo_info,
             installation=installation,
-            test=comp_data.get("test", False),
+            test=test_config,
         )
         components.append(component)
 

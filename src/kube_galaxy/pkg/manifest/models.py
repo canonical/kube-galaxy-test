@@ -16,13 +16,10 @@ class InstallMethod(StrEnum):
     NONE = "none"  # No installation, component has no installable artifacts
 
 
-@dataclass
-class InstallConfig:
-    """Kubernetes component installation configuration."""
+class TestMethod(StrEnum):
+    """Test execution method for components."""
 
-    method: InstallMethod  # Installation method
-    source_format: str  # e.g., format string URL or path to binary, chart, or manifest
-    bin_path: str  # Default path inside archive where binaries
+    SPREAD = "spread"  # Spread test suite
 
 
 @dataclass
@@ -51,15 +48,40 @@ class RepoInfo:
 
 
 @dataclass
+class InstallConfig:
+    """Kubernetes component installation configuration."""
+
+    method: InstallMethod  # Installation method
+    source_format: str  # e.g., format string URL or path to binary, chart, or manifest
+    bin_path: str  # Default path inside archive where binaries
+    repo: RepoInfo = field(default_factory=RepoInfo)  # Repository for this install artefact
+
+
+@dataclass
+class TestConfig:
+    """Spread test configuration for a component.
+
+    Describes how to locate and run the component's spread test suite.
+    The ``repo`` field identifies where to find the test tasks (local or
+    remote), and ``source_format`` is a Mustache template that resolves to
+    the root directory of the test suite (e.g.
+    ``{{ repo.base-url }}/components/{{ name }}``).
+    """
+
+    method: TestMethod  # Test execution method
+    source_format: str  # Mustache template resolving to the test suite root
+    repo: RepoInfo = field(default_factory=RepoInfo)  # Repository hosting the test suite
+
+
+@dataclass
 class ComponentConfig:
     """Kubernetes component configuration from manifest YAML."""
 
     name: str
     category: str
     release: str
-    repo: RepoInfo
     installation: InstallConfig
-    test: bool = False
+    test: TestConfig | None = None  # None means no tests for this component
 
     # Component lifecycle configuration
     dependencies: list[str] = field(default_factory=list)  # Must install after these components
