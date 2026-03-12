@@ -5,27 +5,22 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
-import bz2
-import gzip
-import lzma
 import shutil
 from collections.abc import Iterable
 from pathlib import Path
 from typing import LiteralString, cast
 
-import yaml
-
 from kube_galaxy.pkg.arch.detector import ArchInfo
-from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
-from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest, TestMethod
-from kube_galaxy.pkg.utils.client import apply_manifest
-from kube_galaxy.pkg.utils.components import (
-    download_file,
-    extract_archive,
-    format_component_pattern,
-    install_binary,
+from kube_galaxy.pkg.components.strategies import (
+    _INSTALL_STRATEGIES,
+    _TEST_STRATEGIES,
+    _InstallStrategy,
+    _TestStrategy,
 )
-from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
+from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
+from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
+from kube_galaxy.pkg.utils.components import install_binary
+from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
@@ -95,6 +90,16 @@ class ComponentBase:
         # for InstallMethod ContainerManifest
         self.manifest_path: Path | None = None  # path to downloaded manifest file
 
+        install_method = config.installation.method
+        if install_method not in _INSTALL_STRATEGIES:
+            raise ComponentError(f"Unsupported installation method: {install_method}")
+        self._install_strategy: _InstallStrategy = _INSTALL_STRATEGIES[install_method]
+
+        test_method = config.test.method
+        if test_method not in _TEST_STRATEGIES:
+            raise ComponentError(f"Unsupported test method: {test_method}")
+        self._test_strategy: _TestStrategy = _TEST_STRATEGIES[test_method]
+
     @property
     def name(self) -> str:
         """
@@ -103,9 +108,7 @@ class ComponentBase:
         Returns:
             Component name from config
         """
-        if self.config and self.config.name:
-            return self.config.name
-        raise ComponentError("Component name not found in config")
+        return self.config.name
 
     @property
     def is_cluster_manager(self) -> bool:
@@ -116,21 +119,6 @@ class ComponentBase:
             True if this component is responsible for cluster lifecycle management (e.g., kubeadm)
         """
         return isinstance(self, ClusterComponentBase)
-
-    @property
-    def bin_path(self) -> str:
-        """
-        Default path inside archives where binaries are located.
-
-        Override in subclass if binaries are located in a different path within the archive.
-        """
-
-        return format_component_pattern(
-            self.config.installation.bin_path,
-            self.config,
-            self.arch_info,
-            self.config.installation.repo,
-        )
 
     def get_cluster_manager(self) -> "ClusterComponentBase":
         """
@@ -159,38 +147,8 @@ class ComponentBase:
 
         Access component config via self.config (repo, release, installation).
         """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        comp_name = self.config.name
-        match self.config.installation.method:
-            case InstallMethod.BINARY:
-                self.binary_path = self.download_filename_from_config()
-            case InstallMethod.BINARY_ARCHIVE:
-                self.download_and_extract_archive()
-            case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
-                self.download_image_archive()
-            case InstallMethod.CONTAINER_IMAGE:
-                self.container_format_repo_and_tag()
-            case InstallMethod.CONTAINER_MANIFEST:
-                self.manifest_path = self.download_manifest_from_config()
-            case InstallMethod.NONE:
-                pass
-            case _:
-                raise ComponentError(
-                    f"Unsupported installation method for {comp_name}: "
-                    f"{self.config.installation.method}"
-                )
-        match self.config.test.method:
-            case TestMethod.SPREAD:
-                info(f"Downloading test artifacts for {comp_name}")
-                self.download_tasks_from_config()
-            case TestMethod.NONE:
-                pass
-            case _:
-                raise ComponentError(
-                    f"Unsupported test method for {comp_name}: {self.config.test.method}"
-                )
+        self._install_strategy.download(self)
+        self._test_strategy.download(self)
 
     def pre_install_hook(self) -> None:
         """
@@ -199,7 +157,8 @@ class ComponentBase:
         This hook runs in the PRE_INSTALL stage (sequential).
         Override to implement machine preparation (swapoff, sysctl, etc.).
         """
-        pass
+        self._install_strategy.pre_install(self)
+        self._test_strategy.pre_install(self)
 
     def install_hook(self) -> None:
         """
@@ -210,39 +169,8 @@ class ComponentBase:
 
         Access component config via self.config (repo, release, installation).
         """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        comp_name = self.config.name
-        match self.config.installation.method:
-            case InstallMethod.BINARY:
-                if not self.binary_path or not self.binary_path.exists():
-                    raise ComponentError(
-                        f"{comp_name} binary not downloaded. Run download hook first."
-                    )
-                self.install_path = self.install_downloaded_binary(self.binary_path)
-            case InstallMethod.BINARY_ARCHIVE:
-                if not self.extracted_dir or not self.extracted_dir.exists():
-                    raise ComponentError(
-                        f"{comp_name} archive not downloaded. Run download hook first."
-                    )
-                for each in self.extracted_dir.glob(self.bin_path):
-                    installed = self.install_downloaded_binary(each, each.name)
-                    if each.name == comp_name:
-                        self.install_path = installed
-            case InstallMethod.CONTAINER_IMAGE:
-                # TODO: Implement container image install logic
-                pass
-            case InstallMethod.CONTAINER_MANIFEST:
-                # TODO: Implement manifest installation logic
-                pass
-            case InstallMethod.NONE:
-                pass
-            case _:
-                raise ComponentError(
-                    f"Unsupported installation method for {comp_name}: "
-                    f"{self.config.installation.method}"
-                )
+        self._install_strategy.install(self)
+        self._test_strategy.install(self)
 
     def bootstrap_hook(self) -> None:
         """
@@ -252,22 +180,8 @@ class ComponentBase:
         Override to implement service startup logic.
         """
 
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        comp_name = self.config.name
-        match self.config.installation.method:
-            case InstallMethod.CONTAINER_MANIFEST:
-                if not self.manifest_path or not self.manifest_path.exists():
-                    raise ComponentError(
-                        f"{comp_name} manifest not downloaded. Run download hook first."
-                    )
-                try:
-                    apply_manifest(self.manifest_path)
-                except ClusterError as e:
-                    raise ComponentError(f"Failed to apply manifest for {comp_name}") from e
-
-        pass
+        self._install_strategy.bootstrap(self)
+        self._test_strategy.bootstrap(self)
 
     def configure_hook(self) -> None:
         """
@@ -276,7 +190,8 @@ class ComponentBase:
         This hook runs in the CONFIGURE stage before BOOTSTRAP (sequential).
         Override to implement configuration logic.
         """
-        pass
+        self._install_strategy.configure(self)
+        self._test_strategy.configure(self)
 
     def verify_hook(self) -> None:
         """
@@ -285,36 +200,8 @@ class ComponentBase:
         This hook runs in the VERIFY stage (sequential).
         Override to implement health check logic.
         """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        match self.config.installation.method:
-            case InstallMethod.CONTAINER_MANIFEST:
-                # Should check self.manifest_path exists before using it
-                if not self.manifest_path or not self.manifest_path.exists():
-                    raise ComponentError(f"{self.config.name} manifest not downloaded")
-
-                # We can check rollout status of workloads defined in the manifest
-                docs_str = run(
-                    [*Commands.K_CREATE_DRY_RUN, "-f", str(self.manifest_path)],
-                    check=True,
-                    capture_output=True,
-                )
-                docs = list(yaml.safe_load_all(docs_str.stdout))
-                workloads = [
-                    doc
-                    for doc in docs
-                    if doc.get("kind") in ("Deployment", "DaemonSet", "StatefulSet")
-                ]
-                for workload in workloads:
-                    kind = workload["kind"].lower()
-                    name = workload["metadata"]["name"].lower()
-                    namespace = workload["metadata"].get("namespace", "default").lower()
-                    run(
-                        [*Commands.K_ROLLOUT_STATUS, f"{kind}/{name}", "-n", namespace],
-                        check=True,
-                        timeout=self.BOOTSTRAP_TIMEOUT,
-                    )
+        self._install_strategy.verify(self)
+        self._test_strategy.verify(self)
 
     def remove_hook(self) -> None:
         """
@@ -323,7 +210,8 @@ class ComponentBase:
         This hook runs during component removal.
         Override to implement cleanup logic.
         """
-        pass
+        self._install_strategy.remove(self)
+        self._test_strategy.remove(self)
 
     # Component directory and alternatives management methods
     @property
@@ -349,34 +237,9 @@ class ComponentBase:
     @property
     def extracted_dir(self) -> Path | None:
         """Get the extracted directory for this component."""
-        if not self.config:
-            raise ComponentError("Component config required for extracted directory")
         if self.config.installation.method != InstallMethod.BINARY_ARCHIVE:
             return None
         return Path(self.component_tmp_dir) / "extracted"
-
-    def register_alternative(self, binary_name: str, binary_path: str) -> None:
-        """
-        Register a binary with update-alternatives.
-
-        Args:
-            binary_name: Name of the binary (e.g., 'containerd')
-            binary_path: Full path to the binary
-        """
-        try:
-            alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
-            run(
-                [
-                    *Commands.UPDATE_ALTERNATIVES_INSTALL,
-                    alternative_path,
-                    binary_name,
-                    binary_path,
-                    Permissions.ALTERNATIVES_PRIORITY,
-                ],
-                check=True,
-            )
-        except Exception as e:
-            raise ComponentError(f"Failed to register alternative for {binary_name}: {e}") from e
 
     def remove_component_alternatives(self) -> None:
         """
@@ -443,175 +306,6 @@ class ComponentBase:
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
-    def download_filename_from_config(self) -> Path:
-        """
-        Download binary using component config source_format.
-
-        Args:
-            arch: Architecture string for URL template
-            filename: Optional override for filename
-
-        Returns:
-            Path to downloaded filename
-
-        Raises:
-            ComponentError: If download fails or config missing
-        """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        # Construct download URL from source_format template
-        url = format_component_pattern(
-            self.config.installation.source_format,
-            self.config,
-            self.arch_info,
-            self.config.installation.repo,
-        )
-        filename = url.split("/")[-1]
-
-        # Download to secure temporary directory
-        temp_dir = self.ensure_temp_dir()
-        filepath = temp_dir / filename
-        download_file(url, filepath)
-
-        return filepath
-
-    def download_and_extract_archive(self) -> Path:
-        """
-        Download and extract archive from config.
-
-        Args:
-            arch: Architecture string (e.g., 'amd64')
-
-        Returns:
-            Path to extraction directory
-
-        Raises:
-            ComponentError: If download or extraction fails
-        """
-        archive_path = self.download_filename_from_config()
-        if not self.extracted_dir:
-            raise ComponentError("Extracted directory not defined for this component")
-
-        # Extract archive
-        self.extracted_dir.mkdir(exist_ok=True)
-        extract_archive(archive_path, self.extracted_dir)
-
-        return self.extracted_dir
-
-    def download_image_archive(self) -> None:
-        """
-        Download container image archive for this component.
-
-        This is a placeholder for container image archive download logic, which may involve
-        using 'ctr' or 'docker' commands to pull the specified image.
-        """
-        file_path = self.download_filename_from_config()
-        if not self.extracted_dir:
-            raise ComponentError("Extracted directory not defined for this component")
-
-        # Extract if compressed archive; otherwise, assume it's a tar file containing the image
-        self.extracted_dir.mkdir(exist_ok=True)
-        image_tar = self.extracted_dir / "image.tar"
-        if file_path.suffix == ".tar":
-            file_path.rename(image_tar)
-        elif file_path.suffixes == [".tar", ".gz"] or file_path.suffix == ".tgz":
-            with gzip.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
-                shutil.copyfileobj(src, dst)
-        elif file_path.suffixes == [".tar", ".xz"] or file_path.suffix == ".txz":
-            with lzma.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
-                shutil.copyfileobj(src, dst)
-        elif file_path.suffixes == [".tar", ".bz2"]:
-            with bz2.open(file_path, "rb") as src, open(image_tar, "wb") as dst:
-                shutil.copyfileobj(src, dst)
-        else:
-            raise ComponentError(f"Unsupported archive format for {file_path.name}")
-
-    def download_tasks_from_config(self) -> None:
-        """Download or copy the spread test suite for this component to the tests root.
-
-        For **local** sources (``base-url: local``), the test suite is already
-        present in the repository.  The ``source-format`` field in the test
-        config is rendered via :func:`format_component_pattern` to produce the
-        source path, which is then copied to the shared tests root so that the
-        spread orchestrator can discover it alongside remotely-sourced test
-        suites.
-
-        For **remote** sources, the test suite must be cloned from the component
-        repo.  The base implementation raises :class:`NotImplementedError`;
-        subclasses or future additions can override this method to perform the
-        actual clone via GitPython.
-        """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        test_cfg = self.config.test
-        if test_cfg.method != TestMethod.SPREAD:
-            raise ComponentError(
-                f"download_tasks_from_config called for component "
-                f"'{self.config.name}' which has no spread test configuration"
-            )
-
-        comp_name = self.config.name
-        dest = SystemPaths.tests_root() / comp_name
-
-        if test_cfg.repo.is_local:
-            # Local source: resolve path via source-format template and copy to tests_root.
-            local_suite = Path(
-                format_component_pattern(
-                    test_cfg.source_format, self.config, self.arch_info, test_cfg.repo
-                )
-            )
-            if not local_suite.exists():
-                raise ComponentError(f"Local test suite not found for '{comp_name}': {local_suite}")
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(local_suite, dest)
-            info(f"Copied local test suite for '{comp_name}' to {dest}")
-        else:
-            # Remote source: clone repo at release tag into tests root.
-            # Full implementation should use GitPython to clone and checkout the
-            # component repo at component.release, placing spread/ tasks at
-            # tests_root/<name>/spread/kube-galaxy/.
-            raise NotImplementedError(
-                f"Remote test suite download is not yet implemented for '{comp_name}'. "
-                f"Use 'base-url: local' in the test block to ship test tasks inside this repo, "
-                f"or manually place a task.yaml at {dest}/spread/kube-galaxy/task.yaml."
-            )
-
-    def download_manifest_from_config(self) -> Path:
-        """
-        Download Kubernetes manifest using component config source_format.
-
-        Returns:
-            Path to downloaded manifest file
-
-        Raises:
-            ComponentError: If download fails or config missing
-        """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        # Construct download URL from source_format template
-        url = format_component_pattern(
-            self.config.installation.source_format,
-            self.config,
-            self.arch_info,
-            self.config.installation.repo,
-        )
-
-        # Ensure https:// prefix for URLs like raw.githubusercontent.com
-        if not url.startswith(("http://", "https://")):
-            url = f"https://{url}"
-
-        # Download to secure temporary directory
-        temp_dir = self.ensure_temp_dir()
-        filepath = temp_dir / f"{self.config.name}-manifest.yaml"
-        download_file(url, filepath)
-        info(f"Downloaded manifest for {self.config.name}")
-
-        return filepath
-
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
         """
         Install downloaded binary using standard install_binary function.
@@ -630,68 +324,7 @@ class ComponentBase:
             raise ComponentError(f"{self.name} binary not found at {binary_path}")
 
         name = binary_name or self.name
-        self.install_path = install_binary(binary_path, name, self.name)
-        return self.install_path
-
-    def container_format_repo_and_tag(self) -> None:
-        """
-        Format container image repository and tag from config.
-
-        Sets self.image_repository and self.image_tag based on config values.
-
-        Returns:
-            Path to extraction directory
-
-        Raises:
-            ComponentError: If download or extraction fails
-
-        """
-        if not self.config:
-            raise ComponentError("Component config required for container image formatting")
-
-        # Construct download URL from source_format template
-        full = format_component_pattern(
-            self.config.installation.source_format,
-            self.config,
-            self.arch_info,
-            self.config.installation.repo,
-        )
-        split = full.rsplit(":", 1)
-        if len(split) != 2:
-            raise ComponentError(f"Invalid container image format: {full}")
-        self.image_repository, self.image_tag = split
-        info(f"  Formatted container image: {self.image_repository}:{self.image_tag}")
-
-    def start_systemd_service(self, service_name: str) -> None:
-        """
-        Enable and start a systemd service.
-
-        Args:
-            service_name: Name of the service
-
-        Raises:
-            ComponentError: If service operations fail
-        """
-        try:
-            run([*Commands.SYSTEMCTL_DAEMON_RELOAD], check=True)
-            run([*Commands.SYSTEMCTL_ENABLE, service_name], check=True)
-            run([*Commands.SYSTEMCTL_START, service_name], check=True)
-        except Exception as e:
-            raise ComponentError(f"Failed to start {service_name} service: {e}") from e
-
-    def stop_systemd_service(self, service_name: str) -> None:
-        """
-        Stop and disable a systemd service (best effort).
-
-        Args:
-            service_name: Name of the service
-        """
-        try:
-            run([*Commands.SYSTEMCTL_STOP, service_name], check=False)
-            run([*Commands.SYSTEMCTL_DISABLE, service_name], check=False)
-            info(f"Stopped {service_name} service")
-        except Exception as e:
-            info(f"Failed to stop {service_name} service: {e}")
+        return install_binary(binary_path, name, self.name)
 
     def create_systemd_service(
         self,
@@ -755,38 +388,6 @@ class ComponentBase:
             run([*Commands.SUDO_CHMOD, mode, str(target_path)], check=True)
         except Exception as e:
             raise ComponentError(f"Failed to write config to {target_path}: {e}") from e
-
-    def verify_systemd_service(self, service_name: str) -> None:
-        """
-        Verify that a systemd service is running.
-
-        Args:
-            service_name: Name of the service
-
-        Raises:
-            ComponentError: If service is not active
-        """
-        try:
-            run([*Commands.SYSTEMCTL_IS_ACTIVE, service_name], check=True)
-        except Exception as e:
-            raise ComponentError(f"Service {service_name} is not active: {e}") from e
-
-    def verify_binary_works(self, binary_name: str, args: list[str] | None = None) -> None:
-        """
-        Verify that a binary command works.
-
-        Args:
-            binary_name: Name of the binary to test
-            args: Arguments to pass to binary (default: ['--version'])
-
-        Raises:
-            ComponentError: If binary command fails
-        """
-        test_args = args or ["--version"]
-        try:
-            run([binary_name, *test_args], check=True)
-        except Exception as e:
-            raise ComponentError(f"Binary {binary_name} verification failed: {e}") from e
 
     def remove_directories(
         self, directories: Iterable[str | Path], component_name: str | None = None

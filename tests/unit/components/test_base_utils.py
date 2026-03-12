@@ -8,8 +8,12 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     RepoInfo,
-    TestConfig,
-    TestMethod,
+)
+from kube_galaxy.pkg.manifest.models import (
+    TestConfig as ComponentTestConfig,
+)
+from kube_galaxy.pkg.manifest.models import (
+    TestMethod as ComponentTestMethod,
 )
 from kube_galaxy.pkg.utils.components import format_component_pattern
 
@@ -211,8 +215,8 @@ def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, ar
         source_format="",
         bin_path="./*",
     )
-    test_cfg = TestConfig(
-        method=TestMethod.SPREAD,
+    test_cfg = ComponentTestConfig(
+        method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/components/{{ name }}",
         repo=RepoInfo(base_url="local"),
     )
@@ -231,7 +235,7 @@ def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, ar
     comp = ExampleComponent(
         {}, Manifest(name="m", description="d", kubernetes_version="1.0"), config, arch_info
     )
-    comp.download_tasks_from_config()
+    comp.download_hook()
 
     dest = tests_root / "sonobuoy"
     assert dest.exists()
@@ -256,34 +260,6 @@ def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
     assert ret.exists()
 
 
-def test_download_binary_from_config_calls_download_file(monkeypatch, tmp_path, arch_info):
-    cfg = make_config("mybin")
-    comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info
-    )
-
-    calls = []
-
-    def fake_download(url, path):
-        calls.append((url, str(path)))
-        # ensure parent exists then create the file to simulate download
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text("x")
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download)
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", lambda *a, **k: None)
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
-
-    p = comp.download_filename_from_config()
-    assert calls, "download_file was not called"
-    assert p.exists()
-
-
 def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, arch_info):
     cfg = make_config("tool")
     comp = ExampleComponent(
@@ -301,47 +277,6 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
 
     install_path = comp.install_downloaded_binary(bin_path, "tool")
     assert install_path == "/usr/local/bin/tool"
-    assert comp.install_path == install_path
-
-
-def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path, arch_info):
-    cfg = make_config("foo")
-    cfg.installation = InstallConfig(
-        method=InstallMethod.BINARY_ARCHIVE,
-        source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/archive.tar.gz",
-        bin_path="./*",
-    )
-    comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info
-    )
-
-    events = []
-
-    def fake_download(url, path):
-        # ensure parent exists then create a fake archive file
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text("archive")
-        events.append(("download", url, str(path)))
-
-    def fake_extract(archive_path, dest):
-        events.append(("extract", str(archive_path), str(dest)))
-        dest.mkdir(exist_ok=True)
-        # create a fake binary inside
-        (dest / "foo").write_text("x")
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download)
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.extract_archive", fake_extract)
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", lambda *a, **k: None)
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
-
-    dest = comp.download_and_extract_archive()
-    assert any(e[0] == "extract" for e in events)
-    assert (dest / "foo").exists()
 
 
 def test_create_systemd_service_and_write_config(monkeypatch, tmp_path, arch_info):

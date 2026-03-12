@@ -9,8 +9,12 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     NetworkConfig,
     RepoInfo,
-    TestConfig,
-    TestMethod,
+)
+from kube_galaxy.pkg.manifest.models import (
+    TestConfig as ComponentTestConfig,
+)
+from kube_galaxy.pkg.manifest.models import (
+    TestMethod as ComponentTestMethod,
 )
 
 
@@ -22,8 +26,8 @@ def test_component_creation():
         bin_path="./*",
         repo=RepoInfo(base_url="https://github.com/test/repo"),
     )
-    test = TestConfig(
-        method=TestMethod.SPREAD,
+    test = ComponentTestConfig(
+        method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/spread/kube-galaxy",
         repo=RepoInfo(base_url="https://github.com/test/repo"),
     )
@@ -36,7 +40,7 @@ def test_component_creation():
     )
     assert config.name == "test-comp"
     assert config.test is not None
-    assert config.test.method == TestMethod.SPREAD
+    assert config.test.method == ComponentTestMethod.SPREAD
     assert config.installation.method == InstallMethod.BINARY_ARCHIVE
 
 
@@ -53,7 +57,7 @@ def test_component_no_test():
         release="1.0.0",
         installation=installation,
     )
-    assert config.test.method == TestMethod.NONE
+    assert config.test.method == ComponentTestMethod.NONE
 
 
 def test_network_config_creation():
@@ -195,6 +199,6 @@ def test_install_config_default_repo():
 
 def test_test_config_default_repo():
     """TestConfig.repo defaults to empty RepoInfo."""
-    test = TestConfig(method=TestMethod.SPREAD, source_format="")
+    test = ComponentTestConfig(method=ComponentTestMethod.SPREAD, source_format="")
     assert test.repo.base_url == ""
     assert test.repo.is_local is False

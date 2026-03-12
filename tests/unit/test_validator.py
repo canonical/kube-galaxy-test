@@ -12,8 +12,12 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     RepoInfo,
-    TestConfig,
-    TestMethod,
+)
+from kube_galaxy.pkg.manifest.models import (
+    TestConfig as ComponentTestConfig,
+)
+from kube_galaxy.pkg.manifest.models import (
+    TestMethod as ComponentTestMethod,
 )
 from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
@@ -76,7 +80,7 @@ execute: |
 
     assert len(spread_components) == 1
     assert spread_components[0].name == "coredns"
-    assert spread_components[0].test.method == TestMethod.SPREAD
+    assert spread_components[0].test.method == ComponentTestMethod.SPREAD
 
 
 def test_task_path_for_component_always_uses_tests_root(monkeypatch):
@@ -89,8 +93,8 @@ def test_task_path_for_component_always_uses_tests_root(monkeypatch):
     monkeypatch.setattr(SystemPaths, "tests_root", lambda: fake_root)
 
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
-    test = TestConfig(
-        method=TestMethod.SPREAD,
+    test = ComponentTestConfig(
+        method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/spread/kube-galaxy",
         repo=RepoInfo(base_url="https://github.com/org/repo"),
     )
@@ -106,8 +110,8 @@ def test_task_path_for_component_always_uses_tests_root(monkeypatch):
     assert task_path_for_component(remote_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
 
     # Local source — same result
-    local_test = TestConfig(
-        method=TestMethod.SPREAD,
+    local_test = ComponentTestConfig(
+        method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/components/mycomp",
         repo=RepoInfo(base_url="local"),
     )
@@ -136,8 +140,8 @@ def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
     (task_dir / "task.yaml").write_text("summary: local test\nexecute: |\n    echo done\n")
 
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
-    test = TestConfig(
-        method=TestMethod.SPREAD,
+    test = ComponentTestConfig(
+        method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/components/{{ name }}",
         repo=RepoInfo(base_url="local"),
     )

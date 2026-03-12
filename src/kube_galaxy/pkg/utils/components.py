@@ -14,6 +14,7 @@ from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -190,3 +191,14 @@ def format_component_pattern(
         },
     }
     return str(chevron.render(filename_pattern, data))
+
+
+def source_locally(comp_name: str, src: str, dest: Path) -> None:
+    """Copy a file or directory from a local source path into a destination path."""
+    local = Path(src)
+    if not local.exists():
+        raise ComponentError(f"Local source not found for '{comp_name}': {local}")
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(local, dest)
+    info(f"Copied local test suite for '{comp_name}' to {dest}")

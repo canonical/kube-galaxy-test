@@ -70,7 +70,8 @@ def test_download_hook_downloads_manifest(component, monkeypatch, tmp_path):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("apiVersion: v1\nkind: ConfigMap\n")
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download_file)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.download_file"
+    monkeypatch.setattr(_target, fake_download_file)
 
     # Call download hook
     component.download_hook()
@@ -118,7 +119,8 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("manifest content")
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download_file)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.download_file"
+    monkeypatch.setattr(_target, fake_download_file)
 
     comp.download_hook()
 
@@ -156,7 +158,8 @@ def test_download_hook_adds_https_prefix(manifest, arch_info, monkeypatch, tmp_p
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("content")
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download_file)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.download_file"
+    monkeypatch.setattr(_target, fake_download_file)
 
     comp.download_hook()
 
@@ -177,7 +180,8 @@ def test_bootstrap_hook_applies_manifest(component, monkeypatch, tmp_path):
     def fake_apply_manifest(path):
         apply_manifest_calls.append(path)
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.apply_manifest", fake_apply_manifest)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.apply_manifest"
+    monkeypatch.setattr(_target, fake_apply_manifest)
 
     # Call bootstrap hook
     component.bootstrap_hook()
@@ -328,7 +332,8 @@ metadata:
             return None
         return None
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     # Call verify hook
     component.verify_hook()
@@ -397,7 +402,8 @@ metadata:
         elif "rollout" in cmd:
             run_calls.append(list(cmd))
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     component.verify_hook()
 
@@ -448,7 +454,8 @@ metadata:
         elif "rollout" in cmd:
             run_calls.append(list(cmd))
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     component.verify_hook()
 
@@ -497,7 +504,8 @@ metadata:
         elif "rollout" in cmd:
             run_calls.append(list(cmd))
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     component.verify_hook()
 

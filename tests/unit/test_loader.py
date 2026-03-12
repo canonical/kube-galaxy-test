@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import TestMethod
+from kube_galaxy.pkg.manifest.models import TestMethod as ComponentTestMethod
 
 
 def test_load_manifest(sample_manifest_file):
@@ -22,9 +22,9 @@ def test_load_manifest_components(sample_manifest_file):
 
     assert len(manifest.components) == 2
     assert manifest.components[0].name == "containerd"
-    assert manifest.components[0].test.method == TestMethod.NONE
+    assert manifest.components[0].test.method == ComponentTestMethod.NONE
     assert manifest.components[1].name == "coredns"
-    assert manifest.components[1].test.method == TestMethod.SPREAD
+    assert manifest.components[1].test.method == ComponentTestMethod.SPREAD
 
 
 def test_load_manifest_networking(sample_manifest_file):
