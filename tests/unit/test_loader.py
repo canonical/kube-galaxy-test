@@ -156,6 +156,27 @@ components:
         load_manifest(manifest_file)
 
 
+def test_load_manifest_invalid_test_value(tmp_manifest_dir):
+    """Test error when test field is an unexpected type (e.g. bare true)."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: test
+kubernetes-version: "1.35.0"
+components:
+  - name: bad
+    category: test
+    release: "1.0"
+    installation:
+      method: none
+    test: true
+"""
+    )
+
+    with pytest.raises(ValueError, match="'test' must be an object"):
+        load_manifest(manifest_file)
+
+
 def test_load_manifest_remote_install_repo_not_local(sample_manifest_file):
     """Test that remote installation repos have is_local == False."""
     manifest = load_manifest(sample_manifest_file)

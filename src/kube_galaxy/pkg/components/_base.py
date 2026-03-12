@@ -185,7 +185,7 @@ class ComponentBase:
             case TestMethod.SPREAD:
                 info(f"Downloading test artifacts for {comp_name}")
                 self.download_tasks_from_config()
-            case InstallMethod.NONE:
+            case TestMethod.NONE:
                 pass
             case _:
                 raise ComponentError(
