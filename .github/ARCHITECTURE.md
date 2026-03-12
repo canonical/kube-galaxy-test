@@ -94,7 +94,7 @@ Components that follow standard installation patterns can be defined purely in t
     base-url: "https://github.com/etcd-io/etcd"
   installation:
     method: "binary-archive"
-    source-format: "{{ repo.base_url }}/releases/download/v{{ release }}/etcd-v{{ release }}-linux-{{ arch }}.tar.gz"
+    source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/etcd-v{{ release }}-linux-{{ arch }}.tar.gz"
     bin-path: "./etcd-v{{ release }}-linux-{{ arch }}/etcd"
   test: false
 ```
@@ -105,8 +105,8 @@ Components that follow standard installation patterns can be defined purely in t
 |--------------------|------------------------------------------------------------|
 | `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)     |
 | `{{ release }}`        | Component release tag from the manifest                   |
-| `{ref}`            | Git ref override, or empty string                         |
-| `{{ repo.base_url }}`  | Repository base URL (or `cwd` for local sources)          |
+| `{{ ref }}`            | Git ref override, or empty string                         |
+| `{{ repo.base-url }}`  | Repository base URL (or `cwd` for local sources)          |
 | `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty if unset)    |
 | `{{ repo.ref }}`       | Git ref from the `repo` block (empty if unset)            |
 

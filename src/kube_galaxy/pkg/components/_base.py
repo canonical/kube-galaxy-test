@@ -551,13 +551,14 @@ class ComponentBase:
             shutil.copytree(local_suite, dest)
             info(f"Copied local test suite for '{comp_name}' to {dest}")
         else:
-            # Remote source: placeholder — clone repo at release tag into tests root.
+            # Remote source: clone repo at release tag into tests root.
             # Full implementation should use GitPython to clone and checkout the
             # component repo at component.release, placing spread/ tasks at
             # tests_root/<name>/spread/kube-galaxy/.
-            info(
-                f"Remote test suite download for '{comp_name}' not yet implemented; "
-                f"task.yaml must be placed manually at {dest}"
+            raise NotImplementedError(
+                f"Remote test suite download is not yet implemented for '{comp_name}'. "
+                f"Use 'base-url: local' in the manifest to ship test tasks inside this repo, "
+                f"or manually place a task.yaml at {dest}/spread/kube-galaxy/task.yaml."
             )
 
     def download_manifest_from_config(self, arch: str) -> Path:

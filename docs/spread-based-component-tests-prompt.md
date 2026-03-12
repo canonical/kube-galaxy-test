@@ -57,9 +57,9 @@ spread can discover them.
 ```
 
 **Local source rules**:
-- `{{ repo.base_url }}` in `source-format` resolves to `str(Path.cwd())`
-- `task_path_for_component()` returns `cwd/components/<name>/spread/kube-galaxy/`
-- `download_tasks_from_config()` is skipped (no remote fetch needed)
+- `{{ repo.base-url }}` in `source-format` resolves to `str(Path.cwd())`
+- `download_tasks_from_config()` copies `cwd/components/<name>/` to `tests_root/<name>/`
+- `task_path_for_component()` returns `tests_root/<name>/spread/kube-galaxy/` (same as remote)
 
 ---
 
@@ -67,19 +67,20 @@ spread can discover them.
 
 The `installation.source-format` field supports the following placeholders:
 
-| Placeholder        | Resolves to                                                |
-|--------------------|------------------------------------------------------------|
-| `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, ...)   |
-| `{{ release }}`        | Component release tag from the manifest                   |
-| `{ref}`            | Git ref override, or empty string                         |
-| `{{ repo.base_url }}`  | Repository base URL, or `str(cwd)` for local sources      |
-| `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty if unset)    |
-| `{{ repo.ref }}`       | Git ref from the `repo` block (empty if unset)            |
+| Placeholder           | Resolves to                                                |
+|-----------------------|------------------------------------------------------------|
+| `{{ arch }}`          | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, ...)   |
+| `{{ release }}`       | Component release tag from the manifest                   |
+| `{{ ref }}`           | Git ref override, or empty string                         |
+| `{{ repo.base-url }}` | Repository base URL, or `str(cwd)` for local sources      |
+| `{{ repo.subdir }}`   | Optional subdirectory within the repo (empty if unset)    |
+| `{{ repo.ref }}`      | Git ref from the `repo` block (empty if unset)            |
 
 **Implementation note**: Source-format templates are rendered using **Jinja2**.
-Template variables are accessed with `{{ variable }}` syntax.  The `repo`
-context object supports attribute access: `{{ repo.base_url }}`,
-`{{ repo.subdir }}`, `{{ repo.ref }}`.
+Template variables use `{{ variable }}` syntax.  Hyphenated attribute names like
+`{{ repo.base-url }}` are automatically normalised before rendering (hyphens
+within expressions are converted to underscores), matching the YAML naming
+convention in manifests.
 
 ---
 
@@ -97,7 +98,41 @@ After `kube-galaxy setup` all component test tasks must live under:
 ```
 
 For remote sources this is populated by `download_tasks_from_config()`.
-For local sources this is populated by the component's `install_hook`.
+For local sources (`base-url: local`) this is populated by `download_tasks_from_config()`
+which copies `cwd/components/<name>/` → `tests_root/<name>/`.
+
+---
+
+## Environment Variables Available to `task.yaml`
+
+When spread executes a component's `task.yaml`, the following shell environment
+variables are available in the `execute` block in addition to the standard
+spread-level variables:
+
+| Variable            | Value                                     |
+|---------------------|-------------------------------------------|
+| `COMPONENT_NAME`    | Component name from the manifest          |
+| `COMPONENT_VERSION` | Component release tag from the manifest   |
+| `KUBECONFIG`        | Path to the kubeconfig file               |
+| `SYSTEM_ARCH`       | Raw `uname -m` architecture string        |
+| `K8S_ARCH`          | Kubernetes arch format (`amd64`, `arm64`) |
+| `IMAGE_ARCH`        | Container image arch tag format           |
+| `TEST_TIMEOUT_M`    | Test timeout in minutes                   |
+| `TEST_TIMEOUT_S`    | Test timeout in seconds                   |
+
+Example `task.yaml` using `COMPONENT_VERSION` and `K8S_ARCH`:
+
+```yaml
+summary: My component conformance tests
+execute: |
+    wget https://example.com/releases/v${COMPONENT_VERSION}/tool-linux-${K8S_ARCH}.tar.gz
+    tar xf tool-linux-${K8S_ARCH}.tar.gz
+    ./tool --kubeconfig=$KUBECONFIG run --wait=$TEST_TIMEOUT_M
+```
+
+`COMPONENT_NAME` and `COMPONENT_VERSION` are injected per-suite by
+`_generate_orchestration_spread_yaml()` in
+[pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py).
 
 ---
 

@@ -9,7 +9,7 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     RepoInfo,
 )
-from kube_galaxy.pkg.utils.components import format_component_pattern
+from kube_galaxy.pkg.utils.components import _normalize_template, format_component_pattern
 
 
 class ExampleComponent(ComponentBase):
@@ -19,7 +19,7 @@ class ExampleComponent(ComponentBase):
 def make_config(name: str = "example") -> ComponentConfig:
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="https://example/{{ repo.base_url }}/{{ release }}/{{ arch }}/binary",
+        source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/binary",
         bin_path="./*",
     )
     repo = RepoInfo(base_url="https://example.com/r")
@@ -31,8 +31,55 @@ def make_config(name: str = "example") -> ComponentConfig:
 # ---------------------------------------------------------------------------
 
 
+def test_normalize_template_rewrites_hyphenated_attrs():
+    """_normalize_template converts dot-accessed repo.base-url to repo.base_url inside {{ }}."""
+    pattern = "{{ repo.base-url }}/releases/{{ repo.sub-dir }}/{{ release }}"
+    result = _normalize_template(pattern)
+    assert result == "{{ repo.base_url }}/releases/{{ repo.sub_dir }}/{{ release }}"
+
+
+def test_normalize_template_passthrough():
+    """_normalize_template leaves templates without dot-accessed hyphenated names unchanged."""
+    pattern = "https://example.com/{{ release }}/{{ arch }}/binary"
+    assert _normalize_template(pattern) == pattern
+
+
+def test_normalize_template_literal_hyphen_unchanged():
+    """_normalize_template does not alter hyphens in literal text outside {{ }}."""
+    pattern = "https://example-host.com/{{ repo.base-url }}/path"
+    result = _normalize_template(pattern)
+    assert result == "https://example-host.com/{{ repo.base_url }}/path"
+
+
+def test_normalize_template_top_level_var_hyphen_unchanged():
+    """_normalize_template does not alter hyphens in top-level (non-dotted) variable names."""
+    # Hypothetical: {{ my-var }} is NOT a dot-access so should be left as-is
+    pattern = "{{ my-var }}/something"
+    result = _normalize_template(pattern)
+    # my-var has no dot access so hyphen is NOT replaced
+    assert result == "{{ my-var }}/something"
+
+
 def test_format_component_pattern_remote(arch_info):
-    """format_component_pattern replaces {{ repo.base_url }} with base_url for remote."""
+    """format_component_pattern supports {{ repo.base-url }} (hyphen) for remote sources."""
+    install = InstallConfig(
+        method=InstallMethod.BINARY,
+        source_format="{{ repo.base-url }}/releases/download/v{{ release }}/bin-{{ arch }}",
+        bin_path="./*",
+    )
+    config = ComponentConfig(
+        name="mybin",
+        category="test",
+        release="1.2.3",
+        repo=RepoInfo(base_url="https://github.com/org/mybin"),
+        installation=install,
+    )
+    result = format_component_pattern(install.source_format, config, arch_info)
+    assert result == f"https://github.com/org/mybin/releases/download/v1.2.3/bin-{arch_info.k8s}"
+
+
+def test_format_component_pattern_underscore_alias(arch_info):
+    """format_component_pattern also accepts {{ repo.base_url }} (underscore) as an alias."""
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base_url }}/releases/download/v{{ release }}/bin-{{ arch }}",
@@ -50,11 +97,11 @@ def test_format_component_pattern_remote(arch_info):
 
 
 def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatch):
-    """format_component_pattern resolves {{ repo.base_url }} to str(cwd) for local sources."""
+    """format_component_pattern resolves {{ repo.base-url }} to str(cwd) for local sources."""
     monkeypatch.chdir(tmp_path)
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="{{ repo.base_url }}/mybin-{{ arch }}",
+        source_format="{{ repo.base-url }}/mybin-{{ arch }}",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -72,7 +119,7 @@ def test_format_component_pattern_subdir_and_ref(arch_info):
     """format_component_pattern handles {{ repo.subdir }} and {{ repo.ref }}."""
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="{{ repo.base_url }}/{{ repo.subdir }}/{{ repo.ref }}/{{ release }}",
+        source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}/{{ release }}",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -95,7 +142,7 @@ def test_format_component_pattern_empty_subdir_and_ref(arch_info):
     """
     install = InstallConfig(
         method=InstallMethod.BINARY,
-        source_format="{{ repo.base_url }}/{{ repo.subdir }}/{{ repo.ref }}",
+        source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}",
         bin_path="./*",
     )
     config = ComponentConfig(
@@ -179,7 +226,7 @@ def test_download_and_extract_archive_calls_extract(monkeypatch, tmp_path, arch_
     cfg = make_config("foo")
     cfg.installation = InstallConfig(
         method=InstallMethod.BINARY_ARCHIVE,
-        source_format="https://example/{{ repo.base_url }}/{{ release }}/{{ arch }}/archive.tar.gz",
+        source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/archive.tar.gz",
         bin_path="./*",
     )
     comp = ExampleComponent(
