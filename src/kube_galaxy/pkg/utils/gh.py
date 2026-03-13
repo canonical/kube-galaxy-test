@@ -93,31 +93,73 @@ def gh_download_artifact(url: str, dest: Path) -> None:
     without_scheme = url[len("gh-artifact://") :]
     artifact_name, _, zip_path = without_scheme.partition("/")
 
+    if not artifact_name or not zip_path:
+        raise ComponentError(
+            "Malformed gh-artifact URL; expected format "
+            "'gh-artifact://<artifact-name>/<path/inside/zip>'"
+        )
+
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
-    # Find the artifact by name using the REST API.
-    list_url = (
-        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/artifacts"
-        f"?name={urllib.parse.quote(artifact_name)}&per_page=1"
-    )
-    try:
-        req = urllib.request.Request(list_url, headers=headers)
-        with urllib.request.urlopen(req) as resp:
-            data: dict[str, object] = json.loads(resp.read())
-    except urllib.error.HTTPError as exc:
+    # Find the artifact by name using the REST API, paging through results and
+    # selecting the newest matching artifact deterministically.
+    per_page = 100
+    page = 1
+    matching_artifacts: list[dict[str, object]] = []
+
+    while True:
+        list_url = (
+            f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/artifacts"
+            f"?name={urllib.parse.quote(artifact_name)}&per_page={per_page}&page={page}"
+        )
+        try:
+            req = urllib.request.Request(list_url, headers=headers)
+            with urllib.request.urlopen(req) as resp:
+                data: dict[str, object] = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            raise ComponentError(
+                f"Failed to list artifacts for '{artifact_name}': HTTP {exc.code}"
+            ) from exc
+
+        artifacts = data.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            break
+
+        # Filter by exact name to be robust even if the API returns extra entries.
+        for artifact in artifacts:
+            if isinstance(artifact, dict) and artifact.get("name") == artifact_name:
+                matching_artifacts.append(artifact)
+
+        if len(artifacts) < per_page:
+            # No more pages.
+            break
+
+        page += 1
+
+    if not matching_artifacts:
         raise ComponentError(
-            f"Failed to list artifacts for '{artifact_name}': HTTP {exc.code}"
-        ) from exc
+            f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}"
+        )
 
-    artifacts = data.get("artifacts", [])
-    if not isinstance(artifacts, list) or not artifacts:
-        raise ComponentError(f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}")
+    def _artifact_sort_key(artifact: dict[str, object]) -> str:
+        # Prefer updated_at, fall back to created_at, then empty string.
+        updated_at = artifact.get("updated_at")
+        created_at = artifact.get("created_at")
+        for value in (updated_at, created_at):
+            if isinstance(value, str):
+                return value
+        return ""
 
-    artifact_id = artifacts[0]["id"]
+    newest_artifact = sorted(
+        matching_artifacts,
+        key=_artifact_sort_key,
+        reverse=True,
+    )[0]
+    artifact_id = newest_artifact["id"]  # type: ignore[index]
     archive = dest.parent / f"{artifact_name}.zip"
 
     # Download the artifact zip archive.
