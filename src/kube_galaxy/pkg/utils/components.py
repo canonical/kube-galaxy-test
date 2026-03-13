@@ -165,7 +165,12 @@ def format_component_pattern(
     - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
     - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
     - ``{{ ref }}``            - git ref override, or empty string
-    - ``{{ repo.base-url }}``  -
+    - ``{{ repo.base-url }}``  - repository base URL. ``https://`` and
+                                 ``http://`` values are used as-is; ``local://``
+                                 values are rewritten to a ``file://`` URI rooted
+                                 at the current working directory; and
+                                 ``gh-artifact://`` values are preserved for
+                                 :func:`download_file` dispatch.
     - ``{{ repo.subdir }}``    - optional subdirectory within the repo (may
                                  itself contain ``{{ name }}``)
     - ``{{ repo.ref }}``       - git ref from repo config, or empty string

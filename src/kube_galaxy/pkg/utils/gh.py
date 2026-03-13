@@ -141,9 +141,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
         page += 1
 
     if not matching_artifacts:
-        raise ComponentError(
-            f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}"
-        )
+        raise ComponentError(f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}")
 
     def _artifact_sort_key(artifact: dict[str, object]) -> str:
         # Prefer updated_at, fall back to created_at, then empty string.
@@ -159,7 +157,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
         key=_artifact_sort_key,
         reverse=True,
     )[0]
-    artifact_id = newest_artifact["id"]  # type: ignore[index]
+    artifact_id = newest_artifact["id"]
     archive = dest.parent / f"{artifact_name}.zip"
 
     # Download the artifact zip archive.
