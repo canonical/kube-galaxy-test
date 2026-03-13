@@ -127,7 +127,7 @@ Components that follow standard installation patterns can be defined purely in t
 Components whose test suite is uploaded as a GitHub Actions artifact in a
 previous workflow step use `base-url: gh-artifact://` in their `test.repo` block.
 The name of the artifact following the schema `gh-artifact://artifact-name`
-cooresponds to the queried name via the GitHub Artifacts REST API.
+corresponds to the queried name via the GitHub Artifacts REST API.
 
 ```yaml
 - name: mycomp
