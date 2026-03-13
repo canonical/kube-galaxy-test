@@ -20,17 +20,12 @@ def _download(comp: ComponentBase) -> None:
     :func:`format_component_pattern` then passed directly to
     :func:`~kube_galaxy.pkg.utils.components.download_file`, which dispatches
     on URL scheme:
-
-    - ``file://`` — copied from the local filesystem (resolved from ``local://``)
-    - ``gh-artifact://`` — fetched from a GitHub Actions artifact
-    - ``https://`` / ``http://`` — downloaded from a remote URL
     """
     test_cfg = comp.config.test
-    dest = SystemPaths.tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
     src = format_component_pattern(
         test_cfg.source_format, comp.config, comp.arch_info, test_cfg.repo
     )
-
+    dest = SystemPaths.tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
     download_file(src, dest)
 
 
