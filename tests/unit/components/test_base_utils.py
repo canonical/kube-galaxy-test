@@ -206,9 +206,9 @@ def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, ar
     monkeypatch.chdir(tmp_path)
 
     # Create the local test suite at the path that source-format will resolve to
-    suite_src = tmp_path / "components" / "sonobuoy"
+    suite_src = tmp_path / "components/sonobuoy/spread/kube-galaxy"
     suite_src.mkdir(parents=True)
-    (suite_src / "spread.yaml").write_text("suites: {}")
+    (suite_src / "task.yaml").write_text("summary: A fake task")
 
     install = InstallConfig(
         method=InstallMethod.NONE,
@@ -217,7 +217,7 @@ def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, ar
     )
     test_cfg = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
-        source_format="{{ repo.base-url }}/components/{{ name }}",
+        source_format="{{ repo.base-url }}/components/{{ name }}/spread/kube-galaxy/task.yaml",
         repo=RepoInfo(base_url="local"),
     )
     config = ComponentConfig(
@@ -237,9 +237,9 @@ def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, ar
     )
     comp.download_hook()
 
-    dest = tests_root / "sonobuoy"
+    dest = tests_root / "sonobuoy/spread/kube-galaxy"
     assert dest.exists()
-    assert (dest / "spread.yaml").read_text() == "suites: {}"
+    assert (dest / "task.yaml").read_text() == "summary: A fake task"
 
 
 def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):

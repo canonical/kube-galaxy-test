@@ -56,6 +56,7 @@ class SystemPaths:
     # Test directories
     KUBE_GALAXY_TESTS_ROOT = "/opt/kube-galaxy/tests"
     KUBE_GALAXY_TESTS_SPREAD_YAML = "/opt/kube-galaxy/tests/spread.yaml"
+    KUBE_GALAXY_TESTS_COMP_TASK = "spread/kube-galaxy/task.yaml"
 
     # System binaries
     USR_LOCAL_BIN = "/usr/local/bin"

@@ -30,8 +30,7 @@ def _download(comp: ComponentBase) -> None:
     actual clone via GitPython.
     """
     test_cfg = comp.config.test
-    comp_name = comp.name
-    dest = SystemPaths.tests_root() / comp_name
+    dest = SystemPaths.tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
     src = format_component_pattern(
         test_cfg.source_format, comp.config, comp.arch_info, test_cfg.repo
     )
@@ -42,9 +41,9 @@ def _download(comp: ComponentBase) -> None:
         gh_download_artifact(comp.name, src, dest)
     else:
         raise NotImplementedError(
-            f"Remote test suite download is not yet implemented for '{comp_name}'. "
+            f"Remote test suite download is not yet implemented for '{comp.name}'. "
             f"Use 'base-url: local' in the test block to ship test tasks inside this repo, "
-            f"or manually place a task.yaml at {dest}/spread/kube-galaxy/task.yaml."
+            f"or manually place a task.yaml at {dest}/{SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK}."
         )
 
 

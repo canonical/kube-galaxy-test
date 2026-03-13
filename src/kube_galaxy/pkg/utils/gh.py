@@ -10,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 
 from kube_galaxy.pkg.utils.errors import ComponentError
@@ -64,16 +65,17 @@ def gh_download_artifact(comp_name: str, src: str, dest: Path) -> None:
     """Download a GitHub Actions artifact from the current repository.
 
     Uses the GitHub REST API to find an artifact by name and download it
-    as a zip archive to the specified destination path.
+    as a zip archive, then extracts the specified file from the archive to the destination path.
 
     Args:
         comp_name: Component name (used in error messages)
         src: Artifact name to search for
-        dest: Destination path to write the artifact zip
+        dest: Local file path to save the file of the same name from the head of the archive
 
     Raises:
         ComponentError: If not running in GitHub Actions, GITHUB_TOKEN is
             missing, the artifact is not found, or the download fails
+        FileNotFoundError: If the specified file is not found in the downloaded artifact
     """
     if not GITHUB_OUTPUT:
         raise ComponentError(
@@ -109,10 +111,12 @@ def gh_download_artifact(comp_name: str, src: str, dest: Path) -> None:
         raise ComponentError(f"{comp_name}: no artifact named '{src}' found in {GITHUB_REPOSITORY}")
 
     artifact_id = artifacts[0]["id"]
-
-    # Handle if dest is a directory by appending a filename
-    if dest.is_dir():
-        dest = dest / f"{src}.zip"
+    # dest is a path  /opt/kube-galaxy/<comp>/temp/the-file
+    # the-file is expected to be at the root of the zip archive, so it is
+    # extracted directly to dest.
+    # we can leave the unextracted zip archive in the temp directory
+    archive = dest.parent / f"{src}.zip"
+    dest.mkdir(parents=True, exist_ok=True)
 
     # Download the artifact zip archive.
     download_url = (
@@ -121,8 +125,18 @@ def gh_download_artifact(comp_name: str, src: str, dest: Path) -> None:
     try:
         req = urllib.request.Request(download_url, headers=headers)
         with urllib.request.urlopen(req) as resp:
-            dest.write_bytes(resp.read())
+            archive.write_bytes(resp.read())
     except urllib.error.HTTPError as exc:
         raise ComponentError(
             f"{comp_name}: failed to download artifact '{src}': HTTP {exc.code}"
         ) from exc
+
+    # Extract the specified file from the archive to the destination path.
+    with zipfile.ZipFile(archive, "r") as zip_ref:
+        try:
+            with zip_ref.open(dest.name) as src_file, open(dest, "wb") as dest_file:
+                dest_file.write(src_file.read())
+        except KeyError:
+            raise FileNotFoundError(
+                f"{comp_name}: file '{dest.name}' not found in artifact '{src}'"
+            ) from None

@@ -8,7 +8,7 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-import chevron  # type: ignore[import-untyped]
+import chevron
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
@@ -200,5 +200,6 @@ def source_locally(comp_name: str, src: str, dest: Path) -> None:
         raise ComponentError(f"Local source not found for '{comp_name}': {local}")
     if dest.exists():
         shutil.rmtree(dest)
-    shutil.copytree(local, dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(local, dest)
     info(f"Copied local test suite for '{comp_name}' to {dest}")

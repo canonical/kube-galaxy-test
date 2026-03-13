@@ -26,10 +26,6 @@ def _download(comp: ComponentBase) -> None:
         install_cfg.source_format, comp.config, comp.arch_info, install_cfg.repo
     )
 
-    if not install_cfg.repo.is_local:
-        if not src.startswith(("http://", "https://")):
-            src = f"https://{src}"
-
     temp_dir = comp.ensure_temp_dir()
     filepath = temp_dir / f"{comp.config.name}-manifest.yaml"
     if install_cfg.repo.is_local:
@@ -37,6 +33,8 @@ def _download(comp: ComponentBase) -> None:
     elif install_cfg.repo.is_gh_artifact:
         gh_download_artifact(comp.name, src, filepath)
     else:
+        if not src.startswith(("http://", "https://")):
+            src = f"https://{src}"
         download_file(src, filepath)
         info(f"Downloaded manifest for {comp.config.name}")
     comp.manifest_path = filepath

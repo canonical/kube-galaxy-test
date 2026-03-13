@@ -174,7 +174,7 @@ components:
       method: spread
       repo:
         base-url: local
-      source-format: "{{ repo.base-url }}/components/{{ name }}"
+      source-format: "{{ repo.base-url }}/components/{{ name }}/spread/kube-galaxy/task.yaml"
 
 networking:
   - name: default

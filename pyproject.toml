@@ -29,22 +29,20 @@ Repository = "https://github.com/canonical/kube-galaxy-test"
 managed = true
 
 [dependency-groups]
-test = [
+lint = [
+    "mypy>1.0",
+    "ruff>=0.1.0",
+    "types-pyyaml",
+    "types-chevron",
+]
+unit = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-mock>=3.10",
 ]
-lint = [
-    "ruff>=0.1.0",
-]
-type = [
-    "mypy>=1.0",
-    "types-pyyaml",
-]
 dev = [
-    { include-group = "test" },
+    { include-group = "unit" },
     { include-group = "lint" },
-    { include-group = "type" },
 ]
 build = [
     "build>=0.10",
