@@ -44,7 +44,7 @@ def load_manifest(path: str | Path) -> Manifest:
 
 
 def _parse_repo(repo_data: Any, comp_name: str) -> RepoInfo:
-    """Parse a ``repo`` block from a YAML dict or the ``local`` shorthand.
+    """Parse a ``repo`` block from a YAML dict.
 
     Args:
         repo_data: The raw value of a ``repo`` key in the manifest.
@@ -58,9 +58,6 @@ def _parse_repo(repo_data: Any, comp_name: str) -> RepoInfo:
     """
     if repo_data is None:
         return RepoInfo()
-    if repo_data == "local":
-        # Shorthand: repo: local  →  base-url: local
-        return RepoInfo(base_url="local")
     if isinstance(repo_data, dict) and (base_url := repo_data.get("base-url")):
         return RepoInfo(
             base_url=base_url,
@@ -68,8 +65,7 @@ def _parse_repo(repo_data: Any, comp_name: str) -> RepoInfo:
             ref=repo_data.get("ref"),
         )
     raise ValueError(
-        f"Component {comp_name}: 'repo' must be an object with 'base-url' field, "
-        f"or the string 'local', got: {repo_data!r}"
+        f"Component {comp_name}: 'repo' must be an object with 'base-url' field, got: {repo_data!r}"
     )
 
 

@@ -51,7 +51,7 @@ Tests are cloned from the component repository during setup:
 During `kube-galaxy setup`, `download_tasks_from_config()` clones the repo and
 places the tests under `tests_root/<name>/spread/kube-galaxy/`.
 
-### Local source (`test.repo.base-url: local`)
+### Local source (`test.repo.base-url: local://`)
 
 Tests live in the kube-galaxy-test repository itself at
 `components/<name>/spread/kube-galaxy/task.yaml`.
@@ -63,12 +63,13 @@ Tests live in the kube-galaxy-test repository itself at
   test:
     method: spread
     repo:
-      base-url: local
-    source-format: "{{ repo.base-url }}/components/{{ name }}"
+      base-url: local://components/sonobuoy/
+      subdir: spread/kube-galaxy/task.yaml
+    source-format: "{{ repo.base-url }}/{{ repo.subdir }}"
 ```
 
 **Local source rules**:
-- `{{ repo.base-url }}` in `test.source-format` resolves to `str(Path.cwd())`
+- `{{ repo.base-url }}` in `test.source-format` resolves to a `file://` URI of cwd
 - `download_tasks_from_config()` copies the resolved path to `tests_root/<name>/`
 - `task_path_for_component()` returns `tests_root/<name>/spread/kube-galaxy/` (same as remote)
 
@@ -85,7 +86,7 @@ following placeholders:
 | `{{ arch }}`          | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, ...)   |
 | `{{ release }}`       | Component release tag from the manifest                   |
 | `{{ ref }}`           | Git ref override, or empty string                         |
-| `{{ repo.base-url }}` | Repository base URL, or `str(cwd)` for local sources      |
+| `{{ repo.base-url }}` | Repository base URL; `local://path` expands to a `file://` URI rooted at cwd; `gh-artifact://name/path` routes to GitHub Artifacts API |
 | `{{ repo.subdir }}`   | Optional subdirectory within the repo (empty if unset); `{{ name }}` within the `subdir` YAML field is also expanded |
 | `{{ repo.ref }}`      | Git ref from the `repo` block (empty if unset)            |
 
@@ -112,7 +113,7 @@ After `kube-galaxy setup` all component test tasks must live under:
 ```
 
 For remote sources this is populated by `download_tasks_from_config()`.
-For local sources (`base-url: local`) this is populated by `download_tasks_from_config()`
+For local sources (`base-url: local://`) this is populated by `download_tasks_from_config()`
 which copies `cwd/components/<name>/` → `tests_root/<name>/`.
 
 ---
@@ -168,8 +169,8 @@ execute: |
 
 4. **Local source handling** in
    [pkg/components/_base.py](src/kube_galaxy/pkg/components/_base.py) -
-   `download_tasks_from_config()` checks `config.test.repo.is_local` to
-   determine whether to copy a local path or clone a remote repo
+   `download_tasks_from_config()` checks `config.test.repo.base_url.startswith("local://")`
+   to determine whether to copy a local path or clone a remote repo
 
 5. **Validator path resolution** in
    [pkg/manifest/validator.py](src/kube_galaxy/pkg/manifest/validator.py) -

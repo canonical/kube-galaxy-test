@@ -80,20 +80,7 @@ class CNIPlugins(ComponentBase):
         """
         Remove cni-plugin binaries, and configuration files.
         """
-        if not self.config:
-            raise ComponentError("Component config required for download")
-
-        # Remove update-alternatives entries for this component
-        self.remove_component_alternatives()
-
-        comp_name = self.config.name
-        match self.config.installation.method:
-            case InstallMethod.BINARY_ARCHIVE:
-                if self.extracted_dir and self.extracted_dir.exists():
-                    for item in self.extracted_dir.iterdir():
-                        if item.is_file() and item.stat().st_mode & 0o111:
-                            info(f"    Removed {comp_name} binary: {item.name}")
-                            run([*Commands.SUDO_RM_RF, str(self.OPT_CNI_PLUGINS_DIR / item.name)])
+        super().delete_hook()  # This will handle alternatives and binaries
 
         # Remove component directory (binaries)
         self.cleanup_component_dir()

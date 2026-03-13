@@ -8,12 +8,13 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-import chevron  # type: ignore[import-untyped]
+import chevron
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.gh import gh_download_artifact
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -21,14 +22,24 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
     """
     Download a file from URL to destination.
 
+    Supports ``https://``, ``http://``, and ``file://`` URLs via
+    :func:`urllib.request.urlretrieve`, and ``gh-artifact://`` URLs via
+    :func:`~kube_galaxy.pkg.utils.gh.gh_download_artifact`.
+
     Args:
-        url: File URL
+        url: File URL (https://, http://, file://, or gh-artifact://)
         dest: Destination path
-        verify_sha256: Optional SHA256 checksum to verify
+        verify_sha256: Optional SHA256 checksum to verify (ignored for gh-artifact://)
 
     Raises:
         ComponentError: If download fails or checksum mismatch
     """
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if url.startswith("gh-artifact://"):
+        gh_download_artifact(url, dest)
+        return
+
     try:
         urllib.request.urlretrieve(url, dest)
 
@@ -112,23 +123,22 @@ def install_binary(
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
 
 
-def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_BIN)) -> None:
+def remove_binary(binary_path: Path) -> None:
     """
     Remove a binary from a directory.
 
     Args:
-        binary_name: Name of the binary
-        dest_dir: Directory containing the binary
-
-    Raises:
-        ComponentError: If removal fails
+        binary_path: Path to the binary to remove
     """
-    try:
-        dest_path = dest_dir / binary_name
-        if dest_path.exists():
-            dest_path.unlink()
-    except Exception as e:
-        raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
+    if binary_path.is_file():
+        try:
+            run(
+                [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary_path.name, str(binary_path)],
+                check=False,
+            )  # Don't fail if alternative doesn't exist
+            binary_path.unlink()
+        except Exception:
+            pass  # Ignore errors during cleanup
 
 
 def format_component_pattern(
@@ -154,8 +164,12 @@ def format_component_pattern(
     - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
     - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
     - ``{{ ref }}``            - git ref override, or empty string
-    - ``{{ repo.base-url }}``  - repository base URL, or ``str(Path.cwd())`` for
-                                 local sources
+    - ``{{ repo.base-url }}``  - repository base URL. ``https://`` and
+                                 ``http://`` values are used as-is; ``local://``
+                                 values are rewritten to a ``file://`` URI rooted
+                                 at the current working directory; and
+                                 ``gh-artifact://`` values are preserved for
+                                 :func:`download_file` dispatch.
     - ``{{ repo.subdir }}``    - optional subdirectory within the repo (may
                                  itself contain ``{{ name }}``)
     - ``{{ repo.ref }}``       - git ref from repo config, or empty string
@@ -178,13 +192,18 @@ def format_component_pattern(
     raw_subdir = effective_repo.subdir or ""
     subdir = str(chevron.render(raw_subdir, {"name": config.name}))
 
+    base_url = effective_repo.base_url
+    if base_url.startswith("local://"):
+        fragment = base_url[len("local://") :]
+        base_url = (Path.cwd() / fragment.strip("/")) .as_uri()
+
     data = {
         "name": config.name,
         "arch": arch_info.k8s,
         "release": config.release,
         "ref": effective_repo.ref or "",
         "repo": {
-            "base-url": str(Path.cwd()) if effective_repo.is_local else effective_repo.base_url,
+            "base-url": base_url,
             "subdir": subdir,
             "ref": effective_repo.ref or "",
         },

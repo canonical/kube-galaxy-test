@@ -66,11 +66,6 @@ class Kubelet(ComponentBase):
         except Exception as e:
             info(f"Failed to stop kubelet service: {e}")
 
-    def delete_hook(self) -> None:
-        """Remove kubelet binary and configuration."""
-        # Remove kubelet binary
-        self.remove_installed_binary()
-
     def post_delete_hook(self) -> None:
         """Clean up kubelet data directory and remaining files."""
         # Remove kubelet data directory

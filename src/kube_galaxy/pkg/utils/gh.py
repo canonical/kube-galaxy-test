@@ -4,11 +4,22 @@ Provides helper functions for outputting values to GitHub Actions workflow
 environments using the GITHUB_OUTPUT mechanism for inter-step communication.
 """
 
+import json
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
+import zipfile
+from pathlib import Path
+
+from kube_galaxy.pkg.utils.errors import ComponentError
 
 # GitHub Actions sets this environment variable pointing to the output file
+GITHUB_ACTION = os.getenv("GITHUB_ACTION")
 GITHUB_OUTPUT = os.getenv("GITHUB_OUTPUT")
+GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 
 def gh_output(name: str, value: str) -> None:
@@ -49,3 +60,126 @@ def gh_output(name: str, value: str) -> None:
         if not value.endswith("\n"):
             f.write("\n")
         f.write(f"{delim}\n")
+
+
+def gh_download_artifact(url: str, dest: Path) -> None:
+    """Download a file from a GitHub Actions artifact.
+
+    Parses a ``gh-artifact://artifact-name/path/in/zip`` URL, fetches the
+    named artifact from the current repository via the GitHub REST API,
+    downloads the zip archive, and extracts ``path/in/zip`` to ``dest``.
+
+    Args:
+        url: Full ``gh-artifact://artifact-name/path/to/file`` URL.
+        dest: Local path to write the extracted file to.
+
+    Raises:
+        ComponentError: If not running in GitHub Actions, TOKEN/REPOSITORY env
+            vars are missing, the artifact is not found, or download fails.
+        FileNotFoundError: If the zip-internal path is not found in the artifact.
+    """
+    if not GITHUB_ACTION:
+        raise ComponentError(
+            "gh-artifact:// sources can only be used within a GitHub Actions workflow"
+        )
+
+    if not GITHUB_TOKEN:
+        raise ComponentError("gh-artifact:// requires GITHUB_TOKEN to be set")
+
+    if not GITHUB_REPOSITORY:
+        raise ComponentError("gh-artifact:// requires GITHUB_REPOSITORY to be set")
+
+    # Parse gh-artifact://artifact-name/path/to/file
+    without_scheme = url[len("gh-artifact://") :]
+    artifact_name, _, zip_path = without_scheme.partition("/")
+
+    if not artifact_name or not zip_path:
+        raise ComponentError(
+            "Malformed gh-artifact URL; expected format "
+            "'gh-artifact://<artifact-name>/<path/inside/zip>'"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    # Find the artifact by name using the REST API, paging through results and
+    # selecting the newest matching artifact deterministically.
+    per_page = 100
+    page = 1
+    matching_artifacts: list[dict[str, object]] = []
+
+    while True:
+        list_url = (
+            f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/artifacts"
+            f"?name={urllib.parse.quote(artifact_name)}&per_page={per_page}&page={page}"
+        )
+        try:
+            req = urllib.request.Request(list_url, headers=headers)
+            with urllib.request.urlopen(req) as resp:
+                data: dict[str, object] = json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            raise ComponentError(
+                f"Failed to list artifacts for '{artifact_name}': HTTP {exc.code}"
+            ) from exc
+
+        artifacts = data.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            break
+
+        # Filter by exact name to be robust even if the API returns extra entries.
+        for artifact in artifacts:
+            if isinstance(artifact, dict) and artifact.get("name") == artifact_name:
+                matching_artifacts.append(artifact)
+
+        if len(artifacts) < per_page:
+            # No more pages.
+            break
+
+        page += 1
+
+    if not matching_artifacts:
+        raise ComponentError(f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}")
+
+    def _artifact_sort_key(artifact: dict[str, object]) -> str:
+        # Prefer updated_at, fall back to created_at, then empty string.
+        updated_at = artifact.get("updated_at")
+        created_at = artifact.get("created_at")
+        for value in (updated_at, created_at):
+            if isinstance(value, str):
+                return value
+        return ""
+
+    newest_artifact = sorted(
+        matching_artifacts,
+        key=_artifact_sort_key,
+        reverse=True,
+    )[0]
+    artifact_id = newest_artifact["id"]
+    archive = dest.parent / f"{artifact_name}.zip"
+
+    # Download the artifact zip archive.
+    download_url = (
+        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/artifacts/{artifact_id}/zip"
+    )
+    try:
+        req = urllib.request.Request(download_url, headers=headers)
+        with urllib.request.urlopen(req) as resp, open(archive, "wb") as archive_file:
+            while chunk := resp.read(8192):
+                archive_file.write(chunk)
+    except urllib.error.HTTPError as exc:
+        raise ComponentError(
+            f"Failed to download artifact '{artifact_name}': HTTP {exc.code}"
+        ) from exc
+
+    # Extract the specified path from the archive to dest.
+    with zipfile.ZipFile(archive, "r") as zip_ref:
+        try:
+            with zip_ref.open(zip_path) as src_file, open(dest, "wb") as dest_file:
+                dest_file.write(src_file.read())
+        except KeyError:
+            raise FileNotFoundError(
+                f"Path '{zip_path}' not found in artifact '{artifact_name}'"
+            ) from None

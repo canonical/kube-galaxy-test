@@ -263,11 +263,7 @@ WantedBy=multi-user.target
         """
         Remove containerd alternatives, binaries, and configuration files.
         """
-        # Remove update-alternatives entries for this component
-        self.remove_component_alternatives()
-
-        # Remove component directory (binaries)
-        self.cleanup_component_dir()
+        super().delete_hook()  # This will handle alternatives and binaries
 
         # Remove containerd configuration files
         config_files = [

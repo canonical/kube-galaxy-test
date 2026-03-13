@@ -192,8 +192,6 @@ def _generate_orchestration_spread_yaml(
 
         # Generate component suites section.
         # By the time tests run, all task definitions are installed under tests_root
-        # (local sources are copied by download_tasks_from_config; remote sources are
-        # cloned there too).
         for each in components:
             suite_path = task_path_for_component(each)
             task = suite_path / "task.yaml"

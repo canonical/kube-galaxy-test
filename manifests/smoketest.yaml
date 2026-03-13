@@ -135,7 +135,7 @@ components:
       method: container-manifest
       repo:
         base-url: https://github.com/projectcalico/calico
-      source-format: "raw.githubusercontent.com/projectcalico/calico/v{{ release }}/manifests/calico.yaml"
+      source-format: "https://raw.githubusercontent.com/projectcalico/calico/v{{ release }}/manifests/calico.yaml"
 
   - name: calico-cni
     category: projectcalico/calico
@@ -173,8 +173,9 @@ components:
     test:
       method: spread
       repo:
-        base-url: local
-      source-format: "{{ repo.base-url }}/components/{{ name }}"
+        base-url: local://components/sonobuoy/
+        subdir: spread/kube-galaxy
+      source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
 
 networking:
   - name: default
