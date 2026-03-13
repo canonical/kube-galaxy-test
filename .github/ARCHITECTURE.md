@@ -175,7 +175,7 @@ under the current working directory.
   test:
     method: spread
     repo:
-      base-url: local://components/sonobouy
+      base-url: local://components/sonobuoy
       subdir: spread/kube-galaxy
     source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
 ```
