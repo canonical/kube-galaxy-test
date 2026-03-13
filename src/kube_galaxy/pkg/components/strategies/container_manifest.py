@@ -8,28 +8,17 @@ import yaml
 
 from kube_galaxy.pkg.literals import Commands
 from kube_galaxy.pkg.utils.client import apply_manifest
-from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.shell import run
 
-from ._base import _InstallStrategy
+from ._base import _fetch_to_temp, _InstallStrategy
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
 
 
 def _download(comp: ComponentBase) -> None:
-    install_cfg = comp.config.installation
-    src = format_component_pattern(
-        install_cfg.source_format, comp.config, comp.arch_info, install_cfg.repo
-    )
-
-    temp_dir = comp.ensure_temp_dir()
-    filepath = temp_dir / f"{comp.config.name}-manifest.yaml"
-    if not src.startswith(("http://", "https://", "file://", "gh-artifact://")):
-        src = f"https://{src}"
-    download_file(src, filepath)
-    comp.manifest_path = filepath
+    comp.manifest_path = _fetch_to_temp(comp)
 
 
 def _bootstrap(comp: ComponentBase) -> None:

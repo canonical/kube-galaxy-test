@@ -95,7 +95,7 @@ class TestBinaryDownload:
             dest.write_bytes(b"binary")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary.download_file", fake_download
+            "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
         )
 
         comp.download_hook()
@@ -125,7 +125,7 @@ class TestBinaryDownload:
             dest.write_bytes(b"binary")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary.download_file", fake_download
+            "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
         )
 
         comp.download_hook()
@@ -154,7 +154,7 @@ class TestBinaryDownload:
             dest.write_bytes(b"binary")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary.download_file", fake_download
+            "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
         )
 
         comp.download_hook()
@@ -261,7 +261,7 @@ class TestBinaryArchiveDownload:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.download_file", fake_download
+            "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
         )
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
@@ -294,7 +294,7 @@ class TestBinaryArchiveDownload:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.download_file", fake_download
+            "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
         )
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
@@ -327,7 +327,7 @@ class TestBinaryArchiveDownload:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.download_file", fake_download
+            "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
         )
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
@@ -505,7 +505,7 @@ def _patch_cia_download(monkeypatch, content: bytes = b"data") -> list:
         dest.write_bytes(content)
 
     monkeypatch.setattr(
-        "kube_galaxy.pkg.components.strategies.container_image_archive.download_file",
+        "kube_galaxy.pkg.components.strategies._base.download_file",
         fake_download,
     )
     return calls
@@ -654,7 +654,7 @@ class TestContainerImageArchiveDownload:
             dest.write_bytes(b"tar-content")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_image_archive.download_file",
+            "kube_galaxy.pkg.components.strategies._base.download_file",
             fake_download,
         )
 
@@ -683,7 +683,7 @@ class TestContainerImageArchiveDownload:
             dest.write_bytes(b"tar-content")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_image_archive.download_file",
+            "kube_galaxy.pkg.components.strategies._base.download_file",
             fake_download,
         )
 
@@ -742,7 +742,7 @@ class TestContainerManifestRemainingBranches:
             dest.write_text("manifest: yaml")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_manifest.download_file",
+            "kube_galaxy.pkg.components.strategies._base.download_file",
             fake_download,
         )
 
@@ -771,7 +771,7 @@ class TestContainerManifestRemainingBranches:
             dest.write_text("manifest: yaml")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_manifest.download_file",
+            "kube_galaxy.pkg.components.strategies._base.download_file",
             fake_download,
         )
 

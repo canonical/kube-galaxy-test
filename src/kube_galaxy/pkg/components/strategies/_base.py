@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
@@ -12,6 +15,20 @@ if TYPE_CHECKING:
 
 def _noop(comp: ComponentBase) -> None:
     pass
+
+
+def _fetch_to_temp(comp: ComponentBase) -> Path:
+    """Render ``installation.source-format``, download the result to the component temp dir.
+
+    Returns the path of the downloaded file.
+    """
+    install_cfg = comp.config.installation
+    url = format_component_pattern(
+        install_cfg.source_format, comp.config, comp.arch_info, install_cfg.repo
+    )
+    dest = comp.ensure_temp_dir() / url.split("/")[-1]
+    download_file(url, dest)
+    return dest
 
 
 @dataclass

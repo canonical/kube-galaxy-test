@@ -4,27 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
 
-from ._base import _InstallStrategy
+from ._base import _fetch_to_temp, _InstallStrategy
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
 
 
 def _download(comp: ComponentBase) -> None:
-    install_cfg = comp.config.installation
-    src = format_component_pattern(
-        install_cfg.source_format,
-        comp.config,
-        comp.arch_info,
-        install_cfg.repo,
-    )
-    temp_dir = comp.ensure_temp_dir()
-    filepath = temp_dir / src.split("/")[-1]
-    download_file(src, filepath)
-    comp.binary_path = filepath
+    comp.binary_path = _fetch_to_temp(comp)
 
 
 def _install(comp: ComponentBase) -> None:

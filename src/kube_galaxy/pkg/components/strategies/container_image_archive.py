@@ -8,26 +8,16 @@ import lzma
 import shutil
 from typing import TYPE_CHECKING
 
-from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
 
-from ._base import _InstallStrategy
+from ._base import _fetch_to_temp, _InstallStrategy
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
 
 
 def _download(comp: ComponentBase) -> None:
-    install_cfg = comp.config.installation
-    url = format_component_pattern(
-        install_cfg.source_format,
-        comp.config,
-        comp.arch_info,
-        install_cfg.repo,
-    )
-    temp_dir = comp.ensure_temp_dir()
-    file_path = temp_dir / url.split("/")[-1]
-    download_file(url, file_path)
+    file_path = _fetch_to_temp(comp)
     if extracted_dir := comp.extracted_dir:
         extracted_dir.mkdir(exist_ok=True)
     else:
