@@ -116,7 +116,7 @@ Components that follow standard installation patterns can be defined purely in t
 - `container-image-archive`: Pull and register container images from a tar
 - `none`: Component installs nothing directly into the cluster (e.g. test-only)
 
-### Supported ref.base-url schemas:
+### Supported repo.base-url schemas:
 - https://       - fetch HTTPS request from remote endpoint (following redirects)
 - http://        - fetch HTTP request from remote endpoint (following redirects)
 - local://       - similar to file:// but is based on the current working directory
