@@ -212,18 +212,13 @@ class Kubeadm(ClusterComponentBase):
         """
         Remove kubeadm binary and cluster configuration files.
         """
-        # Use base method to remove installed binary
-        self.remove_installed_binary()
-
-        # Remove cluster configuration if it exists
-        if self._cluster_config and self._cluster_config.exists():
-            self._cluster_config.unlink()
-            info(f"Removed cluster config: {self._cluster_config}")
+        super().delete_hook()  # This will handle alternatives and binaries
 
         # Use base method to remove kubeconfig files
         kubeconfig_paths = [
             str(Path.home() / ".kube" / "config"),
             "/etc/kubernetes/admin.conf",
+            str(self._cluster_config),
         ]
         self.remove_config_files(kubeconfig_paths)
 

@@ -123,23 +123,22 @@ def install_binary(
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
 
 
-def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_BIN)) -> None:
+def remove_binary(binary_path: Path) -> None:
     """
     Remove a binary from a directory.
 
     Args:
-        binary_name: Name of the binary
-        dest_dir: Directory containing the binary
-
-    Raises:
-        ComponentError: If removal fails
+        binary_path: Path to the binary to remove
     """
-    try:
-        dest_path = dest_dir / binary_name
-        if dest_path.exists():
-            dest_path.unlink()
-    except Exception as e:
-        raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
+    if binary_path.is_file():
+        try:
+            run(
+                [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary_path.name, str(binary_path)],
+                check=False,
+            )  # Don't fail if alternative doesn't exist
+            binary_path.unlink()
+        except Exception:
+            pass  # Ignore errors during cleanup
 
 
 def format_component_pattern(
@@ -196,7 +195,7 @@ def format_component_pattern(
     base_url = effective_repo.base_url
     if base_url.startswith("local://"):
         fragment = base_url[len("local://") :]
-        base_url = (Path.cwd() / fragment).as_uri()
+        base_url = (Path.cwd() / fragment.strip("/")) .as_uri()
 
     data = {
         "name": config.name,

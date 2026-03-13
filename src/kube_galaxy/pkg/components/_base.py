@@ -19,7 +19,7 @@ from kube_galaxy.pkg.components.strategies import (
 )
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
-from kube_galaxy.pkg.utils.components import install_binary
+from kube_galaxy.pkg.utils.components import install_binary, remove_binary
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
@@ -251,14 +251,7 @@ class ComponentBase:
         component_bin_dir = SystemPaths.component_bin_dir(self.name)
         if component_bin_dir.exists():
             for binary in component_bin_dir.glob("*"):
-                if binary.is_file():
-                    try:
-                        run(
-                            [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary.name, str(binary)],
-                            check=False,
-                        )  # Don't fail if alternative doesn't exist
-                    except Exception:
-                        pass  # Ignore errors during cleanup
+                remove_binary(binary)
 
     def cleanup_component_dir(self) -> None:
         """
@@ -285,7 +278,14 @@ class ComponentBase:
         This hook runs in the DELETE stage of teardown (sequential, reverse dependency order).
         Override to implement binary/config removal logic.
         """
-        pass
+        # Remove update-alternatives entries for this component
+        self.remove_component_alternatives()
+
+        if self.extracted_dir and self.extracted_dir.exists():
+            shutil.rmtree(self.extracted_dir, ignore_errors=True)
+
+        # Remove component directory (binaries)
+        self.cleanup_component_dir()
 
     def post_delete_hook(self) -> None:
         """

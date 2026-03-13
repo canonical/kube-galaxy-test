@@ -113,7 +113,7 @@ def test_task_path_for_component_always_uses_tests_root(monkeypatch):
     local_test = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/components/mycomp",
-        repo=RepoInfo(base_url="local"),
+        repo=RepoInfo(base_url="local://"),
     )
     local_comp = ComponentConfig(
         name="mycomp",
