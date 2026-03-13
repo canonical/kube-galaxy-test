@@ -149,7 +149,7 @@ The `installation.source-format` field supports the following placeholders:
 | `{{ arch }}`           | Kubernetes arch name (`amd64`, `arm64`, `riscv64`, …)           |
 | `{{ release }}`        | Component release tag from the manifest                         |
 | `{{ ref }}`            | Git ref override, or empty string                               |
-| `{{ repo.base-url }}`  | Repository base URL, `cwd` for local sources, or artifact name for `gh-artifact` sources |
+| `{{ repo.base-url }}`  | Repository base URL; `local://path` expands to a `file://` URI rooted at cwd; `gh-artifact://name/path` routes to the GitHub Artifacts API |
 | `{{ repo.subdir }}`    | Optional subdirectory within the repo (empty string if unset)   |
 | `{{ repo.ref }}`       | Git ref from the `repo` block (empty string if unset)           |
 
@@ -166,9 +166,9 @@ installation:
 ### GitHub Actions Artifact Sources
 
 A component whose test suite is uploaded as a GitHub Actions artifact in a
-previous workflow step uses `base-url: gh-artifact` in its `test.repo` block.
-The `source-format` template resolves to the **artifact name** to look up via
-the GitHub REST API.
+previous workflow step uses `base-url: gh-artifact://artifact-name` in its
+`test.repo` block. The path after the artifact name in `source-format` locates
+the file inside the downloaded zip.
 
 ```yaml
 - name: mycomp
@@ -179,28 +179,32 @@ the GitHub REST API.
   test:
     method: spread
     repo:
-      base-url: gh-artifact
-    source-format: "mycomp-spread-suite"
+      base-url: gh-artifact://mycomp-spread-artifact
+      subdir: spread/kube-galaxy
+    source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
 ```
 
-When `base-url` is `gh-artifact`:
+When `base-url` starts with `gh-artifact://`:
 
-- `{{ repo.base-url }}` in `source-format` is **not** a URL — the rendered
-  string is the artifact name passed to the GitHub Artifacts REST API
+- `{{ repo.base-url }}` in `source-format` renders to the full
+  `gh-artifact://artifact-name` URL; the path appended after it is the
+  location of the file *inside* the artifact zip
+- `download_file` dispatches the rendered URL to `gh_download_artifact`,
+  which calls the GitHub Artifacts REST API to find and download the zip,
+  then extracts the requested file to the destination
 - The `GITHUB_TOKEN` environment variable must be set (workflows provide this
   automatically via `${{ secrets.GITHUB_TOKEN }}`)
 - The `GITHUB_REPOSITORY` environment variable must be set (set automatically
   in GitHub Actions)
-- The artifact is downloaded as a zip file to the component's temp directory;
-  callers are responsible for extracting it as needed
 - The feature only works inside a GitHub Actions workflow (`GITHUB_OUTPUT` must
   be set). Running locally will raise an error.
 
 ### Local Component Sources
 
-A component whose test suite lives inside this repository uses `base-url: local`
-in its `test.repo` block.  The `source-format` template resolves to a path
-under the current working directory.
+A component whose test suite lives inside this repository uses `base-url: local://`
+(or `base-url: local://relative/path`) in its `test.repo` block.  The
+`source-format` template resolves to a `file://` URI rooted at the current
+working directory.
 
 ```yaml
 - name: mycomp
@@ -211,13 +215,14 @@ under the current working directory.
   test:
     method: spread
     repo:
-      base-url: local
+      base-url: local://
     source-format: "{{ repo.base-url }}/components/{{ name }}"
 ```
 
-When `base-url` is `local`:
+When `base-url` starts with `local://`:
 
-- `{{ repo.base-url }}` in `source-format` expands to `str(Path.cwd())`
+- `{{ repo.base-url }}` in `source-format` expands to a `file://` URI of cwd
+  (optionally with the path fragment appended to cwd)
 - `task_path_for_component` returns `cwd/components/<name>/spread/kube-galaxy/`
 - The `download_hook` automatically copies the resolved local suite to the
   shared tests root so that spread can discover it
@@ -261,7 +266,7 @@ execute: |
 
 1. Create `components/<name>/spread/kube-galaxy/task.yaml`
 2. Add the component to the manifest with `test.method: spread`,
-   `test.repo.base-url: local`, and a `test.source-format` pointing to the
+   `test.repo.base-url: local://`, and a `test.source-format` pointing to the
    local directory
 
 #### Adding a gh-artifact component
@@ -269,15 +274,16 @@ execute: |
 1. Upload the spread test suite as a GitHub Actions artifact in an earlier
    workflow step (e.g. `actions/upload-artifact`)
 2. Add the component to the manifest with `test.method: spread`,
-   `test.repo.base-url: gh-artifact`, and a `test.source-format` set to the
-   artifact name (without `{{ repo.base-url }}`):
+   `test.repo.base-url: gh-artifact://artifact-name`, and a `test.source-format`
+   that appends the internal zip path:
 
    ```yaml
    test:
      method: spread
      repo:
-       base-url: gh-artifact
-     source-format: "mycomp-spread-suite"
+       base-url: gh-artifact://mycomp-spread-artifact
+       subdir: spread/kube-galaxy
+     source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
    ```
 
 3. Ensure `GITHUB_TOKEN` and `GITHUB_REPOSITORY` are available in the workflow

@@ -107,11 +107,11 @@ class TestBinaryDownload:
         assert dest.exists()
 
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
-        """_download copies from local source when base-url is 'local'."""
+        """_download resolves local:// base-url to a file:// URI via download_file."""
         comp = _make_component(
             InstallMethod.BINARY,
             "{{ repo.base-url }}/bin-{{ arch }}",
-            base_url="local",
+            base_url="local://fixtures",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -119,26 +119,28 @@ class TestBinaryDownload:
 
         calls: list = []
 
-        def fake_source_locally(comp_name: str, src: str, dest: Path) -> None:
-            calls.append((comp_name, src, dest))
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append((url, dest))
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"binary")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary.source_locally", fake_source_locally
+            "kube_galaxy.pkg.components.strategies.binary.download_file", fake_download
         )
 
         comp.download_hook()
 
         assert len(calls) == 1
+        url, _ = calls[0]
+        assert url.startswith("file://")
         assert comp.binary_path is not None
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
-        """_download calls gh_download_artifact when base-url is 'gh-artifact'."""
+        """_download passes gh-artifact:// URL unchanged to download_file."""
         comp = _make_component(
             InstallMethod.BINARY,
-            "artifact-name-{{ arch }}",
-            base_url="gh-artifact",
+            "{{ repo.base-url }}/bin-{{ arch }}",
+            base_url="gh-artifact://artifact-name",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -146,19 +148,20 @@ class TestBinaryDownload:
 
         calls: list = []
 
-        def fake_gh_download(comp_name: str, src: str, dest: Path) -> None:
-            calls.append((comp_name, src, dest))
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append((url, dest))
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"binary")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary.gh_download_artifact",
-            fake_gh_download,
+            "kube_galaxy.pkg.components.strategies.binary.download_file", fake_download
         )
 
         comp.download_hook()
 
         assert len(calls) == 1
+        url, _ = calls[0]
+        assert url.startswith("gh-artifact://")
         assert comp.binary_path is not None
 
 
@@ -270,11 +273,11 @@ class TestBinaryArchiveDownload:
         assert len(extract_calls) == 1
 
     def test_download_local(self, monkeypatch, tmp_path, arch_info):
-        """_download uses source_locally for local base-url."""
+        """_download resolves local:// base-url to a file:// URI via download_file."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
             "{{ repo.base-url }}/archive-{{ arch }}.tar.gz",
-            base_url="local",
+            base_url="local://fixtures",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -282,8 +285,8 @@ class TestBinaryArchiveDownload:
 
         calls: list = []
 
-        def fake_source_locally(comp_name: str, src: str, dest: Path) -> None:
-            calls.append((comp_name, src, dest))
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"fake-archive")
 
@@ -291,8 +294,7 @@ class TestBinaryArchiveDownload:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.source_locally",
-            fake_source_locally,
+            "kube_galaxy.pkg.components.strategies.binary_archive.download_file", fake_download
         )
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
@@ -301,13 +303,14 @@ class TestBinaryArchiveDownload:
         comp.download_hook()
 
         assert len(calls) == 1
+        assert calls[0].startswith("file://")
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
-        """_download calls gh_download_artifact for gh-artifact base-url."""
+        """_download passes gh-artifact:// URL unchanged to download_file."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
-            "artifact-{{ arch }}.tar.gz",
-            base_url="gh-artifact",
+            "{{ repo.base-url }}/artifact-{{ arch }}.tar.gz",
+            base_url="gh-artifact://artifact-name",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -315,8 +318,8 @@ class TestBinaryArchiveDownload:
 
         calls: list = []
 
-        def fake_gh(comp_name: str, src: str, dest: Path) -> None:
-            calls.append((comp_name, src, dest))
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"fake-archive")
 
@@ -324,7 +327,7 @@ class TestBinaryArchiveDownload:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.gh_download_artifact", fake_gh
+            "kube_galaxy.pkg.components.strategies.binary_archive.download_file", fake_download
         )
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
@@ -333,6 +336,7 @@ class TestBinaryArchiveDownload:
         comp.download_hook()
 
         assert len(calls) == 1
+        assert calls[0].startswith("gh-artifact://")
 
 
 class TestBinaryArchiveInstall:
@@ -431,18 +435,29 @@ class TestContainerImageDownload:
         assert comp.image_repository == "registry.k8s.io/pause"
         assert comp.image_tag == "3.9"
 
-    def test_download_raises_for_local(self, monkeypatch, tmp_path, arch_info):
-        """_download raises ComponentError when base-url is 'local'."""
+    @pytest.mark.parametrize(
+        "scheme_url",
+        [
+            "local://fixtures",
+            "gh-artifact://artifact-name",
+            "https://github.com/org/repo",
+            "file:///some/local/path",
+        ],
+    )
+    def test_download_raises_for_url_scheme(
+        self, scheme_url: str, monkeypatch, tmp_path, arch_info
+    ):
+        """_download raises ComponentError for any base-url that contains a URL scheme."""
         comp = _make_component(
             InstallMethod.CONTAINER_IMAGE,
             "{{ repo.base-url }}/image:latest",
-            base_url="local",
+            base_url=scheme_url,
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
 
-        with pytest.raises(ComponentError, match="does not support local"):
+        with pytest.raises(ComponentError, match="does not support URL schemes"):
             comp.download_hook()
 
     def test_download_raises_for_invalid_format(self, monkeypatch, tmp_path, arch_info):
@@ -622,10 +637,10 @@ class TestContainerImageArchiveDownload:
             comp.download_hook()
 
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
-        """.tar files from local source are copied via source_locally."""
+        """.tar files from local:// source resolve to file:// via download_file."""
         comp = _make_cia_component(
             "{{ repo.base-url }}/image.tar",
-            base_url="local",
+            base_url="local://fixtures",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -633,27 +648,28 @@ class TestContainerImageArchiveDownload:
 
         calls: list = []
 
-        def fake_source_locally(comp_name: str, src: str, dest: Path) -> None:
-            calls.append(dest)
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"tar-content")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_image_archive.source_locally",
-            fake_source_locally,
+            "kube_galaxy.pkg.components.strategies.container_image_archive.download_file",
+            fake_download,
         )
 
         comp.download_hook()
 
         assert len(calls) == 1
+        assert calls[0].startswith("file://")
         image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
         assert image_tar.exists()
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
-        """.tar files from gh-artifact use gh_download_artifact."""
+        """.tar files from gh-artifact:// pass URL unchanged to download_file."""
         comp = _make_cia_component(
-            "artifact-name.tar",
-            base_url="gh-artifact",
+            "{{ repo.base-url }}/image.tar",
+            base_url="gh-artifact://artifact-name",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -661,19 +677,20 @@ class TestContainerImageArchiveDownload:
 
         calls: list = []
 
-        def fake_gh(comp_name: str, src: str, dest: Path) -> None:
-            calls.append(dest)
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"tar-content")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_image_archive.gh_download_artifact",
-            fake_gh,
+            "kube_galaxy.pkg.components.strategies.container_image_archive.download_file",
+            fake_download,
         )
 
         comp.download_hook()
 
         assert len(calls) == 1
+        assert calls[0].startswith("gh-artifact://")
 
 
 # ===========================================================================
@@ -708,9 +725,9 @@ def _make_manifest_component(
 
 class TestContainerManifestRemainingBranches:
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
-        """_download uses source_locally for base-url='local'."""
+        """_download resolves local:// base-url to file:// via download_file."""
         comp = _make_manifest_component(
-            base_url="local",
+            base_url="local://fixtures",
             source_format="{{ repo.base-url }}/calico.yaml",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
@@ -719,27 +736,28 @@ class TestContainerManifestRemainingBranches:
 
         calls: list = []
 
-        def fake_source_locally(comp_name: str, src: str, dest: Path) -> None:
-            calls.append((comp_name, src, dest))
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text("manifest: yaml")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_manifest.source_locally",
-            fake_source_locally,
+            "kube_galaxy.pkg.components.strategies.container_manifest.download_file",
+            fake_download,
         )
 
         comp.download_hook()
 
         assert len(calls) == 1
+        assert calls[0].startswith("file://")
         assert comp.manifest_path is not None
         assert comp.manifest_path.exists()
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
-        """_download calls gh_download_artifact for base-url='gh-artifact'."""
+        """_download passes gh-artifact:// URL unchanged to download_file."""
         comp = _make_manifest_component(
-            base_url="gh-artifact",
-            source_format="calico-manifest-artifact",
+            base_url="gh-artifact://calico-manifest-artifact",
+            source_format="{{ repo.base-url }}/calico.yaml",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -747,19 +765,20 @@ class TestContainerManifestRemainingBranches:
 
         calls: list = []
 
-        def fake_gh(comp_name: str, src: str, dest: Path) -> None:
-            calls.append((comp_name, src, dest))
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text("manifest: yaml")
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.container_manifest.gh_download_artifact",
-            fake_gh,
+            "kube_galaxy.pkg.components.strategies.container_manifest.download_file",
+            fake_download,
         )
 
         comp.download_hook()
 
         assert len(calls) == 1
+        assert calls[0].startswith("gh-artifact://")
         assert comp.manifest_path is not None
 
     def test_bootstrap_wraps_cluster_error(self, monkeypatch, tmp_path, arch_info):
@@ -839,10 +858,10 @@ def _make_spread_component(
 
 class TestSpreadRemainingBranches:
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
-        """_download calls gh_download_artifact for base-url='gh-artifact'."""
+        """_download passes gh-artifact:// URL unchanged to download_file."""
         comp = _make_spread_component(
-            base_url="gh-artifact",
-            source_format="spread-suite-artifact",
+            base_url="gh-artifact://spread-suite-artifact",
+            source_format="{{ repo.base-url }}/spread/kube-galaxy/task.yaml",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
@@ -850,27 +869,40 @@ class TestSpreadRemainingBranches:
 
         calls: list = []
 
-        def fake_gh(comp_name: str, src: str, dest: Path) -> None:
-            calls.append((comp_name, src, dest))
-            dest.mkdir(parents=True, exist_ok=True)
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
+            dest.parent.mkdir(parents=True, exist_ok=True)
 
         monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.spread.gh_download_artifact", fake_gh
+            "kube_galaxy.pkg.components.strategies.spread.download_file", fake_download
         )
 
         comp.download_hook()
 
         assert len(calls) == 1
+        assert calls[0].startswith("gh-artifact://")
 
-    def test_download_remote_raises_not_implemented(self, monkeypatch, tmp_path, arch_info):
-        """_download raises NotImplementedError for remote non-gh-artifact sources."""
+    def test_download_remote_https(self, monkeypatch, tmp_path, arch_info):
+        """_download passes https:// URL unchanged to download_file."""
         comp = _make_spread_component(
             base_url="https://github.com/org/repo",
-            source_format="{{ repo.base-url }}/spread",
+            source_format="{{ repo.base-url }}/spread/kube-galaxy/task.yaml",
             monkeypatch=monkeypatch,
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
 
-        with pytest.raises(NotImplementedError, match="Remote test suite download"):
-            comp.download_hook()
+        calls: list = []
+
+        def fake_download(url: str, dest: Path) -> None:
+            calls.append(url)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr(
+            "kube_galaxy.pkg.components.strategies.spread.download_file", fake_download
+        )
+
+        comp.download_hook()
+
+        assert len(calls) == 1
+        assert calls[0].startswith("https://")

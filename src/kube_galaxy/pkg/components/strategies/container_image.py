@@ -15,18 +15,17 @@ if TYPE_CHECKING:
 
 
 def _download(comp: ComponentBase) -> None:
-    install_cfg = comp.config.installation
-    if install_cfg.repo.is_local:
-        raise ComponentError(
-            f"Container image installation does not support local for '{comp.name}'"
-        )
-
     full = format_component_pattern(
         comp.config.installation.source_format,
         comp.config,
         comp.arch_info,
         comp.config.installation.repo,
     )
+    if "://" in full:
+        raise ComponentError(
+            f"Container image installation does not support URL schemes for '{comp.name}'. "
+            "Use a plain Docker image reference (e.g. 'registry.k8s.io/image')."
+        )
     split = full.rsplit(":", 1)
     if len(split) != 2:
         raise ComponentError(f"Invalid container image format: {full}")

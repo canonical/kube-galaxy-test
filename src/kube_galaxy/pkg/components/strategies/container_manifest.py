@@ -8,10 +8,8 @@ import yaml
 
 from kube_galaxy.pkg.literals import Commands
 from kube_galaxy.pkg.utils.client import apply_manifest
-from kube_galaxy.pkg.utils.components import download_file, format_component_pattern, source_locally
+from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
-from kube_galaxy.pkg.utils.gh import gh_download_artifact
-from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 from ._base import _InstallStrategy
@@ -28,15 +26,9 @@ def _download(comp: ComponentBase) -> None:
 
     temp_dir = comp.ensure_temp_dir()
     filepath = temp_dir / f"{comp.config.name}-manifest.yaml"
-    if install_cfg.repo.is_local:
-        source_locally(comp.name, src, filepath)
-    elif install_cfg.repo.is_gh_artifact:
-        gh_download_artifact(comp.name, src, filepath)
-    else:
-        if not src.startswith(("http://", "https://")):
-            src = f"https://{src}"
-        download_file(src, filepath)
-        info(f"Downloaded manifest for {comp.config.name}")
+    if not src.startswith(("http://", "https://", "file://", "gh-artifact://")):
+        src = f"https://{src}"
+    download_file(src, filepath)
     comp.manifest_path = filepath
 
 

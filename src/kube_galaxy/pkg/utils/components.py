@@ -14,7 +14,7 @@ from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.gh import gh_download_artifact
 from kube_galaxy.pkg.utils.shell import run
 
 
@@ -22,14 +22,24 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
     """
     Download a file from URL to destination.
 
+    Supports ``https://``, ``http://``, and ``file://`` URLs via
+    :func:`urllib.request.urlretrieve`, and ``gh-artifact://`` URLs via
+    :func:`~kube_galaxy.pkg.utils.gh.gh_download_artifact`.
+
     Args:
-        url: File URL
+        url: File URL (https://, http://, file://, or gh-artifact://)
         dest: Destination path
-        verify_sha256: Optional SHA256 checksum to verify
+        verify_sha256: Optional SHA256 checksum to verify (ignored for gh-artifact://)
 
     Raises:
         ComponentError: If download fails or checksum mismatch
     """
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if url.startswith("gh-artifact://"):
+        gh_download_artifact(url, dest)
+        return
+
     try:
         urllib.request.urlretrieve(url, dest)
 
@@ -155,8 +165,7 @@ def format_component_pattern(
     - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
     - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
     - ``{{ ref }}``            - git ref override, or empty string
-    - ``{{ repo.base-url }}``  - repository base URL, or ``str(Path.cwd())`` for
-                                 local sources
+    - ``{{ repo.base-url }}``  -
     - ``{{ repo.subdir }}``    - optional subdirectory within the repo (may
                                  itself contain ``{{ name }}``)
     - ``{{ repo.ref }}``       - git ref from repo config, or empty string
@@ -179,27 +188,20 @@ def format_component_pattern(
     raw_subdir = effective_repo.subdir or ""
     subdir = str(chevron.render(raw_subdir, {"name": config.name}))
 
+    base_url = effective_repo.base_url
+    if base_url.startswith("local://"):
+        fragment = base_url[len("local://") :]
+        base_url = (Path.cwd() / fragment).as_uri()
+
     data = {
         "name": config.name,
         "arch": arch_info.k8s,
         "release": config.release,
         "ref": effective_repo.ref or "",
         "repo": {
-            "base-url": str(Path.cwd()) if effective_repo.is_local else effective_repo.base_url,
+            "base-url": base_url,
             "subdir": subdir,
             "ref": effective_repo.ref or "",
         },
     }
     return str(chevron.render(filename_pattern, data))
-
-
-def source_locally(comp_name: str, src: str, dest: Path) -> None:
-    """Copy a file or directory from a local source path into a destination path."""
-    local = Path(src)
-    if not local.exists():
-        raise ComponentError(f"Local source not found for '{comp_name}': {local}")
-    if dest.exists():
-        shutil.rmtree(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(local, dest)
-    info(f"Copied local test suite for '{comp_name}' to {dest}")

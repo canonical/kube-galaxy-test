@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from kube_galaxy.pkg.utils.components import download_file, format_component_pattern, source_locally
+from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.gh import gh_download_artifact
 
 from ._base import _InstallStrategy
 
@@ -24,12 +23,7 @@ def _download(comp: ComponentBase) -> None:
     )
     temp_dir = comp.ensure_temp_dir()
     filepath = temp_dir / src.split("/")[-1]
-    if install_cfg.repo.is_local:
-        source_locally(comp.name, src, filepath)
-    elif install_cfg.repo.is_gh_artifact:
-        gh_download_artifact(comp.name, src, filepath)
-    else:
-        download_file(src, filepath)
+    download_file(src, filepath)
     comp.binary_path = filepath
 
 

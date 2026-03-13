@@ -162,26 +162,32 @@ def test_repo_info_remote():
     """Test RepoInfo for a remote repository."""
     repo = RepoInfo(base_url="https://github.com/org/repo")
     assert repo.base_url == "https://github.com/org/repo"
-    assert repo.is_local is False
 
 
-def test_repo_info_local_sentinel():
-    """Test that base_url='local' triggers is_local."""
-    repo = RepoInfo(base_url="local")
-    assert repo.is_local is True
+def test_repo_info_local_scheme():
+    """Test that base_url with local:// scheme is stored as-is."""
+    repo = RepoInfo(base_url="local://components/mycomp")
+    assert repo.base_url == "local://components/mycomp"
+    assert repo.subdir is None
+
+
+def test_repo_info_gh_artifact_scheme():
+    """Test that base_url with gh-artifact:// scheme is stored as-is."""
+    repo = RepoInfo(base_url="gh-artifact://mycomp-artifact/spread/kube-galaxy/task.yaml")
+    assert repo.base_url == "gh-artifact://mycomp-artifact/spread/kube-galaxy/task.yaml"
 
 
 def test_repo_info_local_with_subdir():
     """Test RepoInfo local source with optional subdir."""
-    repo = RepoInfo(base_url="local", subdir="sub")
-    assert repo.is_local is True
+    repo = RepoInfo(base_url="local://components", subdir="sub")
+    assert repo.base_url == "local://components"
     assert repo.subdir == "sub"
 
 
-def test_repo_info_empty_base_url_is_not_local():
-    """An empty base_url is not considered local."""
+def test_repo_info_empty_base_url():
+    """An empty base_url is stored as empty string."""
     repo = RepoInfo()
-    assert repo.is_local is False
+    assert repo.base_url == ""
 
 
 def test_manifest_path_default():
@@ -194,11 +200,9 @@ def test_install_config_default_repo():
     """InstallConfig.repo defaults to empty RepoInfo."""
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
     assert install.repo.base_url == ""
-    assert install.repo.is_local is False
 
 
 def test_test_config_default_repo():
     """TestConfig.repo defaults to empty RepoInfo."""
     test = ComponentTestConfig(method=ComponentTestMethod.SPREAD, source_format="")
     assert test.repo.base_url == ""
-    assert test.repo.is_local is False

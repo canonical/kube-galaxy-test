@@ -16,6 +16,7 @@ from pathlib import Path
 from kube_galaxy.pkg.utils.errors import ComponentError
 
 # GitHub Actions sets this environment variable pointing to the output file
+GITHUB_ACTION = os.getenv("GITHUB_ACTION")
 GITHUB_OUTPUT = os.getenv("GITHUB_OUTPUT")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -61,32 +62,36 @@ def gh_output(name: str, value: str) -> None:
         f.write(f"{delim}\n")
 
 
-def gh_download_artifact(comp_name: str, src: str, dest: Path) -> None:
-    """Download a GitHub Actions artifact from the current repository.
+def gh_download_artifact(url: str, dest: Path) -> None:
+    """Download a file from a GitHub Actions artifact.
 
-    Uses the GitHub REST API to find an artifact by name and download it
-    as a zip archive, then extracts the specified file from the archive to the destination path.
+    Parses a ``gh-artifact://artifact-name/path/in/zip`` URL, fetches the
+    named artifact from the current repository via the GitHub REST API,
+    downloads the zip archive, and extracts ``path/in/zip`` to ``dest``.
 
     Args:
-        comp_name: Component name (used in error messages)
-        src: Artifact name to search for
-        dest: Local file path to save the file of the same name from the head of the archive
+        url: Full ``gh-artifact://artifact-name/path/to/file`` URL.
+        dest: Local path to write the extracted file to.
 
     Raises:
-        ComponentError: If not running in GitHub Actions, GITHUB_TOKEN is
-            missing, the artifact is not found, or the download fails
-        FileNotFoundError: If the specified file is not found in the downloaded artifact
+        ComponentError: If not running in GitHub Actions, TOKEN/REPOSITORY env
+            vars are missing, the artifact is not found, or download fails.
+        FileNotFoundError: If the zip-internal path is not found in the artifact.
     """
-    if not GITHUB_OUTPUT:
+    if not GITHUB_ACTION:
         raise ComponentError(
-            f"{comp_name} can only download artifacts from within a GitHub Actions workflow"
+            "gh-artifact:// sources can only be used within a GitHub Actions workflow"
         )
 
     if not GITHUB_TOKEN:
-        raise ComponentError(f"{comp_name} requires GITHUB_TOKEN to download artifacts")
+        raise ComponentError("gh-artifact:// requires GITHUB_TOKEN to be set")
 
     if not GITHUB_REPOSITORY:
-        raise ComponentError(f"{comp_name} requires GITHUB_REPOSITORY to be set")
+        raise ComponentError("gh-artifact:// requires GITHUB_REPOSITORY to be set")
+
+    # Parse gh-artifact://artifact-name/path/to/file
+    without_scheme = url[len("gh-artifact://") :]
+    artifact_name, _, zip_path = without_scheme.partition("/")
 
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -97,26 +102,23 @@ def gh_download_artifact(comp_name: str, src: str, dest: Path) -> None:
     # Find the artifact by name using the REST API.
     list_url = (
         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/artifacts"
-        f"?name={urllib.parse.quote(src)}&per_page=1"
+        f"?name={urllib.parse.quote(artifact_name)}&per_page=1"
     )
     try:
         req = urllib.request.Request(list_url, headers=headers)
         with urllib.request.urlopen(req) as resp:
             data: dict[str, object] = json.loads(resp.read())
     except urllib.error.HTTPError as exc:
-        raise ComponentError(f"{comp_name}: failed to list artifacts: HTTP {exc.code}") from exc
+        raise ComponentError(
+            f"Failed to list artifacts for '{artifact_name}': HTTP {exc.code}"
+        ) from exc
 
     artifacts = data.get("artifacts", [])
     if not isinstance(artifacts, list) or not artifacts:
-        raise ComponentError(f"{comp_name}: no artifact named '{src}' found in {GITHUB_REPOSITORY}")
+        raise ComponentError(f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}")
 
     artifact_id = artifacts[0]["id"]
-    # dest is a path  /opt/kube-galaxy/<comp>/temp/the-file
-    # the-file is expected to be at the root of the zip archive, so it is
-    # extracted directly to dest.
-    # we can leave the unextracted zip archive in the temp directory
-    archive = dest.parent / f"{src}.zip"
-    dest.mkdir(parents=True, exist_ok=True)
+    archive = dest.parent / f"{artifact_name}.zip"
 
     # Download the artifact zip archive.
     download_url = (
@@ -124,19 +126,20 @@ def gh_download_artifact(comp_name: str, src: str, dest: Path) -> None:
     )
     try:
         req = urllib.request.Request(download_url, headers=headers)
-        with urllib.request.urlopen(req) as resp:
-            archive.write_bytes(resp.read())
+        with urllib.request.urlopen(req) as resp, open(archive, "wb") as archive_file:
+            while chunk := resp.read(8192):
+                archive_file.write(chunk)
     except urllib.error.HTTPError as exc:
         raise ComponentError(
-            f"{comp_name}: failed to download artifact '{src}': HTTP {exc.code}"
+            f"Failed to download artifact '{artifact_name}': HTTP {exc.code}"
         ) from exc
 
-    # Extract the specified file from the archive to the destination path.
+    # Extract the specified path from the archive to dest.
     with zipfile.ZipFile(archive, "r") as zip_ref:
         try:
-            with zip_ref.open(dest.name) as src_file, open(dest, "wb") as dest_file:
+            with zip_ref.open(zip_path) as src_file, open(dest, "wb") as dest_file:
                 dest_file.write(src_file.read())
         except KeyError:
             raise FileNotFoundError(
-                f"{comp_name}: file '{dest.name}' not found in artifact '{src}'"
+                f"Path '{zip_path}' not found in artifact '{artifact_name}'"
             ) from None

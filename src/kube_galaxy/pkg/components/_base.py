@@ -237,7 +237,10 @@ class ComponentBase:
     @property
     def extracted_dir(self) -> Path | None:
         """Get the extracted directory for this component."""
-        if self.config.installation.method != InstallMethod.BINARY_ARCHIVE:
+        if self.config.installation.method not in (
+            InstallMethod.BINARY_ARCHIVE,
+            InstallMethod.CONTAINER_IMAGE_ARCHIVE,
+        ):
             return None
         return Path(self.component_tmp_dir) / "extracted"
 

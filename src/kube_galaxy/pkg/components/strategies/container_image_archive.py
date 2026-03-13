@@ -6,12 +6,10 @@ import bz2
 import gzip
 import lzma
 import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kube_galaxy.pkg.utils.components import download_file, format_component_pattern, source_locally
+from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.gh import gh_download_artifact
 
 from ._base import _InstallStrategy
 
@@ -29,14 +27,14 @@ def _download(comp: ComponentBase) -> None:
     )
     temp_dir = comp.ensure_temp_dir()
     file_path = temp_dir / url.split("/")[-1]
-    if install_cfg.repo.is_local:
-        source_locally(comp.name, url, file_path)
-    elif install_cfg.repo.is_gh_artifact:
-        gh_download_artifact(comp.name, url, file_path)
+    download_file(url, file_path)
+    if extracted_dir := comp.extracted_dir:
+        extracted_dir.mkdir(exist_ok=True)
     else:
-        download_file(url, file_path)
-    extracted_dir = Path(comp.component_tmp_dir) / "extracted"
-    extracted_dir.mkdir(exist_ok=True)
+        raise ComponentError(
+            f"{comp.name} does not have an extracted_dir. Ensure the component config specifies "
+            f"an appropriate installation method and that the component is being used correctly."
+        )
     image_tar = extracted_dir / "image.tar"
     if file_path.suffix == ".tar":
         file_path.rename(image_tar)

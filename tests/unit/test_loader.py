@@ -80,7 +80,7 @@ kubernetes-version: "1.35.0"
 
 
 def test_load_manifest_test_local_repo(tmp_manifest_dir):
-    """Test that test.repo with base-url: local sets is_local on TestConfig."""
+    """Test that test.repo with local:// base-url is loaded correctly."""
     manifest_file = tmp_manifest_dir / "test.yaml"
     manifest_file.write_text(
         """
@@ -95,8 +95,8 @@ components:
     test:
       method: spread
       repo:
-        base-url: local
-      source-format: "{{ repo.base-url }}/components/{{ name }}"
+        base-url: local://components/mycomp
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy/task.yaml"
 """
     )
 
@@ -104,13 +104,12 @@ components:
 
     assert len(manifest.components) == 1
     comp = manifest.components[0]
-    assert comp.test.repo.is_local is True
-    assert comp.test.repo.base_url == "local"
-    assert comp.test.source_format == "{{ repo.base-url }}/components/{{ name }}"
+    assert comp.test.repo.base_url == "local://components/mycomp"
+    assert comp.test.source_format == "{{ repo.base-url }}/spread/kube-galaxy/task.yaml"
 
 
 def test_load_manifest_install_repo_explicit_base_url(tmp_manifest_dir):
-    """Test that installation.repo with base-url: local sets is_local."""
+    """Test that installation.repo with local:// base-url is loaded correctly."""
     manifest_file = tmp_manifest_dir / "test.yaml"
     manifest_file.write_text(
         """
@@ -123,15 +122,14 @@ components:
     installation:
       method: none
       repo:
-        base-url: local
+        base-url: local://components/mycomp
 """
     )
 
     manifest = load_manifest(manifest_file)
 
     comp = manifest.components[0]
-    assert comp.installation.repo.is_local is True
-    assert comp.installation.repo.base_url == "local"
+    assert comp.installation.repo.base_url == "local://components/mycomp"
 
 
 def test_load_manifest_invalid_repo(tmp_manifest_dir):
@@ -178,9 +176,9 @@ components:
 
 
 def test_load_manifest_remote_install_repo_not_local(sample_manifest_file):
-    """Test that remote installation repos have is_local == False."""
+    """Test that remote installation repos use https:// base-url."""
     manifest = load_manifest(sample_manifest_file)
 
     for comp in manifest.components:
-        assert comp.installation.repo.is_local is False
-        assert comp.installation.repo.base_url not in ("", "local")
+        assert not comp.installation.repo.base_url.startswith("local://")
+        assert comp.installation.repo.base_url != ""

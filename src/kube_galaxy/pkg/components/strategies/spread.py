@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from kube_galaxy.pkg.literals import SystemPaths
-from kube_galaxy.pkg.utils.components import format_component_pattern, source_locally
-from kube_galaxy.pkg.utils.gh import gh_download_artifact
+from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 
 from ._base import _TestStrategy
 
@@ -15,19 +14,16 @@ if TYPE_CHECKING:
 
 
 def _download(comp: ComponentBase) -> None:
-    """Download or copy the spread test suite for this component to the tests root.
+    """Download the spread test suite for this component to the tests root.
 
-    For **local** sources (``base-url: local``), the test suite is already
-    present in the repository.  The ``source-format`` field in the test
-    config is rendered via :func:`format_component_pattern` to produce the
-    source path, which is then copied to the shared tests root so that the
-    spread orchestrator can discover it alongside remotely-sourced test
-    suites.
+    The ``source-format`` field in the test config is rendered via
+    :func:`format_component_pattern` then passed directly to
+    :func:`~kube_galaxy.pkg.utils.components.download_file`, which dispatches
+    on URL scheme:
 
-    For **remote** sources, the test suite must be cloned from the component
-    repo.  The base implementation raises :class:`NotImplementedError`;
-    subclasses or future additions can override this method to perform the
-    actual clone via GitPython.
+    - ``file://`` — copied from the local filesystem (resolved from ``local://``)
+    - ``gh-artifact://`` — fetched from a GitHub Actions artifact
+    - ``https://`` / ``http://`` — downloaded from a remote URL
     """
     test_cfg = comp.config.test
     dest = SystemPaths.tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
@@ -35,16 +31,7 @@ def _download(comp: ComponentBase) -> None:
         test_cfg.source_format, comp.config, comp.arch_info, test_cfg.repo
     )
 
-    if test_cfg.repo.is_local:
-        source_locally(comp.name, src, dest)
-    elif test_cfg.repo.is_gh_artifact:
-        gh_download_artifact(comp.name, src, dest)
-    else:
-        raise NotImplementedError(
-            f"Remote test suite download is not yet implemented for '{comp.name}'. "
-            f"Use 'base-url: local' in the test block to ship test tasks inside this repo, "
-            f"or manually place a task.yaml at {dest}/{SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK}."
-        )
+    download_file(src, dest)
 
 
 _SpreadTestStrategy = _TestStrategy(download=_download)

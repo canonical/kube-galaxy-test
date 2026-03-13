@@ -81,9 +81,9 @@ def test_format_component_pattern_remote(arch_info):
 
 
 def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatch):
-    """format_component_pattern resolves {{ repo.base-url }} to str(cwd) for local sources."""
+    """format_component_pattern resolves local:// base-url to a file:// URI rooted at cwd."""
     monkeypatch.chdir(tmp_path)
-    repo = RepoInfo(base_url="local")
+    repo = RepoInfo(base_url="local://")
     install = InstallConfig(
         method=InstallMethod.BINARY,
         source_format="{{ repo.base-url }}/mybin-{{ arch }}",
@@ -97,7 +97,7 @@ def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatc
         installation=install,
     )
     result = format_component_pattern(install.source_format, config, arch_info, repo)
-    assert result == f"{tmp_path}/mybin-{arch_info.k8s}"
+    assert result == (tmp_path / f"mybin-{arch_info.k8s}").as_uri()
 
 
 def test_format_component_pattern_subdir_and_ref(arch_info):
@@ -165,7 +165,7 @@ def test_format_component_pattern_name_variable(arch_info):
 def test_format_component_pattern_prerender_name_in_subdir(arch_info, tmp_path, monkeypatch):
     """{{ name }} in repo.subdir is expanded before the subdir is used in the template."""
     monkeypatch.chdir(tmp_path)
-    repo = RepoInfo(base_url="local", subdir="components/{{ name }}")
+    repo = RepoInfo(base_url="local://", subdir="components/{{ name }}")
     install = InstallConfig(
         method=InstallMethod.NONE,
         source_format="{{ repo.base-url }}/{{ repo.subdir }}",
@@ -179,7 +179,7 @@ def test_format_component_pattern_prerender_name_in_subdir(arch_info, tmp_path, 
         installation=install,
     )
     result = format_component_pattern(install.source_format, config, arch_info, repo)
-    assert result == f"{tmp_path}/components/sonobuoy"
+    assert result == (tmp_path / "components/sonobuoy").as_uri()
 
 
 def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):
@@ -218,7 +218,7 @@ def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, ar
     test_cfg = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/components/{{ name }}/spread/kube-galaxy/task.yaml",
-        repo=RepoInfo(base_url="local"),
+        repo=RepoInfo(base_url="local://"),
     )
     config = ComponentConfig(
         name="sonobuoy",
