@@ -143,7 +143,7 @@ def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
     test = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/components/{{ name }}",
-        repo=RepoInfo(base_url="local"),
+        repo=RepoInfo(base_url="local://"),
     )
     comp = ComponentConfig(
         name="localcomp",
