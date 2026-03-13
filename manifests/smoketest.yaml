@@ -174,8 +174,8 @@ components:
       method: spread
       repo:
         base-url: local://components/sonobuoy/
-        subdir: spread/kube-galaxy/task.yaml
-      source-format: "{{ repo.base-url }}/{{ repo.subdir }}"
+        subdir: spread/kube-galaxy
+      source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
 
 networking:
   - name: default
