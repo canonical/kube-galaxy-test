@@ -40,16 +40,29 @@ def _verify(comp: ComponentBase) -> None:
         check=True,
         capture_output=True,
     )
-    docs = list(yaml.safe_load_all(docs_str.stdout))
-    workloads = [
-        doc for doc in docs if doc.get("kind") in ("Deployment", "DaemonSet", "StatefulSet")
-    ]
-    for workload in workloads:
-        kind = workload["kind"].lower()
-        name = workload["metadata"]["name"].lower()
-        namespace = workload["metadata"].get("namespace", "default").lower()
+    # yaml.safe_load_all may yield None or non-mapping documents (e.g. for empty YAML docs).
+    # Restrict to dicts before attempting to access mapping methods/keys.
+    docs = [doc for doc in yaml.safe_load_all(docs_str.stdout) if isinstance(doc, dict)]
+
+    for doc in docs:
+        kind = doc.get("kind")
+        if kind not in ("Deployment", "DaemonSet", "StatefulSet"):
+            continue
+
+        metadata = doc.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+
+        name = metadata.get("name")
+        if not isinstance(name, str):
+            continue
+
+        namespace = metadata.get("namespace", "default")
+        if not isinstance(namespace, str):
+            namespace = "default"
+
         run(
-            [*Commands.K_ROLLOUT_STATUS, f"{kind}/{name}", "-n", namespace],
+            [*Commands.K_ROLLOUT_STATUS, f"{kind.lower()}/{name.lower()}", "-n", namespace.lower()],
             check=True,
             timeout=comp.BOOTSTRAP_TIMEOUT,
         )
