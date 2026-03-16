@@ -71,7 +71,7 @@ Tests live in the kube-galaxy-test repository itself at
 **Local source rules**:
 - `{{ repo.base-url }}` in `test.source-format` resolves to a `file://` URI of cwd
 - `download_file()` copies the resolved path to `tests_root/<name>/`
-- `task_path_for_component()` returns `tests_root/<name>/spread/kube-galaxy/` (same as remote)
+- `SystemPaths.tests_component_root()` returns `tests_root/<name>/spread/kube-galaxy/` (same as remote)
 
 ---
 
@@ -156,24 +156,19 @@ execute: |
    [pkg/literals.py](src/kube_galaxy/pkg/literals.py) - `tests_root()`,
    `tests_spread_yaml()`
 
-2. **Component repo checkout** in
-   [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py) -
-   `_checkout_component_repo()` uses GitPython to clone and checkout
-   `component.release` tag/ref into `tests_root/<name>/`
-
-3. **Orchestration spread.yaml generation** in
+2. **Orchestration spread.yaml generation** in
    [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py) -
    `_generate_orchestration_spread_yaml()` reads each component's `task.yaml`
    from `tests_root/<name>/spread/kube-galaxy/` and builds a spread manifest
 
-4. **Local source handling** in
-   [pkg/components/_base.py](src/kube_galaxy/pkg/components/_base.py) -
+3. **Local/Remove source handling** in
+   [pkg/components/strategies/spread.py](/src/kube_galaxy/pkg/components/strategies/spread.py) -
    `download_file()` checks `config.test.repo.base_url.startswith("local://")`
-   to determine whether to copy a local path or clone a remote repo
+   to determine whether to copy a local path or wget a remote file
 
-5. **Validator path resolution** in
+4. **Validator path resolution** in
    [pkg/manifest/validator.py](src/kube_galaxy/pkg/manifest/validator.py) -
-   `task_path_for_component()` always returns `tests_root/<name>/spread/kube-galaxy/`
+   `SystemPaths.tests_component_root()` always returns `tests_root/<name>/spread/kube-galaxy/`
    regardless of local or remote source
 
 6. **Generate kube-galaxy orchestration spread.yaml** in
@@ -199,8 +194,8 @@ execute: |
 8. **Update component test execution** in
    [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py)
    - Replace placeholder in `_run_component_tests()` (lines 93-106)
-   - For each component with `test: true`:
-     - Checkout component repo to appropriate path
+   - For each component where `test` is defined:
+     - Cource component repo to appropriate path
      - Create fresh test namespace
      - Set environment variables: `KUBECONFIG`, `KUBE_GALAXY_NAMESPACE`,
        `SYSTEM_ARCH`, `K8S_ARCH`, `IMAGE_ARCH`, `COMPONENT_NAME`,
@@ -310,15 +305,11 @@ After implementation:
    - Verify template file loads and substitutes correctly
 
 2. **Local smoke test**: Run `kube-galaxy test` with smoktest.yaml (1-2 components enabled)
-   - Verify checkout to `/opt/kube-galaxy/tests/<component>/origin/`
+   - Verify tasks are in `/opt/kube-galaxy/tests/<component>/spread/kube-galaxy`
    - Verify orchestration spread.yaml generated from template at `/opt/kube-galaxy/tests/spread.yaml`
    - Verify namespace creation/cleanup per component
    - Verify environment variables passed to test execution
    - Check logs directory contains per-component logs
-
-3. **Validation test**: Run `kube-galaxy validate` with test-enabled components
-   - Should validate component repos have `/spread/kube-galaxy/` structure
-   - Should warn if `test: true` but no tests found
 
 ---
 

@@ -103,6 +103,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
+         "User-Agent": "kube-galaxy/gh-artifact",
     }
 
     # Find the artifact by name using the REST API, paging through results and

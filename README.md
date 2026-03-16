@@ -394,7 +394,7 @@ When tests fail:
 2. Add or modify cluster manifests in `manifests/`
 3. Add component references with proper repository structure
 4. Validate with `tox -e kube-galaxy -- validate all` or `kube-galaxy validate all`
-5. Run tests with `tox -e test`
+5. Run tests with `tox -e unit`
 6. Submit a pull request
 
 The GitHub Actions workflows automatically test changes against the infrastructure.
