@@ -16,7 +16,7 @@ from pathlib import Path
 from kube_galaxy.pkg.utils.errors import ComponentError
 
 # GitHub Actions sets this environment variable pointing to the output file
-GITHUB_ACTION = os.getenv("GITHUB_ACTION")
+GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS")
 GITHUB_OUTPUT = os.getenv("GITHUB_OUTPUT")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -78,7 +78,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
             vars are missing, the artifact is not found, or download fails.
         FileNotFoundError: If the zip-internal path is not found in the artifact.
     """
-    if not GITHUB_ACTION:
+    if GITHUB_ACTIONS != "true":
         raise ComponentError(
             "gh-artifact:// sources can only be used within a GitHub Actions workflow"
         )
@@ -158,7 +158,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
         reverse=True,
     )[0]
     artifact_id = newest_artifact["id"]
-    archive = dest.parent / f"{artifact_name}.zip"
+    archive = dest.parent / f"{artifact_name}-{uuid.uuid4().hex}.zip"
 
     # Download the artifact zip archive.
     download_url = (
@@ -175,11 +175,18 @@ def gh_download_artifact(url: str, dest: Path) -> None:
         ) from exc
 
     # Extract the specified path from the archive to dest.
-    with zipfile.ZipFile(archive, "r") as zip_ref:
+    try:
+        with zipfile.ZipFile(archive, "r") as zip_ref:
+            try:
+                with zip_ref.open(zip_path) as src_file, open(dest, "wb") as dest_file:
+                    dest_file.write(src_file.read())
+            except KeyError:
+                raise FileNotFoundError(
+                    f"Path '{zip_path}' not found in artifact '{artifact_name}'"
+                ) from None
+    finally:
+        # Best effort to clean up the downloaded archive file.
         try:
-            with zip_ref.open(zip_path) as src_file, open(dest, "wb") as dest_file:
-                dest_file.write(src_file.read())
-        except KeyError:
-            raise FileNotFoundError(
-                f"Path '{zip_path}' not found in artifact '{artifact_name}'"
-            ) from None
+            archive.unlink()
+        except Exception:
+            pass

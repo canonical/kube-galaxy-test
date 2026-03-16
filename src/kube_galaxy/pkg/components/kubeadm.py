@@ -216,11 +216,11 @@ class Kubeadm(ClusterComponentBase):
 
         # Use base method to remove kubeconfig files
         kubeconfig_paths = [
-            str(Path.home() / ".kube" / "config"),
-            "/etc/kubernetes/admin.conf",
-            str(self._cluster_config),
+            Path.home() / ".kube" / "config",
+            Path("/etc/kubernetes/admin.conf"),
+            self._cluster_config,
         ]
-        self.remove_config_files(kubeconfig_paths)
+        self.remove_config_files([p for p in kubeconfig_paths if p and p.exists()])
 
     def post_delete_hook(self) -> None:
         """

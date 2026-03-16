@@ -196,7 +196,7 @@ When `base-url` starts with `gh-artifact://`:
   automatically via `${{ secrets.GITHUB_TOKEN }}`)
 - The `GITHUB_REPOSITORY` environment variable must be set (set automatically
   in GitHub Actions)
-- The feature only works inside a GitHub Actions workflow (`GITHUB_OUTPUT` must
+- The feature only works inside a GitHub Actions workflow (`GITHUB_ACTION` must
   be set). Running locally will raise an error.
 
 ### Local Component Sources
@@ -223,7 +223,6 @@ When `base-url` starts with `local://`:
 
 - `{{ repo.base-url }}` in `source-format` expands to a `file://` URI of cwd
   (optionally with the path fragment appended to cwd)
-- `task_path_for_component` returns `cwd/components/<name>/spread/kube-galaxy/`
 - The `download_hook` automatically copies the resolved local suite to the
   shared tests root so that spread can discover it
 

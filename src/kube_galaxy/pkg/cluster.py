@@ -64,16 +64,16 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
         # Get components in dependency order
         configs = manifest.components
 
-        # Create all component instances
-        instances: dict[str, ComponentBase] = {}
+        # Create all component resources
+        resources: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = find_component(config.name)
-            instance = component_class(instances, manifest, config, arch_info)
-            instances[config.name] = instance
+            resource = component_class(resources, manifest, config, arch_info)
+            resources[config.name] = resource
 
         # Execute 6-stage lifecycle
-        instances_list = list(instances.values())
-        cluster_managers = sum(1 for inst in instances_list if inst.is_cluster_manager)
+        resources_list = list(resources.values())
+        cluster_managers = sum(1 for res in resources_list if res.is_cluster_manager)
         if cluster_managers != 1:
             raise ClusterError(
                 f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
@@ -82,7 +82,7 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
         num_hooks = len(SetupHooks)
         for idx, hook in enumerate(SetupHooks, 1):
             section(f"Stage {idx}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(instances_list, configs, hook.value, parallel=hook.is_parallel)
+            _run_hook(resources_list, configs, hook.value, parallel=hook.is_parallel)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")
@@ -117,19 +117,19 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         # Get components in dependency order, then reverse for teardown
         configs = list(reversed(manifest.components))
 
-        # Create all component instances
-        instances: dict[str, ComponentBase] = {}
+        # Create all component resources
+        resources: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = find_component(config.name)
-            instance = component_class(instances, manifest, config, arch_info)
-            instances[config.name] = instance
+            resource = component_class(resources, manifest, config, arch_info)
+            resources[config.name] = resource
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
-        instances_list = list(instances.values())
+        resources_list = list(resources.values())
         num_hooks = len(TeardownHooks)
         for idx, hook in enumerate(TeardownHooks):
             section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(instances_list, configs, hook.value, force, parallel=hook.is_parallel)
+            _run_hook(resources_list, configs, hook.value, force, parallel=hook.is_parallel)
 
         # Final cleanup: remove any remaining kube-galaxy alternatives
         _cleanup_kube_galaxy_alternatives(force)
@@ -148,7 +148,7 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
 
 
 def _run_hook(
-    instances: list[ComponentBase],
+    resources: list[ComponentBase],
     configs: list[ComponentConfig],
     hook_name: str,
     force: bool = False,
@@ -158,8 +158,8 @@ def _run_hook(
     Run a specific lifecycle hook for all components.
 
     Args:
-        instances: List of component instances
-        configs: List of component configs (must be in same order as instances)
+        resources: List of component resources
+        configs: List of component configs (must be in same order as resources)
         hook_name: Name of the hook to run (e.g., "install")
         force: Continue execution even if errors occur
         parallel: Execute hooks concurrently (respects component order for submission)
@@ -174,8 +174,8 @@ def _run_hook(
         futures_list = []
 
         # Submit all tasks in component order
-        for config, instance in zip(configs, instances, strict=True):
-            hook_method = getattr(instance, f"{hook_name}_hook", None)
+        for config, resource in zip(configs, resources, strict=True):
+            hook_method = getattr(resource, f"{hook_name}_hook", None)
             if not hook_method:
                 raise ClusterError(f"{hook_name_caps} hook not implemented for {config.name}")
             info(f"  {config.name}: {hook_name_caps}...")

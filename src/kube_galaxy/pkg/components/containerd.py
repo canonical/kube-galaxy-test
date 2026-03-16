@@ -23,8 +23,8 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
     Pull a container image with containerd and retag for use in the cluster.
 
     Args:
-        cluster_manager: Cluster manager component instance defining image list
-        image: Component instance with CONTAINER_IMAGE method to pull
+        cluster_manager: Cluster manager component defining image list
+        image: Component with CONTAINER_IMAGE method to pull
     """
     # Use ctr to pull images directly into containerd
     to_pull = f"{image.image_repository}:{image.image_tag}"
@@ -42,8 +42,8 @@ def _image_import_and_retag(cluster_manager: ClusterComponentBase, image: Compon
     Import a container image archive with containerd and retag for use in the cluster.
 
     Args:
-        cluster_manager: Cluster manager component instance defining image list
-        image: Component instance with CONTAINER_IMAGE_ARCHIVE method to import
+        cluster_manager: Cluster manager component defining image list
+        image: Component with CONTAINER_IMAGE_ARCHIVE method to import
     """
     # Use ctr to import images directly into containerd
 
@@ -92,7 +92,7 @@ class Containerd(ComponentBase):
         """
         Get pause image from pause component or use default.
 
-        Checks if pause component is loaded in the instances dict
+        Checks if pause component is loaded in the components dict
         and uses its configuration for the sandbox_image.
 
         Returns:
@@ -100,7 +100,7 @@ class Containerd(ComponentBase):
         """
         # Fallback to default if no pause component
         image_format = "registry.k8s.io/pause:3.9"
-        if pause := self.instances.get("pause"):
+        if pause := self.components.get("pause"):
             # Use source_format if it's a container image
             install = pause.config.installation
             if (
@@ -117,14 +117,14 @@ class Containerd(ComponentBase):
 
     def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
         """
-        Get lists of tagged images and image archives Component instances.
+        Get lists of tagged images and image archives components.
 
         Returns:
             Tuple of (tagged_images, image_archives)
         """
         tagged_images = []
         image_archives = []
-        for comp in self.instances.values():
+        for comp in self.components.values():
             match comp.config.installation.method:
                 case InstallMethod.CONTAINER_IMAGE:
                     tagged_images.append(comp)

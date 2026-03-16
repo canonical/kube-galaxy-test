@@ -44,7 +44,7 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
     class StubKubelet:
         install_path = "/usr/local/bin/kubelet"
 
-    comp.instances["kubelet"] = StubKubelet()
+    comp.components["kubelet"] = StubKubelet()
 
     calls = []
 

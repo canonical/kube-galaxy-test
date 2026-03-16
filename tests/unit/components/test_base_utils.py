@@ -201,8 +201,8 @@ def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):
     assert result == "https://example.com/tools/mytool/release-3.0"
 
 
-def test_download_tasks_from_config_uses_source_format(monkeypatch, tmp_path, arch_info) -> None:
-    """download_tasks_from_config copies from the path resolved by test.source-format."""
+def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info) -> None:
+    """local:/// based download_file copies from the path resolved by test.source-format."""
     monkeypatch.chdir(tmp_path)
 
     # Create the local test suite at the path that source-format will resolve to

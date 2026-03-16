@@ -195,7 +195,7 @@ def format_component_pattern(
     base_url = effective_repo.base_url
     if base_url.startswith("local://"):
         fragment = base_url[len("local://") :]
-        base_url = (Path.cwd() / fragment.strip("/")) .as_uri()
+        base_url = (Path.cwd() / fragment.strip("/")).as_uri()
 
     data = {
         "name": config.name,

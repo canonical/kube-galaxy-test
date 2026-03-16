@@ -52,7 +52,7 @@ class ComponentBase:
     Each hook can be overridden. If not overridden, the default (empty)
     implementation is used and effectively skips that stage.
 
-    Use regular instance attributes for state management between hooks.
+    Use regular component attributes for state management between hooks.
     """
 
     # Timeout configuration (in seconds) - override in subclass
@@ -63,20 +63,20 @@ class ComponentBase:
 
     def __init__(
         self,
-        instances: dict[str, "ComponentBase"],
+        components: dict[str, "ComponentBase"],
         manifest: Manifest,
         config: ComponentConfig,
         arch_info: ArchInfo,
     ) -> None:
         """
-        Initialize component with instances, manifest, and config.
+        Initialize component with components, manifest, and config.
 
         Args:
-            instances: Dict of all component instances (growing as components are created)
+            components: Dict of all components
             manifest: The full Manifest object
             config: The ComponentConfig object for this specific component
         """
-        self.instances = instances
+        self.components = components
         self.manifest = manifest
         self.config = config
         # Allow tests and callers to omit arch_info; default to detected arch
@@ -122,18 +122,18 @@ class ComponentBase:
 
     def get_cluster_manager(self) -> "ClusterComponentBase":
         """
-        Get the cluster manager component instance.
+        Get the cluster manager component.
 
         Returns:
             The instance of the cluster manager component
 
         Raises:
-            ComponentError: If no cluster manager is found in instances
+            ComponentError: If no cluster manager is found in components
         """
-        for instance in self.instances.values():
-            if instance.is_cluster_manager:
-                return cast("ClusterComponentBase", instance)
-        raise ComponentError("No cluster manager component found in instances")
+        for component in self.components.values():
+            if component.is_cluster_manager:
+                return cast("ClusterComponentBase", component)
+        raise ComponentError("No cluster manager component found in components")
 
     # Lifecycle hooks - all have default empty implementations
     # Override in subclass as needed

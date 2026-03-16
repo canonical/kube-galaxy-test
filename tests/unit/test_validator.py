@@ -21,7 +21,6 @@ from kube_galaxy.pkg.manifest.models import (
 )
 from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
-    task_path_for_component,
     validate_manifest,
 )
 
@@ -83,8 +82,8 @@ execute: |
     assert spread_components[0].test.method == ComponentTestMethod.SPREAD
 
 
-def test_task_path_for_component_always_uses_tests_root(monkeypatch):
-    """task_path_for_component always returns tests_root/<name>/spread/kube-galaxy/.
+def test_tests_component_root_always_uses_tests_root(monkeypatch):
+    """SystemPaths.tests_component_root always returns tests_root/<name>/spread/kube-galaxy/.
 
     This holds for both local and remote sources — by test time all task
     definitions must be installed under tests_root.
@@ -107,7 +106,10 @@ def test_task_path_for_component_always_uses_tests_root(monkeypatch):
         installation=install,
         test=test,
     )
-    assert task_path_for_component(remote_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
+    assert (
+        SystemPaths.tests_component_root(remote_comp.name)
+        == fake_root / "mycomp" / "spread/kube-galaxy/"
+    )
 
     # Local source — same result
     local_test = ComponentTestConfig(
@@ -122,19 +124,22 @@ def test_task_path_for_component_always_uses_tests_root(monkeypatch):
         installation=install,
         test=local_test,
     )
-    assert task_path_for_component(local_comp) == fake_root / "mycomp" / "spread/kube-galaxy/"
+    assert (
+        SystemPaths.tests_component_root(local_comp.name)
+        == fake_root / "mycomp" / "spread/kube-galaxy/"
+    )
 
 
 def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
     """Test get_components_with_spread finds a local component via tests_root.
 
-    The download_tasks_from_config flow copies the local suite to tests_root;
+    The download_file flow copies the local suite to tests_root;
     here we simulate that by pre-populating tests_root and patching the path.
     """
     tests_root = tmp_path / "tests"
     monkeypatch.setattr(SystemPaths, "tests_root", lambda: tests_root)
 
-    # Simulate the copy that download_tasks_from_config would do
+    # Simulate the copy that download_file would do
     task_dir = tests_root / "localcomp" / "spread" / "kube-galaxy"
     task_dir.mkdir(parents=True)
     (task_dir / "task.yaml").write_text("summary: local test\nexecute: |\n    echo done\n")

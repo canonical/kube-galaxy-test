@@ -223,7 +223,7 @@ build = [
     { name = "wheel", specifier = ">=0.40" },
 ]
 dev = [
-    { name = "mypy", specifier = ">1.0" },
+    { name = "mypy", specifier = ">=1.0" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-cov", specifier = ">=4.0" },
     { name = "pytest-mock", specifier = ">=3.10" },
@@ -232,7 +232,7 @@ dev = [
     { name = "types-pyyaml" },
 ]
 lint = [
-    { name = "mypy", specifier = ">1.0" },
+    { name = "mypy", specifier = ">=1.0" },
     { name = "ruff", specifier = ">=0.1.0" },
     { name = "types-chevron" },
     { name = "types-pyyaml" },

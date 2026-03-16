@@ -91,6 +91,10 @@ class SystemPaths:
         return Path(cls.KUBE_GALAXY_TESTS_ROOT)
 
     @classmethod
+    def tests_component_root(cls, name: str) -> Path:
+        return SystemPaths.tests_root() / name / "spread/kube-galaxy/"
+
+    @classmethod
     def tests_spread_yaml(cls) -> Path:
         """Get orchestration spread.yaml path."""
         return Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML)
