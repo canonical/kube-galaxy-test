@@ -16,6 +16,7 @@ from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.gh import gh_download_artifact
 from kube_galaxy.pkg.utils.shell import run
+from kube_galaxy.pkg.utils.url import http_headers
 
 
 def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> None:
@@ -41,7 +42,10 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
         return
 
     try:
-        urllib.request.urlretrieve(url, dest)
+        req = urllib.request.Request(url, headers=http_headers(url, raw=True))
+        with urllib.request.urlopen(req) as response, open(dest, "wb") as dest_file:
+            while chunk := response.read(8192):
+                dest_file.write(chunk)
 
         if verify_sha256:
             actual_sha256 = compute_sha256(dest)

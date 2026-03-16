@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.url import http_headers
 
 # GitHub Actions sets this environment variable pointing to the output file
 GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS")
@@ -114,12 +115,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
             "'gh-artifact://<artifact-name>/<path/inside/zip>'"
         )
 
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "kube-galaxy/gh-artifact",
-    }
+    headers = {**http_headers(url)}
 
     # Find the artifact by name using the REST API, paging through results and
     # selecting the newest matching artifact deterministically.

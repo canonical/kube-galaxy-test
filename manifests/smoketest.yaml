@@ -135,7 +135,7 @@ components:
       method: container-manifest
       repo:
         base-url: https://github.com/projectcalico/calico
-      source-format: "https://raw.githubusercontent.com/projectcalico/calico/v{{ release }}/manifests/calico.yaml"
+      source-format: "https://api.github.com/repos/projectcalico/calico/contents/manifests/calico.yaml?ref=v{{ release }}"
 
   - name: calico-cni
     category: projectcalico/calico
