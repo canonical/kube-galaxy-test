@@ -149,7 +149,7 @@ class Kubeadm(ClusterComponentBase):
                     self._update_init_config(config)
                 case "ClusterConfiguration":
                     self._update_cluster_config(config)
-        self._cluster_config = Path(self.component_tmp_dir) / "kubeadm-config.yaml"
+        self._cluster_config = self.component_tmp_dir / "kubeadm-config.yaml"
 
         # Write config to temp file
         config_content = yaml.safe_dump_all(configs)

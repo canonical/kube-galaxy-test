@@ -253,7 +253,7 @@ def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
 
-    p = Path(comp.component_tmp_dir)
+    p = comp.component_tmp_dir
     # ensure_temp_dir should create the temp dir under tmp_path
     ret = comp.ensure_temp_dir()
     assert str(ret) == str(p)

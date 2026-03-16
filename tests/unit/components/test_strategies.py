@@ -365,7 +365,7 @@ class TestBinaryArchiveInstall:
             arch_info=arch_info,
         )
         # Create the extracted directory with a matching binary
-        extracted = Path(comp.component_tmp_dir) / "extracted"
+        extracted = comp.component_tmp_dir / "extracted"
         extracted.mkdir(parents=True, exist_ok=True)
         binary = extracted / "mycomp"
         binary.write_bytes(b"binary")
@@ -397,7 +397,7 @@ class TestBinaryArchiveInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        extracted = Path(comp.component_tmp_dir) / "extracted"
+        extracted = comp.component_tmp_dir / "extracted"
         extracted.mkdir(parents=True, exist_ok=True)
         # Create two binaries; only "mycomp" should set install_path
         (extracted / "mycomp").write_bytes(b"binary1")
@@ -524,7 +524,7 @@ class TestContainerImageArchiveDownload:
 
         comp.download_hook()
 
-        image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
         assert image_tar.read_bytes() == b"tar-content"
 
@@ -543,7 +543,7 @@ class TestContainerImageArchiveDownload:
 
         comp.download_hook()
 
-        image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
         assert image_tar.read_bytes() == raw
 
@@ -562,7 +562,7 @@ class TestContainerImageArchiveDownload:
 
         comp.download_hook()
 
-        image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
         assert image_tar.read_bytes() == raw
 
@@ -581,7 +581,7 @@ class TestContainerImageArchiveDownload:
 
         comp.download_hook()
 
-        image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
         assert image_tar.read_bytes() == raw
 
@@ -600,7 +600,7 @@ class TestContainerImageArchiveDownload:
 
         comp.download_hook()
 
-        image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
         assert image_tar.read_bytes() == raw
 
@@ -619,7 +619,7 @@ class TestContainerImageArchiveDownload:
 
         comp.download_hook()
 
-        image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
         assert image_tar.read_bytes() == raw
 
@@ -662,7 +662,7 @@ class TestContainerImageArchiveDownload:
 
         assert len(calls) == 1
         assert calls[0].startswith("file://")
-        image_tar = Path(comp.component_tmp_dir) / "extracted" / "image.tar"
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):

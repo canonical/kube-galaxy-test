@@ -92,7 +92,8 @@ class SystemPaths:
 
     @classmethod
     def tests_component_root(cls, name: str) -> Path:
-        return SystemPaths.tests_root() / name / "spread/kube-galaxy/"
+        path = SystemPaths.tests_root() / name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
+        return path.parent
 
     @classmethod
     def tests_spread_yaml(cls) -> Path:

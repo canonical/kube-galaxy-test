@@ -196,7 +196,7 @@ When `base-url` starts with `gh-artifact://`:
   automatically via `${{ secrets.GITHUB_TOKEN }}`)
 - The `GITHUB_REPOSITORY` environment variable must be set (set automatically
   in GitHub Actions)
-- The feature only works inside a GitHub Actions workflow (`GITHUB_ACTION` must
+- The feature only works inside a GitHub Actions workflow (`GITHUB_ACTIONS` must
   be set). Running locally will raise an error.
 
 ### Local Component Sources
@@ -215,8 +215,9 @@ working directory.
   test:
     method: spread
     repo:
-      base-url: local://
-    source-format: "{{ repo.base-url }}/components/{{ name }}"
+      base-url: local://components/mycomp/
+      subdir: spread/kube-galaxy
+    source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
 ```
 
 When `base-url` starts with `local://`:

@@ -4,6 +4,7 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
+import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +17,8 @@ from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 
 def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
@@ -35,6 +38,20 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
         run([*Commands.SUDO_CTR_IMAGES, "tag", to_pull, to_tag], check=True)
     else:
         info(f"    No retag found for image: {to_pull}")
+
+
+def _auths() -> dict[str, tuple[str, str]]:
+    """
+    Write container registry pull secret for an image if credentials are provided.
+
+    Args:
+        cluster_manager: Cluster manager component defining registry credentials
+        image: Component with CONTAINER_IMAGE method to write pull secret for
+    """
+    auth_items = {}
+    if GITHUB_TOKEN:
+        auth_items["ghcr.io"] = ("github", GITHUB_TOKEN)
+    return auth_items
 
 
 def _image_import_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
@@ -168,6 +185,16 @@ class Containerd(ComponentBase):
             config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
         )
 
+        for host, (username, token) in _auths().items():
+            content = f"""server = "{host}"
+[host]
+  username = "{username}
+  password = "{token}
+"""
+            self.write_config_file(
+                content, f"/etc/containerd/certs.d/{host}/hosts.toml", mode=Permissions.READABLE
+            )
+
         # Create systemd service unit
         systemd_unit = """[Unit]
 Description=containerd container runtime
@@ -208,7 +235,6 @@ WantedBy=multi-user.target
 
         images_tagged, image_archives = self._image_comps_by_type()
         cluster_manager = self.get_cluster_manager()
-
         with ThreadPoolExecutor(max_workers=self.MAX_IMAGE_PULL_WORKERS) as executor:
             # Pull and retag images in parallel
             pull_futures = []
@@ -269,6 +295,7 @@ WantedBy=multi-user.target
         config_files = [
             "/etc/containerd/config.toml",
             "/etc/systemd/system/containerd.service",
+            *[f"/etc/containerd/certs.d/{host}/hosts.toml" for host in _auths().keys()],
         ]
         self.remove_config_files(config_files)
 

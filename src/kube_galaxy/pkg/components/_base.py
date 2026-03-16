@@ -215,24 +215,24 @@ class ComponentBase:
 
     # Component directory and alternatives management methods
     @property
-    def component_dir(self) -> str:
+    def component_dir(self) -> Path:
         """
         Get the component's installation directory.
 
         Returns:
             Path to /opt/kube-galaxy/{self.name}/
         """
-        return str(SystemPaths.component_dir(self.name))
+        return SystemPaths.component_dir(self.name)
 
     @property
-    def component_tmp_dir(self) -> str:
+    def component_tmp_dir(self) -> Path:
         """
         Get the component's secure temporary directory.
 
         Returns:
             Path to /opt/kube-galaxy/{self.name}/tmp/
         """
-        return str(SystemPaths.component_temp_dir(self.name))
+        return SystemPaths.component_temp_dir(self.name)
 
     @property
     def extracted_dir(self) -> Path | None:
@@ -242,7 +242,7 @@ class ComponentBase:
             InstallMethod.CONTAINER_IMAGE_ARCHIVE,
         ):
             return None
-        return Path(self.component_tmp_dir) / "extracted"
+        return self.component_tmp_dir / "extracted"
 
     def remove_component_alternatives(self) -> None:
         """
@@ -305,7 +305,7 @@ class ComponentBase:
         Returns:
             Path to component temp directory
         """
-        temp_dir = Path(self.component_tmp_dir)
+        temp_dir = self.component_tmp_dir
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 

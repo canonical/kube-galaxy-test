@@ -4,8 +4,10 @@ Provides helper functions for outputting values to GitHub Actions workflow
 environments using the GITHUB_OUTPUT mechanism for inter-step communication.
 """
 
+import io
 import json
 import os
+import typing
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,6 +22,19 @@ GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS")
 GITHUB_OUTPUT = os.getenv("GITHUB_OUTPUT")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+if typing.TYPE_CHECKING:
+    # Define a Reader protocol for type hinting (io.Reader is not yet in mypy stubs)
+    # This shouldn't be required past Python 3.14 when io.Reader is added,
+    # but we can define it here for compatibility.
+    class Reader(typing.Protocol):
+        def read(self, size: int = -1, /) -> bytes: ...
+
+
+def _write_chunked(infile: "Reader", outfile: io.BufferedWriter) -> None:
+    """Write data to a file in chunks to handle large content without loading it all into memory."""
+    while chunk := infile.read(8192):
+        outfile.write(chunk)
 
 
 def gh_output(name: str, value: str) -> None:
@@ -103,7 +118,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-         "User-Agent": "kube-galaxy/gh-artifact",
+        "User-Agent": "kube-galaxy/gh-artifact",
     }
 
     # Find the artifact by name using the REST API, paging through results and
@@ -121,10 +136,8 @@ def gh_download_artifact(url: str, dest: Path) -> None:
             req = urllib.request.Request(list_url, headers=headers)
             with urllib.request.urlopen(req) as resp:
                 data: dict[str, object] = json.loads(resp.read())
-        except urllib.error.HTTPError as exc:
-            raise ComponentError(
-                f"Failed to list artifacts for '{artifact_name}': HTTP {exc.code}"
-            ) from exc
+        except (urllib.error.URLError, json.JSONDecodeError) as exc:
+            raise ComponentError(f"Failed to list artifacts for '{artifact_name}': {exc}") from exc
 
         artifacts = data.get("artifacts", [])
         if not isinstance(artifacts, list):
@@ -167,12 +180,11 @@ def gh_download_artifact(url: str, dest: Path) -> None:
     )
     try:
         req = urllib.request.Request(download_url, headers=headers)
-        with urllib.request.urlopen(req) as resp, open(archive, "wb") as archive_file:
-            while chunk := resp.read(8192):
-                archive_file.write(chunk)
-    except urllib.error.HTTPError as exc:
+        with urllib.request.urlopen(req) as src_file, open(archive, "wb") as dest_file:
+            _write_chunked(src_file, dest_file)
+    except urllib.error.URLError as exc:
         raise ComponentError(
-            f"Failed to download artifact '{artifact_name}': HTTP {exc.code}"
+            f"Failed to download artifact '{artifact_name}': HTTP {exc.reason}"
         ) from exc
 
     # Extract the specified path from the archive to dest.
@@ -180,7 +192,7 @@ def gh_download_artifact(url: str, dest: Path) -> None:
         with zipfile.ZipFile(archive, "r") as zip_ref:
             try:
                 with zip_ref.open(zip_path) as src_file, open(dest, "wb") as dest_file:
-                    dest_file.write(src_file.read())
+                    _write_chunked(src_file, dest_file)
             except KeyError:
                 raise FileNotFoundError(
                     f"Path '{zip_path}' not found in artifact '{artifact_name}'"
