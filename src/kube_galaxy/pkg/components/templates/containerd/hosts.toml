@@ -1,0 +1,7 @@
+server = "https://{host}"
+
+[host."https://{host}"]
+  capabilities = ["pull", "resolve"]
+
+  [host."https://{host}".header]
+    Authorization = "Basic {basic_auth_token}"

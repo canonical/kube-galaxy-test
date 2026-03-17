@@ -4,6 +4,7 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
+import base64
 import os
 import subprocess
 import time
@@ -21,6 +22,29 @@ from kube_galaxy.pkg.utils.shell import run
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_ACTOR = os.getenv("GITHUB_ACTOR")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
+HOSTS_D = Path("/etc/containerd/hosts.d")
+
+
+def _registry_auth(component: "ComponentBase", host: str, username: str, password: str) -> None:
+    """
+    Write a hosts.toml file for containerd registry authentication.
+
+    This function generates the content for the hosts.toml file based on the provided
+    registry host, username, and password, and writes it to the appropriate location
+    under /etc/containerd/certs.d/.
+
+    Args:
+        component: Container component instance to use for writing config files
+        host: Registry hostname (e.g., "ghcr.io")
+        username: Username for authentication
+        password: Password or token for authentication
+    """
+    hosts_tmpl = Path(__file__).parent / "templates/containerd/hosts.toml"
+    basic_auth_token = base64.b64encode(f"{username}:{password}".encode()).decode()
+    content = hosts_tmpl.read_text().format(host=host, basic_auth_token=basic_auth_token)
+
+    hosts_toml = HOSTS_D / host / "hosts.toml"
+    component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
 
 
 def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
@@ -138,7 +162,8 @@ class Containerd(ComponentBase):
             elif pause.config.release:
                 image_format = f"registry.k8s.io/pause:{pause.config.release}"
 
-        return format_component_pattern(image_format, self.config, self.arch_info)
+            return format_component_pattern(image_format, pause.config, self.arch_info)
+        return image_format
 
     def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
         """
@@ -170,23 +195,12 @@ class Containerd(ComponentBase):
         configures pause image, and creates systemd service file.
         """
         # Generate default containerd config
-        result = run(
-            ["containerd", "config", "default"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        config_content = result.stdout
-
-        # Set SystemdCgroup = true (required for Kubernetes)
-        config_content = config_content.replace("SystemdCgroup = false", "SystemdCgroup = true")
+        config_toml = Path(__file__).parent / "templates/containerd/config.toml"
+        config_content = config_toml.read_text()
 
         # Configure pause image (sandbox_image) from pause component or default
         pause_image = self._get_pause_image()
-        config_content = config_content.replace(
-            'sandbox_image = "registry.k8s.io/pause:3.8"',
-            f'sandbox_image = "{pause_image}"',
-        )
+        config_content = config_content.format(pause_image=pause_image)
 
         # Write containerd config to /etc/containerd/config.toml
         self.write_config_file(
@@ -194,41 +208,11 @@ class Containerd(ComponentBase):
         )
 
         for host, (username, password) in _auths().items():
-            content = f"""server = https://{host}"
-
-[host."https://{host}"]
-  capabilities = ["pull", "resolve"]
-
-  [host."https://{host}".auth]
-    username = "{username}"
-    password = "{password}"
-"""
-            self.write_config_file(
-                content, f"/etc/containerd/certs.d/{host}/hosts.toml", mode=Permissions.PRIVATE
-            )
+            _registry_auth(self, host, username, password)
 
         # Create systemd service unit
-        systemd_unit = """[Unit]
-Description=containerd container runtime
-Documentation=https://containerd.io
-After=network.target local-fs.target
-
-[Service]
-ExecStart=/usr/local/bin/containerd
-ExecStop=/bin/kill -s TERM $MAINPID
-Restart=on-failure
-RestartSec=5
-Delegate=yes
-KillMode=process
-OOMScoreAdjust=-999
-LimitNOFILE=1048576
-LimitNPROC=infinity
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-        self.create_systemd_service("containerd", systemd_unit, enabled=True)
+        systemd_unit = Path(__file__).parent / "templates/containerd/systemd_unit"
+        self.create_systemd_service("containerd", systemd_unit.read_text(), enabled=True)
 
     def bootstrap_hook(self) -> None:
         """
