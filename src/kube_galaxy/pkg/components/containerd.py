@@ -16,7 +16,7 @@ from kube_galaxy.pkg.literals import Commands, Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.logging import info, warning
 from kube_galaxy.pkg.utils.shell import run
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -78,11 +78,13 @@ def _auths() -> dict[str, tuple[str, str]]:
     """
     auth_items = {}
     if GITHUB_ACTOR and GITHUB_TOKEN:
-        info("Using GITHUB_ACTOR and GITHUB_TOKEN for ghcr.io authentication")
+        info("    Using GITHUB_ACTOR and GITHUB_TOKEN for ghcr.io authentication")
         auth_items["ghcr.io"] = (GITHUB_ACTOR, GITHUB_TOKEN)
     elif GITHUB_USERNAME and GITHUB_TOKEN:
-        info("Using GITHUB_USERNAME and GITHUB_TOKEN for ghcr.io authentication")
+        info("    Using GITHUB_USERNAME and GITHUB_TOKEN for ghcr.io authentication")
         auth_items["ghcr.io"] = (GITHUB_USERNAME, GITHUB_TOKEN)
+    if not auth_items:
+        warning("    No registry credentials found in environment")
     return auth_items
 
 

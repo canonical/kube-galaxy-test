@@ -28,6 +28,11 @@ on:
         required: false
         default: 'functional-basic'
 
+permissions:
+  contents: read
+  packages: read
+  issues: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -139,6 +144,9 @@ jobs:
       - name: Setup Cluster
         id: setup-cluster
         shell: bash
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Create sanitized artifact name (replace / with -) before setup
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
