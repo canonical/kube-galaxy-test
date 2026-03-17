@@ -5,15 +5,15 @@ environments using the GITHUB_OUTPUT mechanism for inter-step communication.
 """
 
 import io
-import json
 import os
 import typing
-import urllib.error
-import urllib.parse
-import urllib.request
 import uuid
 import zipfile
 from pathlib import Path
+
+import requests
+from github import Auth, Github, GithubException
+from github.Artifact import Artifact
 
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.url import http_headers
@@ -78,82 +78,59 @@ def gh_output(name: str, value: str) -> None:
         f.write(f"{delim}\n")
 
 
-def gh_list_artifacts_by_name(artifact_name: str) -> list[dict[str, object]]:
+def gh_list_artifacts_by_name(artifact_name: str) -> list[Artifact]:
     """List GitHub Actions artifacts in the current repository matching a name.
 
     Args:
         artifact_name: The name of the artifact to search for.
     Returns:
-        A list of artifact metadata dicts matching the specified name.
+        A list of Artifact objects matching the specified name.
     """
-    gh_actions_artifacts = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/artifacts"
-    q_name = urllib.parse.quote(artifact_name)
-    headers = http_headers(gh_actions_artifacts)
-
-    # Find the artifact by name using the REST API, paging through results and
-    # selecting the newest matching artifact deterministically.
-    per_page = 100
-    page = 1
-    matching_artifacts = []
-
-    while True:
-        list_url = f"{gh_actions_artifacts}?name={q_name}&per_page={per_page}&page={page}"
-        try:
-            req = urllib.request.Request(list_url, headers=headers)
-            with urllib.request.urlopen(req) as resp:
-                data: dict[str, object] = json.loads(resp.read())
-        except (urllib.error.URLError, json.JSONDecodeError) as exc:
-            raise ComponentError(f"Failed to list artifacts for '{artifact_name}': {exc}") from exc
-
-        artifacts = data.get("artifacts", [])
-        if not isinstance(artifacts, list):
-            break
-
-        # Filter by exact name to be robust even if the API returns extra entries.
-        for artifact in artifacts:
-            if isinstance(artifact, dict) and artifact.get("name") == artifact_name:
-                matching_artifacts.append(artifact)
-
-        if len(artifacts) < per_page:
-            # No more pages.
-            break
-
-        page += 1
+    try:
+        g = Github(auth=Auth.Token(GITHUB_TOKEN or ""))
+        repo = g.get_repo(GITHUB_REPOSITORY or "")
+        matching_artifacts = [
+            a for a in repo.get_artifacts(name=artifact_name) if a.name == artifact_name
+        ]
+    except GithubException as exc:
+        raise ComponentError(f"Failed to list artifacts for '{artifact_name}': {exc}") from exc
 
     if not matching_artifacts:
         raise ComponentError(f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}")
     return matching_artifacts
 
 
-def gh_download_artifact(newest_artifact: dict[str, object], dest: Path) -> Path:
-    """Download a GitHub Actions artifact by artifact object.
+def gh_download_artifact(artifact: Artifact, dest: Path) -> Path:
+    """Download a GitHub Actions artifact zip archive.
 
     Args:
-        newest_artifact: The artifact metadata dict (from gh_list_artifacts_by_name)
+        artifact: The Artifact object (from gh_list_artifacts_by_name)
         dest: The directory to download the artifact zip file to
 
     Returns:
         The path to the downloaded artifact zip file
-
     """
-    artifact_id = newest_artifact["id"]
-    artifact_name = newest_artifact["name"]
-    archive = dest / f"{artifact_name}-{uuid.uuid4().hex}.zip"
+    archive = dest / f"{artifact.name}-{uuid.uuid4().hex}.zip"
 
-    # Download the artifact zip archive.
-    gh_download_url = (
-        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/actions/artifacts/{artifact_id}/zip"
-    )
-    headers = http_headers(gh_download_url)
-
+    # The archive_download_url redirects to a signed S3 URL. Use allow_redirects=False
+    # to capture the redirect location, then fetch it without the auth header so the
+    # token is not forwarded to the third-party storage endpoint.
     try:
-        req = urllib.request.Request(gh_download_url, headers=headers)
-        with urllib.request.urlopen(req) as src_file, open(archive, "wb") as dest_file:
-            _write_chunked(src_file, dest_file)
-    except urllib.error.URLError as exc:
-        raise ComponentError(
-            f"Failed to download artifact '{artifact_id}': HTTP {exc.reason}"
-        ) from exc
+        redirect = requests.get(
+            artifact.archive_download_url,
+            headers=http_headers(artifact.archive_download_url),
+            allow_redirects=False,
+            timeout=30,
+        )
+        redirect.raise_for_status()
+        download_url = redirect.headers.get("Location", artifact.archive_download_url)
+        with requests.get(download_url, stream=True, timeout=300) as resp:
+            resp.raise_for_status()
+            with open(archive, "wb") as dest_file:
+                for chunk in resp.iter_content(8192):
+                    dest_file.write(chunk)
+    except requests.RequestException as exc:
+        raise ComponentError(f"Failed to download artifact '{artifact.name}': {exc}") from exc
     return archive
 
 
@@ -194,20 +171,11 @@ def gh_extract_artifact_file(url: str, dest: Path) -> None:
             "'gh-artifact://<artifact-name>/<path/inside/zip>'"
         )
 
-    def _artifact_sort_key(artifact: dict[str, object]) -> str:
-        # Prefer updated_at, fall back to created_at, then empty string.
-        updated_at = artifact.get("updated_at")
-        created_at = artifact.get("created_at")
-        for value in (updated_at, created_at):
-            if isinstance(value, str):
-                return value
-        return ""
-
-    newest_artifact = sorted(
-        gh_list_artifacts_by_name(artifact_name),
-        key=_artifact_sort_key,
-        reverse=True,
-    )[0]
+    artifacts = gh_list_artifacts_by_name(artifact_name)
+    newest_artifact = max(
+        artifacts,
+        key=lambda a: a.updated_at or a.created_at,
+    )
 
     # Download the artifact zip archive.
     archive = gh_download_artifact(newest_artifact, dest.parent)
