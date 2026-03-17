@@ -180,7 +180,7 @@ class TestGhDownloadArtifact:
         # Second request: actual zip download as a context manager
         download_resp = MagicMock()
         download_resp.raise_for_status = MagicMock()
-        download_resp.iter_content.return_value = [zip_bytes]
+        download_resp.raw.read.side_effect = [zip_bytes, b""]
         download_resp.__enter__ = lambda s: s
         download_resp.__exit__ = MagicMock(return_value=False)
 
@@ -211,7 +211,7 @@ class TestGhDownloadArtifact:
 
         download_resp = MagicMock()
         download_resp.raise_for_status = MagicMock()
-        download_resp.iter_content.return_value = [zip_bytes]
+        download_resp.raw.read.side_effect = [zip_bytes, b""]
         download_resp.__enter__ = lambda s: s
         download_resp.__exit__ = MagicMock(return_value=False)
 

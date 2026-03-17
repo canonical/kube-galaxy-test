@@ -24,11 +24,16 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
     Download a file from URL to destination.
 
     Supports ``https://``, ``http://``, and ``file://`` URLs via
-    :func:`urllib.request.urlretrieve`, and ``gh-artifact://`` URLs via
-    :func:`~kube_galaxy.pkg.utils.gh.gh_download_artifact`.
+    :func:`urllib.request.urlopen`,
+
+    Supports ``gh-artifact://`` URLs for GitHub Actions artifacts via
+    :func:`~kube_galaxy.pkg.utils.gh.gh_extract_artifact_file`.
+
+    Supports ``local://`` URLs as a convenient way to reference files relative
+    to the current working directory without needing to specify a full path
 
     Args:
-        url: File URL (https://, http://, file://, or gh-artifact://)
+        url: File URL
         dest: Destination path
         verify_sha256: Optional SHA256 checksum to verify (ignored for gh-artifact://)
 
@@ -40,6 +45,17 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
     if url.startswith("gh-artifact://"):
         gh_extract_artifact_file(url, dest)
         return
+
+    if url.startswith("local://"):
+        fragment = url[len("local://") :]
+        working_dir = Path.cwd().resolve()
+        resolved = (working_dir / fragment.strip("/")).resolve()
+        # Prevent escaping the working directory via path traversal in the fragment
+        if not resolved.is_relative_to(working_dir):
+            raise ComponentError(
+                f"Invalid local:// URL; path escapes working directory: {fragment!r}"
+            )
+        url = resolved.as_uri()
 
     try:
         req = urllib.request.Request(url, headers=http_headers(url, raw=True))
@@ -168,12 +184,7 @@ def format_component_pattern(
     - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
     - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
     - ``{{ ref }}``            - git ref override, or empty string
-    - ``{{ repo.base-url }}``  - repository base URL. ``https://`` and
-                                 ``http://`` values are used as-is; ``local://``
-                                 values are rewritten to a ``file://`` URI rooted
-                                 at the current working directory; and
-                                 ``gh-artifact://`` values are preserved for
-                                 :func:`download_file` dispatch.
+    - ``{{ repo.base-url }}``  - repository base URL. (e.g. ``https://`` or ``local://`` or ``gh-artifact://``)
     - ``{{ repo.subdir }}``    - optional subdirectory within the repo (may
                                  itself contain ``{{ name }}``)
     - ``{{ repo.ref }}``       - git ref from repo config, or empty string
@@ -196,18 +207,13 @@ def format_component_pattern(
     raw_subdir = effective_repo.subdir or ""
     subdir = str(chevron.render(raw_subdir, {"name": config.name}))
 
-    base_url = effective_repo.base_url
-    if base_url.startswith("local://"):
-        fragment = base_url[len("local://") :]
-        base_url = (Path.cwd() / fragment.strip("/")).as_uri()
-
     data = {
         "name": config.name,
         "arch": arch_info.k8s,
         "release": config.release,
         "ref": effective_repo.ref or "",
         "repo": {
-            "base-url": base_url,
+            "base-url": effective_repo.base_url,
             "subdir": subdir,
             "ref": effective_repo.ref or "",
         },

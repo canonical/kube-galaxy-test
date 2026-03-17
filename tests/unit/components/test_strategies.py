@@ -107,7 +107,7 @@ class TestBinaryDownload:
         assert dest.exists()
 
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
-        """_download resolves local:// base-url to a file:// URI via download_file."""
+        """_download passes local:// base-url to download_file, which resolves it to file://."""
         comp = _make_component(
             InstallMethod.BINARY,
             "{{ repo.base-url }}/bin-{{ arch }}",
@@ -132,7 +132,7 @@ class TestBinaryDownload:
 
         assert len(calls) == 1
         url, _ = calls[0]
-        assert url.startswith("file://")
+        assert url.startswith("local://")
         assert comp.binary_path is not None
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
@@ -273,7 +273,7 @@ class TestBinaryArchiveDownload:
         assert len(extract_calls) == 1
 
     def test_download_local(self, monkeypatch, tmp_path, arch_info):
-        """_download resolves local:// base-url to a file:// URI via download_file."""
+        """_download passes local:// base-url to download_file, which resolves it to file://."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
             "{{ repo.base-url }}/archive-{{ arch }}.tar.gz",
@@ -303,10 +303,7 @@ class TestBinaryArchiveDownload:
         comp.download_hook()
 
         assert len(calls) == 1
-        assert calls[0].startswith("file://")
-
-    def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
-        """_download passes gh-artifact:// URL unchanged to download_file."""
+        assert calls[0].startswith("local://")
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
             "{{ repo.base-url }}/artifact-{{ arch }}.tar.gz",
@@ -637,7 +634,7 @@ class TestContainerImageArchiveDownload:
             comp.download_hook()
 
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
-        """.tar files from local:// source resolve to file:// via download_file."""
+        """.tar files from local:// source pass URL unchanged to download_file."""
         comp = _make_cia_component(
             "{{ repo.base-url }}/image.tar",
             base_url="local://fixtures",
@@ -661,7 +658,7 @@ class TestContainerImageArchiveDownload:
         comp.download_hook()
 
         assert len(calls) == 1
-        assert calls[0].startswith("file://")
+        assert calls[0].startswith("local://")
         image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
 
@@ -725,7 +722,7 @@ def _make_manifest_component(
 
 class TestContainerManifestRemainingBranches:
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
-        """_download resolves local:// base-url to file:// via download_file."""
+        """_download passes local:// base-url to download_file, which resolves it to file://."""
         comp = _make_manifest_component(
             base_url="local://fixtures",
             source_format="{{ repo.base-url }}/calico.yaml",
@@ -749,7 +746,7 @@ class TestContainerManifestRemainingBranches:
         comp.download_hook()
 
         assert len(calls) == 1
-        assert calls[0].startswith("file://")
+        assert calls[0].startswith("local://")
         assert comp.manifest_path is not None
         assert comp.manifest_path.exists()
 

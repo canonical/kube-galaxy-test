@@ -81,7 +81,7 @@ def test_format_component_pattern_remote(arch_info):
 
 
 def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatch):
-    """format_component_pattern resolves local:// base-url to a file:// URI rooted at cwd."""
+    """format_component_pattern preserves local:// base-url as-is; download_file resolves it."""
     monkeypatch.chdir(tmp_path)
     repo = RepoInfo(base_url="local://")
     install = InstallConfig(
@@ -97,7 +97,7 @@ def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatc
         installation=install,
     )
     result = format_component_pattern(install.source_format, config, arch_info, repo)
-    assert result == (tmp_path / f"mybin-{arch_info.k8s}").as_uri()
+    assert result == f"local:///mybin-{arch_info.k8s}"
 
 
 def test_format_component_pattern_subdir_and_ref(arch_info):
@@ -179,7 +179,7 @@ def test_format_component_pattern_prerender_name_in_subdir(arch_info, tmp_path, 
         installation=install,
     )
     result = format_component_pattern(install.source_format, config, arch_info, repo)
-    assert result == (tmp_path / "components/sonobuoy").as_uri()
+    assert result == "local:///components/sonobuoy"
 
 
 def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):

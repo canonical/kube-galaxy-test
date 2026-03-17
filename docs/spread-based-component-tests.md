@@ -45,7 +45,8 @@ Tests are cloned from the component repository during setup:
     method: spread
     repo:
       base-url: https://github.com/containerd/containerd
-    source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+      subdir: spread/kube-galaxy
+    source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
 ```
 
 During `kube-galaxy setup`, `download_file()` wgets from a remote path and
@@ -161,7 +162,7 @@ execute: |
    `_generate_orchestration_spread_yaml()` reads each component's `task.yaml`
    from `tests_root/<name>/spread/kube-galaxy/` and builds a spread manifest
 
-3. **Local/Remove source handling** in
+3. **Local/Remote source handling** in
    [pkg/components/strategies/spread.py](/src/kube_galaxy/pkg/components/strategies/spread.py) -
    `download_file()` checks `config.test.repo.base_url.startswith("local://")`
    to determine whether to copy a local path or wget a remote file
@@ -195,7 +196,7 @@ execute: |
    [pkg/testing/spread.py](src/kube_galaxy/pkg/testing/spread.py)
    - Replace placeholder in `_run_component_tests()` (lines 93-106)
    - For each component where `test` is defined:
-     - Cource component repo to appropriate path
+     - Source component repo to appropriate path
      - Create fresh test namespace
      - Set environment variables: `KUBECONFIG`, `KUBE_GALAXY_NAMESPACE`,
        `SYSTEM_ARCH`, `K8S_ARCH`, `IMAGE_ARCH`, `COMPONENT_NAME`,

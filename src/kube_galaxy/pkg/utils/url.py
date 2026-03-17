@@ -17,7 +17,8 @@ def http_headers(url: str, **kwargs: bool | str) -> dict[str, str]:
     }
 
     url_parts = urllib.parse.urlparse(url)
-    if url_parts.netloc.endswith("github.com"):
+    host = url_parts.hostname
+    if host and (host == "github.com" or host.endswith(".github.com")):
         # For GitHub API requests, include the API version and authentication token if available.
         headers["X-GitHub-Api-Version"] = "2022-11-28"
         headers["Accept"] = "application/vnd.github+json"

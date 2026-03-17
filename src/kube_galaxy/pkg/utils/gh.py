@@ -127,8 +127,7 @@ def gh_download_artifact(artifact: Artifact, dest: Path) -> Path:
         with requests.get(download_url, stream=True, timeout=300) as resp:
             resp.raise_for_status()
             with open(archive, "wb") as dest_file:
-                for chunk in resp.iter_content(8192):
-                    dest_file.write(chunk)
+                _write_chunked(resp.raw, dest_file)
     except requests.RequestException as exc:
         raise ComponentError(f"Failed to download artifact '{artifact.name}': {exc}") from exc
     return archive

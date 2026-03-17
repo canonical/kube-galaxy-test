@@ -43,15 +43,17 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
 
 def _auths() -> dict[str, tuple[str, str]]:
     """
-    Write container registry pull secret for an image if credentials are provided.
+    Build a mapping of container registry hosts to (username, password) tuples for authentication.
 
-    Args:
-        cluster_manager: Cluster manager component defining registry credentials
-        image: Component with CONTAINER_IMAGE method to write pull secret for
+    This helper inspects environment variables to determine registry credentials
+    and returns a mapping of registry hostnames to (username, password) pairs.
+
+    Returns:
+        A dictionary mapping registry hostnames to (username, password) tuples.
     """
     auth_items = {}
     if GITHUB_TOKEN:
-        auth_items["https://ghcr.io"] = ("github", GITHUB_TOKEN)
+        auth_items["ghcr.io"] = ("github", GITHUB_TOKEN)
     return auth_items
 
 
@@ -190,10 +192,10 @@ class Containerd(ComponentBase):
             basic_auth = f"{username}:{password}".encode()
             content = f"""server = "{host}"
 
-[host."{host}"]
+[host.https://{host}"]
   capabilities = ["pull", "resolve"]
 
-  [host."{host}".header]
+  [host."https://{host}".header]
     Authorization = ["Basic {base64.b64encode(basic_auth).decode()}"]
 """
             self.write_config_file(

@@ -189,7 +189,7 @@ When `base-url` starts with `gh-artifact://`:
 - `{{ repo.base-url }}` in `source-format` renders to the full
   `gh-artifact://artifact-name` URL; the path appended after it is the
   location of the file *inside* the artifact zip
-- `download_file` dispatches the rendered URL to `gh_download_artifact`,
+- `download_file` dispatches the rendered URL to `gh_extract_artifact_file`,
   which calls the GitHub Artifacts REST API to find and download the zip,
   then extracts the requested file to the destination
 - The `GITHUB_TOKEN` environment variable must be set (workflows provide this
