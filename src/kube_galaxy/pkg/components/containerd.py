@@ -4,7 +4,6 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
-import base64
 import os
 import subprocess
 import time
@@ -20,6 +19,8 @@ from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_ACTOR = os.getenv("GITHUB_ACTOR")
+GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
 
 
 def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
@@ -52,8 +53,12 @@ def _auths() -> dict[str, tuple[str, str]]:
         A dictionary mapping registry hostnames to (username, password) tuples.
     """
     auth_items = {}
-    if GITHUB_TOKEN:
-        auth_items["ghcr.io"] = ("github", GITHUB_TOKEN)
+    if GITHUB_ACTOR and GITHUB_TOKEN:
+        info("Using GITHUB_ACTOR and GITHUB_TOKEN for ghcr.io authentication")
+        auth_items["ghcr.io"] = (GITHUB_ACTOR, GITHUB_TOKEN)
+    elif GITHUB_USERNAME and GITHUB_TOKEN:
+        info("Using GITHUB_USERNAME and GITHUB_TOKEN for ghcr.io authentication")
+        auth_items["ghcr.io"] = (GITHUB_USERNAME, GITHUB_TOKEN)
     return auth_items
 
 
@@ -189,14 +194,14 @@ class Containerd(ComponentBase):
         )
 
         for host, (username, password) in _auths().items():
-            basic_auth = f"{username}:{password}".encode()
-            content = f"""server = "{host}"
+            content = f"""server = https://{host}"
 
-[host.https://{host}"]
+[host."https://{host}"]
   capabilities = ["pull", "resolve"]
 
-  [host."https://{host}".header]
-    Authorization = ["Basic {base64.b64encode(basic_auth).decode()}"]
+  [host."https://{host}".auth]
+    username = "{username}"
+    password = "{password}"
 """
             self.write_config_file(
                 content, f"/etc/containerd/certs.d/{host}/hosts.toml", mode=Permissions.PRIVATE
