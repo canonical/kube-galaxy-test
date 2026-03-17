@@ -86,9 +86,6 @@ class CNIPlugins(ComponentBase):
         # This will handle alternatives and binaries
         super().delete_hook()
 
-        # Remove component directory (binaries)
-        self.cleanup_component_dir()
-
         # Remove cni-plugin configuration files
         config_files = [str(self.LOOPBACK_CONFIG_PATH)]
         self.remove_config_files(config_files)

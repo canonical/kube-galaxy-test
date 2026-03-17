@@ -4,6 +4,7 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
+import base64
 import os
 import subprocess
 import time
@@ -50,7 +51,7 @@ def _auths() -> dict[str, tuple[str, str]]:
     """
     auth_items = {}
     if GITHUB_TOKEN:
-        auth_items["ghcr.io"] = ("github", GITHUB_TOKEN)
+        auth_items["https://ghcr.io"] = ("github", GITHUB_TOKEN)
     return auth_items
 
 
@@ -185,14 +186,18 @@ class Containerd(ComponentBase):
             config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
         )
 
-        for host, (username, token) in _auths().items():
+        for host, (username, password) in _auths().items():
+            basic_auth = f"{username}:{password}".encode()
             content = f"""server = "{host}"
-[host]
-  username = "{username}
-  password = "{token}
+
+[host."{host}"]
+  capabilities = ["pull", "resolve"]
+
+  [host."{host}".header]
+    Authorization = ["Basic {base64.b64encode(basic_auth).decode()}"]
 """
             self.write_config_file(
-                content, f"/etc/containerd/certs.d/{host}/hosts.toml", mode=Permissions.READABLE
+                content, f"/etc/containerd/certs.d/{host}/hosts.toml", mode=Permissions.PRIVATE
             )
 
         # Create systemd service unit

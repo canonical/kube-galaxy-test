@@ -92,7 +92,7 @@ class SystemPaths:
 
     @classmethod
     def tests_component_root(cls, name: str) -> Path:
-        path = SystemPaths.tests_root() / name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
+        path = cls.tests_root() / name / cls.KUBE_GALAXY_TESTS_COMP_TASK
         return path.parent
 
     @classmethod

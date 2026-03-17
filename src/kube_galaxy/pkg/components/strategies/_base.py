@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 
@@ -26,7 +27,9 @@ def _fetch_to_temp(comp: ComponentBase) -> Path:
     url = format_component_pattern(
         install_cfg.source_format, comp.config, comp.arch_info, install_cfg.repo
     )
-    dest = comp.ensure_temp_dir() / url.split("/")[-1]
+    parsed = urlparse(url)
+    filename = Path(parsed.path).name or "download"
+    dest = comp.ensure_temp_dir() / filename
     download_file(url, dest)
     return dest
 
