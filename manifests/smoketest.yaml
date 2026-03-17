@@ -13,6 +13,15 @@ components:
         base-url: https://github.com/opencontainers/runc
       source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/runc.{{ arch }}"
 
+  - name: crictl
+    category: containerd
+    release: "1.35.0"
+    installation:
+      method: binary-archive
+      repo:
+        base-url: https://github.com/kubernetes-sigs/cri-tools
+      source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/crictl-v{{ release }}-linux-{{ arch }}.tar.gz"
+
   - name: containerd
     category: containerd
     release: "2.2.1"

@@ -132,6 +132,7 @@ class Commands:
 
     # ctr images
     SUDO_CTR_IMAGES: ClassVar[list[str]] = ["sudo", "ctr", "-n", "k8s.io", "images"]
+    SUDO_CRICTL_PULL: ClassVar[list[str]] = ["sudo", "crictl", "pull"]
 
     # systemctl commands
     SYSTEMCTL_DAEMON_RELOAD: ClassVar[list[str]] = ["sudo", "systemctl", "daemon-reload"]

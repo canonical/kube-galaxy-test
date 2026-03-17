@@ -58,7 +58,7 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
     # Use ctr to pull images directly into containerd
     to_pull = f"{image.image_repository}:{image.image_tag}"
     info(f"    Pulling image: {to_pull}")
-    run([*Commands.SUDO_CTR_IMAGES, "pull", to_pull], check=True, stdout=subprocess.DEVNULL)
+    run([*Commands.SUDO_CRICTL_PULL, to_pull], check=True, stdout=subprocess.DEVNULL)
     if to_tag := cluster_manager.find_image_retag(to_pull):
         info(f"    Retag pulled image: {to_pull} -> {to_tag}")
         run([*Commands.SUDO_CTR_IMAGES, "tag", to_pull, to_tag], check=True)
