@@ -14,7 +14,7 @@ from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.gh import gh_download_artifact
+from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
 from kube_galaxy.pkg.utils.shell import run
 from kube_galaxy.pkg.utils.url import http_headers
 
@@ -38,7 +38,7 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     if url.startswith("gh-artifact://"):
-        gh_download_artifact(url, dest)
+        gh_extract_artifact_file(url, dest)
         return
 
     try:
