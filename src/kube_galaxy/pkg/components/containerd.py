@@ -4,8 +4,6 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
-import base64
-import os
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -16,32 +14,28 @@ from kube_galaxy.pkg.literals import Commands, Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.gh import gh_auth_basic
 from kube_galaxy.pkg.utils.logging import info, warning
 from kube_galaxy.pkg.utils.shell import run
 
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_ACTOR = os.getenv("GITHUB_ACTOR")
-GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
 HOSTS_D = Path("/etc/containerd/hosts.d")
 
 
-def _registry_auth(component: "ComponentBase", host: str, username: str, password: str) -> None:
+def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
     """
     Write a hosts.toml file for containerd registry authentication.
 
     This function generates the content for the hosts.toml file based on the provided
-    registry host, username, and password, and writes it to the appropriate location
+    registry host and authentication string, and writes it to the appropriate location
     under /etc/containerd/hosts.d/.
 
     Args:
         component: Container component instance to use for writing config files
         host: Registry hostname (e.g., "ghcr.io")
-        username: Username for authentication
-        password: Password or token for authentication
+        auth: Authentication string (e.g., "Basic <base64-encoded-credentials>")
     """
     hosts_tmpl = Path(__file__).parent / "templates/containerd/hosts.toml"
-    basic_auth_token = base64.b64encode(f"{username}:{password}".encode()).decode()
-    content = hosts_tmpl.read_text().format(host=host, basic_auth_token=basic_auth_token)
+    content = hosts_tmpl.read_text().format(host=host, basic_auth_token=auth)
 
     hosts_toml = HOSTS_D / host / "hosts.toml"
     component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
@@ -66,23 +60,19 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
         info(f"    No retag found for image: {to_pull}")
 
 
-def _auths() -> dict[str, tuple[str, str]]:
+def _auths() -> dict[str, str]:
     """
-    Build a mapping of container registry hosts to (username, password) tuples for authentication.
+    Build a mapping of container registry hosts to authentication strings.
 
     This helper inspects environment variables to determine registry credentials
-    and returns a mapping of registry hostnames to (username, password) pairs.
+    and returns a mapping of registry hostnames to authentication strings.
 
     Returns:
-        A dictionary mapping registry hostnames to (username, password) tuples.
+        A dictionary mapping registry hostnames to authentication strings.
     """
     auth_items = {}
-    if GITHUB_ACTOR and GITHUB_TOKEN:
-        info("    Using GITHUB_ACTOR and GITHUB_TOKEN for ghcr.io authentication")
-        auth_items["ghcr.io"] = (GITHUB_ACTOR, GITHUB_TOKEN)
-    elif GITHUB_USERNAME and GITHUB_TOKEN:
-        info("    Using GITHUB_USERNAME and GITHUB_TOKEN for ghcr.io authentication")
-        auth_items["ghcr.io"] = (GITHUB_USERNAME, GITHUB_TOKEN)
+    if gh_auth := gh_auth_basic():
+        auth_items["ghcr.io"] = gh_auth
     if not auth_items:
         warning("    No registry credentials found in environment")
     return auth_items
@@ -209,8 +199,8 @@ class Containerd(ComponentBase):
             config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
         )
 
-        for host, (username, password) in _auths().items():
-            _registry_auth(self, host, username, password)
+        for host, auth in _auths().items():
+            _registry_auth(self, host, auth)
 
         # Create systemd service unit
         systemd_unit = Path(__file__).parent / "templates/containerd/systemd_unit"

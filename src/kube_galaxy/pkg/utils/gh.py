@@ -4,6 +4,7 @@ Provides helper functions for outputting values to GitHub Actions workflow
 environments using the GITHUB_OUTPUT mechanism for inter-step communication.
 """
 
+import base64
 import io
 import os
 import typing
@@ -16,13 +17,16 @@ from github import Auth, Github, GithubException
 from github.Artifact import Artifact
 
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.url import http_headers
+from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.url import http_headers, register_headers_provider
 
 # GitHub Actions sets this environment variable pointing to the output file
 GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS")
 GITHUB_OUTPUT = os.getenv("GITHUB_OUTPUT")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_ACTOR = os.getenv("GITHUB_ACTOR")
+GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
 
 if typing.TYPE_CHECKING:
     # Define a Reader protocol for type hinting (io.Reader is not yet in mypy stubs)
@@ -36,6 +40,52 @@ def _write_chunked(infile: "Reader", outfile: io.BufferedWriter) -> None:
     """Write data to a file in chunks to handle large content without loading it all into memory."""
     while chunk := infile.read(8192):
         outfile.write(chunk)
+
+
+def gh_auth_bearer() -> str:
+    """Construct a Bearer token for GitHub API authentication from GITHUB_TOKEN.
+
+    Returns:
+        A string in the format Bearer <token> if GITHUB_TOKEN is set, otherwise an empty string.
+    """
+    return f"Bearer {GITHUB_TOKEN}" if GITHUB_TOKEN else ""
+
+
+def gh_auth_basic() -> str:
+    """Construct a Basic auth header for GitHub API authentication from
+    * GITHUB_USERNAME and GITHUB_TOKEN
+    * GITHUB_ACTOR and GITHUB_TOKEN
+
+    Returns:
+        A string in the format Basic <base64-encoded credentials> otherwise an empty string.
+    """
+    username, password = None, None
+    if GITHUB_USERNAME and GITHUB_TOKEN:
+        info("    Using GITHUB_USERNAME and GITHUB_TOKEN for ghcr.io authentication")
+        username, password = GITHUB_USERNAME, GITHUB_TOKEN
+    elif GITHUB_ACTOR and GITHUB_TOKEN:
+        info("    Using GITHUB_ACTOR and GITHUB_TOKEN for ghcr.io authentication")
+        username, password = GITHUB_ACTOR, GITHUB_TOKEN
+    if username and password:
+        credentials = f"{username}:{password}"
+        encoded_credentials = base64.b64encode(credentials.encode()).decode()
+        return f"Basic {encoded_credentials}"
+    return ""
+
+
+@register_headers_provider("github.com", ".github.com")
+def gh_http_headers(**kwargs: bool | str) -> dict[str, str]:
+    """Construct standard headers for GitHub API requests, including authentication if available.
+
+    For GitHub API requests, include the API version and authentication token if available.
+    """
+    headers = {"X-GitHub-Api-Version": "2022-11-28", "Accept": "application/vnd.github+json"}
+    if kwargs.get("raw"):
+        headers["Accept"] = "application/vnd.github.raw+json"
+    if bearer := gh_auth_bearer():
+        headers["Authorization"] = bearer
+
+    return headers
 
 
 def gh_output(name: str, value: str) -> None:
