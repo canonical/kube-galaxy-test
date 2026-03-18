@@ -31,7 +31,7 @@ def _registry_auth(component: "ComponentBase", host: str, username: str, passwor
 
     This function generates the content for the hosts.toml file based on the provided
     registry host, username, and password, and writes it to the appropriate location
-    under /etc/containerd/certs.d/.
+    under /etc/containerd/hosts.d/.
 
     Args:
         component: Container component instance to use for writing config files
@@ -293,7 +293,7 @@ class Containerd(ComponentBase):
         config_files = [
             "/etc/containerd/config.toml",
             "/etc/systemd/system/containerd.service",
-            *[f"/etc/containerd/certs.d/{host}/hosts.toml" for host in _auths().keys()],
+            *[f"/etc/containerd/hosts.d/{host}/hosts.toml" for host in _auths().keys()],
         ]
         self.remove_config_files(config_files)
 
