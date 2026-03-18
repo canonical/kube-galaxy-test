@@ -1,6 +1,0 @@
-summary: Sonobuoy CNCF conformance execution
-execute: |
-    wget --tries=3 https://github.com/vmware-tanzu/sonobuoy/releases/download/v${COMPONENT_VERSION}/sonobuoy_${COMPONENT_VERSION}_linux_${K8S_ARCH}.tar.gz -O sonobuoy.tar.gz || exit 1
-    tar -xvf sonobuoy.tar.gz
-    ./sonobuoy delete --kubeconfig=$KUBECONFIG
-    ./sonobuoy run --kubeconfig=$KUBECONFIG --mode=quick --wait=$TEST_TIMEOUT_M

@@ -204,6 +204,7 @@ def _generate_orchestration_spread_yaml(
                 "environment": {
                     "COMPONENT_NAME": each.name,
                     "COMPONENT_VERSION": each.release,
+                    **each.test.environment,
                 },
             }
 

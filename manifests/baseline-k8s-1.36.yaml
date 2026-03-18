@@ -167,6 +167,22 @@ components:
         base-url: https://github.com/kubernetes/node-problem-detector
       source-format: "registry.k8s.io/node-problem-detector/node-problem-detector:v{{ release }}"
 
+  - name: cncf-full
+    category: Conformance
+    release: "0.57.3"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: https://github.com/canonical/mx-kubernetes
+        subdir: spread/cncf-full
+        ref: test/kube-galaxy/cncf/test-definitions
+      source-format: "https://api.github.com/repos/canonical/mx-kubernetes/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
+      environment:
+        TEST_TIMEOUT_S: "7200"
+        TEST_TIMEOUT_M: "120"
+
 networking:
   - name: default
     service-cidr: 10.96.0.0/12
