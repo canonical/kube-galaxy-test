@@ -12,14 +12,14 @@ HEADER_PROVIDER = Callable[..., dict[str, str]]
 _HEADER_PROVIDERS: dict[str, HEADER_PROVIDER] = {}
 
 
-def authentication_headers() -> dict[str, str]:
+def authentication_headers(**kwargs: bool | str) -> dict[str, str]:
     """Construct a dictionary of authentication headers for known services based
     on environment variables.
     """
     headers = {}
     for provider_host, func in _HEADER_PROVIDERS.items():
         if not provider_host.startswith("."):
-            if auth := func().get("Authorization"):
+            if auth := func(**kwargs).get("Authorization"):
                 headers[provider_host] = auth
     if not headers:
         warning("No authentication headers found for any registered providers")

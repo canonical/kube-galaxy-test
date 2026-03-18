@@ -48,6 +48,7 @@ def gh_auth_bearer() -> str:
     Returns:
         A string in the format Bearer <token> if GITHUB_TOKEN is set, otherwise an empty string.
     """
+
     return f"Bearer {GITHUB_TOKEN}" if GITHUB_TOKEN else ""
 
 
@@ -84,6 +85,8 @@ def gh_http_headers(**kwargs: bool | str) -> dict[str, str]:
         headers["Accept"] = "application/vnd.github.raw+json"
     if bearer := gh_auth_bearer():
         headers["Authorization"] = bearer
+    if kwargs.get("basic-auth") and (gh_auth := gh_auth_basic()):
+        headers["Authorization"] = gh_auth
 
     return headers
 

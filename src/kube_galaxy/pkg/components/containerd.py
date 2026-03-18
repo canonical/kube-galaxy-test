@@ -35,7 +35,7 @@ def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
         auth: Authentication string (e.g., "Basic <base64-encoded-credentials>")
     """
     hosts_tmpl = Path(__file__).parent / "templates/containerd/hosts.toml"
-    content = hosts_tmpl.read_text().format(host=host, basic_auth_token=auth)
+    content = hosts_tmpl.read_text().format(host=host, authorization=auth)
 
     hosts_toml = HOSTS_D / host / "hosts.toml"
     component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
@@ -181,7 +181,7 @@ class Containerd(ComponentBase):
             config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
         )
 
-        for host, auth in authentication_headers().items():
+        for host, auth in authentication_headers(basic_auth=True).items():
             _registry_auth(self, host, auth)
 
         # Create systemd service unit
@@ -265,7 +265,7 @@ class Containerd(ComponentBase):
         config_files = [
             "/etc/containerd/config.toml",
             "/etc/systemd/system/containerd.service",
-            "/etc/containerd/hosts.d/"
+            "/etc/containerd/hosts.d/",
         ]
         self.remove_config_files(config_files)
 
