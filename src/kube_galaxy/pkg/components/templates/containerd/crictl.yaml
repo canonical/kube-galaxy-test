@@ -1,0 +1,2 @@
+runtime-endpoint: unix://{socket_path}
+image-endpoint: unix://{socket_path}

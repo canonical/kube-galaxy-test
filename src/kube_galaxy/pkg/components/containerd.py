@@ -188,6 +188,11 @@ class Containerd(ComponentBase):
         systemd_unit = Path(__file__).parent / "templates/containerd/systemd_unit"
         self.create_systemd_service("containerd", systemd_unit.read_text(), enabled=True)
 
+        # Configure crictl to target containerd
+        crictl_tmpl = Path(__file__).parent / "templates/containerd/crictl.yaml"
+        crictl_config = crictl_tmpl.read_text().format(socket_path=self.SOCKET_PATH)
+        self.write_config_file(crictl_config, "/etc/crictl.yaml", mode=Permissions.READABLE)
+
     def bootstrap_hook(self) -> None:
         """
         Start containerd service.
@@ -266,6 +271,7 @@ class Containerd(ComponentBase):
             "/etc/containerd/config.toml",
             "/etc/systemd/system/containerd.service",
             "/etc/containerd/hosts.d/",
+            "/etc/crictl.yaml",
         ]
         self.remove_config_files(config_files)
 
