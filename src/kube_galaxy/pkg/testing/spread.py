@@ -141,6 +141,7 @@ def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> li
                     "SYSTEM_ARCH": arch_info.system,
                     "K8S_ARCH": arch_info.k8s,
                     "IMAGE_ARCH": arch_info.image,
+                    **each.test.environment,
                 },
             }
 

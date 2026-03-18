@@ -132,6 +132,7 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
             method=TestMethod(test_data.get("method", "none")),
             source_format=test_data.get("source-format", ""),
             repo=_parse_repo(test_data.get("repo"), comp_name),
+            environment=test_data.get("environment", {}),
         )
 
         component = ComponentConfig(
