@@ -14,9 +14,9 @@ from kube_galaxy.pkg.literals import Commands, Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.gh import gh_auth_basic
-from kube_galaxy.pkg.utils.logging import info, warning
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
+from kube_galaxy.pkg.utils.url import authentication_headers
 
 HOSTS_D = Path("/etc/containerd/hosts.d")
 
@@ -58,24 +58,6 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
         run([*Commands.SUDO_CTR_IMAGES, "tag", to_pull, to_tag], check=True)
     else:
         info(f"    No retag found for image: {to_pull}")
-
-
-def _auths() -> dict[str, str]:
-    """
-    Build a mapping of container registry hosts to authentication strings.
-
-    This helper inspects environment variables to determine registry credentials
-    and returns a mapping of registry hostnames to authentication strings.
-
-    Returns:
-        A dictionary mapping registry hostnames to authentication strings.
-    """
-    auth_items = {}
-    if gh_auth := gh_auth_basic():
-        auth_items["ghcr.io"] = gh_auth
-    if not auth_items:
-        warning("    No registry credentials found in environment")
-    return auth_items
 
 
 def _image_import_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
@@ -199,7 +181,7 @@ class Containerd(ComponentBase):
             config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
         )
 
-        for host, auth in _auths().items():
+        for host, auth in authentication_headers().items():
             _registry_auth(self, host, auth)
 
         # Create systemd service unit
@@ -283,7 +265,7 @@ class Containerd(ComponentBase):
         config_files = [
             "/etc/containerd/config.toml",
             "/etc/systemd/system/containerd.service",
-            *[f"/etc/containerd/hosts.d/{host}/hosts.toml" for host in _auths().keys()],
+            "/etc/containerd/hosts.d/"
         ]
         self.remove_config_files(config_files)
 

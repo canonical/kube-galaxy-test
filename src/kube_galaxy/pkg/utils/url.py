@@ -6,8 +6,24 @@ Provides helper functions for constructing HTTP headers for API requests.
 import urllib.parse
 from collections.abc import Callable
 
+from kube_galaxy.pkg.utils.logging import warning
+
 HEADER_PROVIDER = Callable[..., dict[str, str]]
 _HEADER_PROVIDERS: dict[str, HEADER_PROVIDER] = {}
+
+
+def authentication_headers() -> dict[str, str]:
+    """Construct a dictionary of authentication headers for known services based
+    on environment variables.
+    """
+    headers = {}
+    for provider_host, func in _HEADER_PROVIDERS.items():
+        if not provider_host.startswith("."):
+            if auth := func().get("Authorization"):
+                headers[provider_host] = auth
+    if not headers:
+        warning("No authentication headers found for any registered providers")
+    return headers
 
 
 def http_headers(url: str, **kwargs: bool | str) -> dict[str, str]:

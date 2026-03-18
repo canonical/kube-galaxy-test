@@ -73,7 +73,7 @@ def gh_auth_basic() -> str:
     return ""
 
 
-@register_headers_provider("github.com", ".github.com")
+@register_headers_provider("github.com", ".github.com", "ghcr.io")
 def gh_http_headers(**kwargs: bool | str) -> dict[str, str]:
     """Construct standard headers for GitHub API requests, including authentication if available.
 
