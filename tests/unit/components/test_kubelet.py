@@ -71,5 +71,5 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
     comp.configure_hook()
 
     # Expect cp to be called to copy temp service file to system location
-    temp_service = Path(comp.component_tmp_dir) / "kubelet.service"
+    temp_service = comp.component_tmp_dir / "kubelet.service"
     assert any(cmd[:2] == ["sudo", "cp"] and str(temp_service) in cmd for cmd in calls)

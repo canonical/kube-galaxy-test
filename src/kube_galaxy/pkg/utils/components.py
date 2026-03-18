@@ -8,29 +8,60 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-import chevron  # type: ignore[import-untyped]
+import chevron
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
 from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
 from kube_galaxy.pkg.utils.shell import run
+from kube_galaxy.pkg.utils.url import http_headers
 
 
 def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> None:
     """
     Download a file from URL to destination.
 
+    Supports ``https://``, ``http://``, and ``file://`` URLs via
+    :func:`urllib.request.urlopen`,
+
+    Supports ``gh-artifact://`` URLs for GitHub Actions artifacts via
+    :func:`~kube_galaxy.pkg.utils.gh.gh_extract_artifact_file`.
+
+    Supports ``local://`` URLs as a convenient way to reference files relative
+    to the current working directory without needing to specify a full path
+
     Args:
         url: File URL
         dest: Destination path
-        verify_sha256: Optional SHA256 checksum to verify
+        verify_sha256: Optional SHA256 checksum to verify (ignored for gh-artifact://)
 
     Raises:
         ComponentError: If download fails or checksum mismatch
     """
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if url.startswith("gh-artifact://"):
+        gh_extract_artifact_file(url, dest)
+        return
+
+    if url.startswith("local://"):
+        fragment = url[len("local://") :]
+        working_dir = Path.cwd().resolve()
+        resolved = (working_dir / fragment.strip("/")).resolve()
+        # Prevent escaping the working directory via path traversal in the fragment
+        if not resolved.is_relative_to(working_dir):
+            raise ComponentError(
+                f"Invalid local:// URL; path escapes working directory: {fragment!r}"
+            )
+        url = resolved.as_uri()
+
     try:
-        urllib.request.urlretrieve(url, dest)
+        req = urllib.request.Request(url, headers=http_headers(url, raw=True))
+        with urllib.request.urlopen(req) as response, open(dest, "wb") as dest_file:
+            while chunk := response.read(8192):
+                dest_file.write(chunk)
 
         if verify_sha256:
             actual_sha256 = compute_sha256(dest)
@@ -112,23 +143,22 @@ def install_binary(
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
 
 
-def remove_binary(binary_name: str, dest_dir: Path = Path(SystemPaths.USR_LOCAL_BIN)) -> None:
+def remove_binary(binary_path: Path) -> None:
     """
     Remove a binary from a directory.
 
     Args:
-        binary_name: Name of the binary
-        dest_dir: Directory containing the binary
-
-    Raises:
-        ComponentError: If removal fails
+        binary_path: Path to the binary to remove
     """
-    try:
-        dest_path = dest_dir / binary_name
-        if dest_path.exists():
-            dest_path.unlink()
-    except Exception as e:
-        raise ComponentError(f"Failed to remove {binary_name} from {dest_dir}: {e}") from e
+    if binary_path.is_file():
+        try:
+            run(
+                [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary_path.name, str(binary_path)],
+                check=False,
+            )  # Don't fail if alternative doesn't exist
+            binary_path.unlink()
+        except Exception:
+            pass  # Ignore errors during cleanup
 
 
 def format_component_pattern(
@@ -154,8 +184,7 @@ def format_component_pattern(
     - ``{{ arch }}``           - Kubernetes architecture name (e.g. ``amd64``)
     - ``{{ release }}``        - component release tag (e.g. ``2.1.0``)
     - ``{{ ref }}``            - git ref override, or empty string
-    - ``{{ repo.base-url }}``  - repository base URL, or ``str(Path.cwd())`` for
-                                 local sources
+    - ``{{ repo.base-url }}``  - repository base URL. (e.g. ``https://`` or ``local://`` or ``gh-artifact://``)
     - ``{{ repo.subdir }}``    - optional subdirectory within the repo (may
                                  itself contain ``{{ name }}``)
     - ``{{ repo.ref }}``       - git ref from repo config, or empty string
@@ -184,7 +213,7 @@ def format_component_pattern(
         "release": config.release,
         "ref": effective_repo.ref or "",
         "repo": {
-            "base-url": str(Path.cwd()) if effective_repo.is_local else effective_repo.base_url,
+            "base-url": effective_repo.base_url,
             "subdir": subdir,
             "ref": effective_repo.ref or "",
         },

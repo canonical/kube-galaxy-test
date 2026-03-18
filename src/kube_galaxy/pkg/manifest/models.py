@@ -27,25 +27,16 @@ class TestMethod(StrEnum):
 class RepoInfo:
     """Repository information for component source code.
 
-    Supports two source modes:
-    - Remote: set ``base_url`` to the repository URL
-      (e.g. ``https://github.com/org/repo``)
-    - Local:  set ``base_url`` to the string ``"local"``
+    Supports multiple source modes via URL schemes in ``base_url``:
 
-    Use the ``is_local`` property to distinguish between the two modes.
-    When local, the working directory is used as the root for resolving
-    paths (e.g. ``{{ repo.base-url }}`` in a ``source-format`` Mustache
-    template expands to ``str(Path.cwd())``).
+    - Remote:      ``https://github.com/org/repo``
+    - Local:       ``local://path/relative/to/cwd``  — expands to a ``file://`` URI
+    - GH Artifact: ``gh-artifact://artifact-name/path/in/zip``
     """
 
-    base_url: str = ""  # Repository URL, or the sentinel value "local"
+    base_url: str = ""  # Repository URL (scheme-based: https://, local://, gh-artifact://)
     subdir: str | None = None  # Optional subdirectory within repo for monorepos
     ref: str | None = None  # Optional git reference (branch/tag/commit), defaults to release
-
-    @property
-    def is_local(self) -> bool:
-        """Return True when this repository source is a local (cwd-based) path."""
-        return self.base_url == "local"
 
 
 @dataclass

@@ -29,7 +29,8 @@ def calico_config():
     install = InstallConfig(
         method=InstallMethod.CONTAINER_MANIFEST,
         source_format=(
-            "raw.githubusercontent.com/projectcalico/calico/v{{ release }}/manifests/calico.yaml"
+            "https://raw.githubusercontent.com/projectcalico/"
+            "calico/v{{ release }}/manifests/calico.yaml"
         ),
         bin_path="./*",
         repo=repo,
@@ -70,7 +71,8 @@ def test_download_hook_downloads_manifest(component, monkeypatch, tmp_path):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("apiVersion: v1\nkind: ConfigMap\n")
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download_file)
+    _target = "kube_galaxy.pkg.components.strategies._base.download_file"
+    monkeypatch.setattr(_target, fake_download_file)
 
     # Call download hook
     component.download_hook()
@@ -82,7 +84,7 @@ def test_download_hook_downloads_manifest(component, monkeypatch, tmp_path):
         url
         == "https://raw.githubusercontent.com/projectcalico/calico/v3.30.6/manifests/calico.yaml"
     )
-    assert dest.name == "calico-manifest.yaml"
+    assert dest.name == "calico.yaml"
     assert component.manifest_path == dest
     assert component.manifest_path.exists()
 
@@ -118,7 +120,8 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("manifest content")
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download_file)
+    _target = "kube_galaxy.pkg.components.strategies._base.download_file"
+    monkeypatch.setattr(_target, fake_download_file)
 
     comp.download_hook()
 
@@ -129,39 +132,6 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
     arch = getattr(arch_info, "k8s", "amd64") if arch_info is not None else "amd64"
     expected_url = f"https://github.com/myorg/myrepo/releases/v1.2.3/manifest-{arch}.yaml"
     assert url == expected_url
-
-
-def test_download_hook_adds_https_prefix(manifest, arch_info, monkeypatch, tmp_path):
-    """Test that download_hook adds https:// prefix when URL doesn't have protocol."""
-    repo = RepoInfo(base_url="https://github.com/myorg/myrepo")
-    install = InstallConfig(
-        method=InstallMethod.CONTAINER_MANIFEST,
-        source_format="raw.githubusercontent.com/org/repo/v{{ release }}/manifest.yaml",
-        bin_path="./*",
-        repo=repo,
-    )
-    config = ComponentConfig(name="test", category="test", release="1.0", installation=install)
-
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
-    comp = ComponentBase({}, manifest, config, arch_info)
-
-    download_calls = []
-
-    def fake_download_file(url: str, dest: Path):
-        download_calls.append(url)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text("content")
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.download_file", fake_download_file)
-
-    comp.download_hook()
-
-    # Verify https:// was added
-    assert download_calls[0].startswith("https://")
 
 
 def test_bootstrap_hook_applies_manifest(component, monkeypatch, tmp_path):
@@ -177,7 +147,8 @@ def test_bootstrap_hook_applies_manifest(component, monkeypatch, tmp_path):
     def fake_apply_manifest(path):
         apply_manifest_calls.append(path)
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.apply_manifest", fake_apply_manifest)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.apply_manifest"
+    monkeypatch.setattr(_target, fake_apply_manifest)
 
     # Call bootstrap hook
     component.bootstrap_hook()
@@ -328,7 +299,8 @@ metadata:
             return None
         return None
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     # Call verify hook
     component.verify_hook()
@@ -397,7 +369,8 @@ metadata:
         elif "rollout" in cmd:
             run_calls.append(list(cmd))
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     component.verify_hook()
 
@@ -448,7 +421,8 @@ metadata:
         elif "rollout" in cmd:
             run_calls.append(list(cmd))
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     component.verify_hook()
 
@@ -497,7 +471,8 @@ metadata:
         elif "rollout" in cmd:
             run_calls.append(list(cmd))
 
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
+    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
+    monkeypatch.setattr(_target, fake_run)
 
     component.verify_hook()
 

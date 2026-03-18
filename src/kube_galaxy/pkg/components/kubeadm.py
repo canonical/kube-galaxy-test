@@ -149,7 +149,7 @@ class Kubeadm(ClusterComponentBase):
                     self._update_init_config(config)
                 case "ClusterConfiguration":
                     self._update_cluster_config(config)
-        self._cluster_config = Path(self.component_tmp_dir) / "kubeadm-config.yaml"
+        self._cluster_config = self.component_tmp_dir / "kubeadm-config.yaml"
 
         # Write config to temp file
         config_content = yaml.safe_dump_all(configs)
@@ -212,20 +212,15 @@ class Kubeadm(ClusterComponentBase):
         """
         Remove kubeadm binary and cluster configuration files.
         """
-        # Use base method to remove installed binary
-        self.remove_installed_binary()
-
-        # Remove cluster configuration if it exists
-        if self._cluster_config and self._cluster_config.exists():
-            self._cluster_config.unlink()
-            info(f"Removed cluster config: {self._cluster_config}")
+        super().delete_hook()  # This will handle alternatives and binaries
 
         # Use base method to remove kubeconfig files
         kubeconfig_paths = [
-            str(Path.home() / ".kube" / "config"),
-            "/etc/kubernetes/admin.conf",
+            Path.home() / ".kube" / "config",
+            Path("/etc/kubernetes/admin.conf"),
+            self._cluster_config,
         ]
-        self.remove_config_files(kubeconfig_paths)
+        self.remove_config_files([p for p in kubeconfig_paths if p and p.exists()])
 
     def post_delete_hook(self) -> None:
         """

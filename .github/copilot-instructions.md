@@ -50,6 +50,7 @@ uv tool install tox --with tox-uv
 ```bash
 tox -e lint,unit
 ```
+Confirm no lint warnings or test errors locally before pushing to avoid CI failures.
 
 **Run all environments:**
 ```bash
@@ -182,7 +183,7 @@ Architecture detection happens at runtime in `pkg/cluster/setup.py`:
 **When Modifying Python Modules**:
 1. Follow existing patterns in `pkg/` modules for business logic
 2. Use `pkg/utils/errors.py` custom exceptions for error handling
-3. Test locally with `tox -e lint,unit` before committing
+3. Test locally with `tox -e lint,unit` before committing for no test error or new warnings
 4. Update docstrings and type hints for all functions
 5. Use manifest parsing (`load_manifest()` from loader) instead of hardcoding
 

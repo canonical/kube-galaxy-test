@@ -16,6 +16,29 @@ from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import run
+from kube_galaxy.pkg.utils.url import authentication_headers
+
+HOSTS_D = Path("/etc/containerd/hosts.d")
+
+
+def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
+    """
+    Write a hosts.toml file for containerd registry authentication.
+
+    This function generates the content for the hosts.toml file based on the provided
+    registry host and authentication string, and writes it to the appropriate location
+    under /etc/containerd/hosts.d/.
+
+    Args:
+        component: Container component instance to use for writing config files
+        host: Registry hostname (e.g., "ghcr.io")
+        auth: Authentication string (e.g., "Basic <base64-encoded-credentials>")
+    """
+    hosts_tmpl = Path(__file__).parent / "templates/containerd/hosts.toml"
+    content = hosts_tmpl.read_text().format(host=host, authorization=auth)
+
+    hosts_toml = HOSTS_D / host / "hosts.toml"
+    component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
 
 
 def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
@@ -23,13 +46,13 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
     Pull a container image with containerd and retag for use in the cluster.
 
     Args:
-        cluster_manager: Cluster manager component instance defining image list
-        image: Component instance with CONTAINER_IMAGE method to pull
+        cluster_manager: Cluster manager component defining image list
+        image: Component with CONTAINER_IMAGE method to pull
     """
     # Use ctr to pull images directly into containerd
     to_pull = f"{image.image_repository}:{image.image_tag}"
     info(f"    Pulling image: {to_pull}")
-    run([*Commands.SUDO_CTR_IMAGES, "pull", to_pull], check=True, stdout=subprocess.DEVNULL)
+    run([*Commands.SUDO_CRICTL_PULL, to_pull], check=True, stdout=subprocess.DEVNULL)
     if to_tag := cluster_manager.find_image_retag(to_pull):
         info(f"    Retag pulled image: {to_pull} -> {to_tag}")
         run([*Commands.SUDO_CTR_IMAGES, "tag", to_pull, to_tag], check=True)
@@ -42,8 +65,8 @@ def _image_import_and_retag(cluster_manager: ClusterComponentBase, image: Compon
     Import a container image archive with containerd and retag for use in the cluster.
 
     Args:
-        cluster_manager: Cluster manager component instance defining image list
-        image: Component instance with CONTAINER_IMAGE_ARCHIVE method to import
+        cluster_manager: Cluster manager component defining image list
+        image: Component with CONTAINER_IMAGE_ARCHIVE method to import
     """
     # Use ctr to import images directly into containerd
 
@@ -92,7 +115,7 @@ class Containerd(ComponentBase):
         """
         Get pause image from pause component or use default.
 
-        Checks if pause component is loaded in the instances dict
+        Checks if pause component is loaded in the components dict
         and uses its configuration for the sandbox_image.
 
         Returns:
@@ -100,7 +123,7 @@ class Containerd(ComponentBase):
         """
         # Fallback to default if no pause component
         image_format = "registry.k8s.io/pause:3.9"
-        if pause := self.instances.get("pause"):
+        if pause := self.components.get("pause"):
             # Use source_format if it's a container image
             install = pause.config.installation
             if (
@@ -113,18 +136,19 @@ class Containerd(ComponentBase):
             elif pause.config.release:
                 image_format = f"registry.k8s.io/pause:{pause.config.release}"
 
-        return format_component_pattern(image_format, self.config, self.arch_info)
+            return format_component_pattern(image_format, pause.config, self.arch_info)
+        return image_format
 
     def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
         """
-        Get lists of tagged images and image archives Component instances.
+        Get lists of tagged images and image archives components.
 
         Returns:
             Tuple of (tagged_images, image_archives)
         """
         tagged_images = []
         image_archives = []
-        for comp in self.instances.values():
+        for comp in self.components.values():
             match comp.config.installation.method:
                 case InstallMethod.CONTAINER_IMAGE:
                     tagged_images.append(comp)
@@ -145,51 +169,29 @@ class Containerd(ComponentBase):
         configures pause image, and creates systemd service file.
         """
         # Generate default containerd config
-        result = run(
-            ["containerd", "config", "default"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        config_content = result.stdout
-
-        # Set SystemdCgroup = true (required for Kubernetes)
-        config_content = config_content.replace("SystemdCgroup = false", "SystemdCgroup = true")
+        config_toml = Path(__file__).parent / "templates/containerd/config.toml"
+        config_content = config_toml.read_text()
 
         # Configure pause image (sandbox_image) from pause component or default
         pause_image = self._get_pause_image()
-        config_content = config_content.replace(
-            'sandbox_image = "registry.k8s.io/pause:3.8"',
-            f'sandbox_image = "{pause_image}"',
-        )
+        config_content = config_content.format(pause_image=pause_image)
 
         # Write containerd config to /etc/containerd/config.toml
         self.write_config_file(
             config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
         )
 
+        for host, auth in authentication_headers(basic_auth=True).items():
+            _registry_auth(self, host, auth)
+
         # Create systemd service unit
-        systemd_unit = """[Unit]
-Description=containerd container runtime
-Documentation=https://containerd.io
-After=network.target local-fs.target
+        systemd_unit = Path(__file__).parent / "templates/containerd/systemd_unit"
+        self.create_systemd_service("containerd", systemd_unit.read_text(), enabled=True)
 
-[Service]
-ExecStart=/usr/local/bin/containerd
-ExecStop=/bin/kill -s TERM $MAINPID
-Restart=on-failure
-RestartSec=5
-Delegate=yes
-KillMode=process
-OOMScoreAdjust=-999
-LimitNOFILE=1048576
-LimitNPROC=infinity
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-        self.create_systemd_service("containerd", systemd_unit, enabled=True)
+        # Configure crictl to target containerd
+        crictl_tmpl = Path(__file__).parent / "templates/containerd/crictl.yaml"
+        crictl_config = crictl_tmpl.read_text().format(socket_path=self.SOCKET_PATH)
+        self.write_config_file(crictl_config, "/etc/crictl.yaml", mode=Permissions.READABLE)
 
     def bootstrap_hook(self) -> None:
         """
@@ -208,7 +210,6 @@ WantedBy=multi-user.target
 
         images_tagged, image_archives = self._image_comps_by_type()
         cluster_manager = self.get_cluster_manager()
-
         with ThreadPoolExecutor(max_workers=self.MAX_IMAGE_PULL_WORKERS) as executor:
             # Pull and retag images in parallel
             pull_futures = []
@@ -263,16 +264,14 @@ WantedBy=multi-user.target
         """
         Remove containerd alternatives, binaries, and configuration files.
         """
-        # Remove update-alternatives entries for this component
-        self.remove_component_alternatives()
-
-        # Remove component directory (binaries)
-        self.cleanup_component_dir()
+        super().delete_hook()  # This will handle alternatives and binaries
 
         # Remove containerd configuration files
         config_files = [
             "/etc/containerd/config.toml",
             "/etc/systemd/system/containerd.service",
+            "/etc/containerd/hosts.d/",
+            "/etc/crictl.yaml",
         ]
         self.remove_config_files(config_files)
 

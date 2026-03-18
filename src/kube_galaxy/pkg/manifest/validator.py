@@ -1,23 +1,11 @@
 """Manifest validation and utilities."""
 
-from pathlib import Path
 from typing import Any
 
 import yaml
 
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, TestMethod
-
-
-def task_path_for_component(component: ComponentConfig) -> Path:
-    """Get the expected path to the component's test task definition.
-
-    By the time tests run, all component task definitions — whether from a
-    remote repo (cloned by ``download_tasks_from_config``) or a local source
-    (copied by ``download_tasks_from_config``) — must be installed under the
-    shared system tests root.
-    """
-    return SystemPaths.tests_root() / component.name / "spread/kube-galaxy/"
 
 
 def validate_manifest(manifest: Manifest) -> None:
@@ -56,7 +44,7 @@ def validate_component_test_structure(component: ComponentConfig) -> list[str]:
         return errors  # No validation needed for components without spread tests
 
     # Validate task yaml is valid YAML and has required fields (name, execute)
-    task_path = task_path_for_component(component) / "task.yaml"
+    task_path = SystemPaths.tests_component_root(component.name) / "task.yaml"
     content: dict[str, Any] = {}
     if not task_path.exists():
         errors.append(
@@ -89,7 +77,7 @@ def get_components_with_spread(manifest: Manifest) -> list[ComponentConfig]:
     def has_spread_test(comp: ComponentConfig) -> bool:
         if comp.test.method != TestMethod.SPREAD:
             return False
-        path_to_tasks = task_path_for_component(comp)
+        path_to_tasks = SystemPaths.tests_component_root(comp.name)
         return path_to_tasks.exists() and any(path_to_tasks.glob("task.yaml"))
 
     return [comp for comp in manifest.components if has_spread_test(comp)]

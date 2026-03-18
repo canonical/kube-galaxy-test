@@ -56,6 +56,7 @@ class SystemPaths:
     # Test directories
     KUBE_GALAXY_TESTS_ROOT = "/opt/kube-galaxy/tests"
     KUBE_GALAXY_TESTS_SPREAD_YAML = "/opt/kube-galaxy/tests/spread.yaml"
+    KUBE_GALAXY_TESTS_COMP_TASK = "spread/kube-galaxy/task.yaml"
 
     # System binaries
     USR_LOCAL_BIN = "/usr/local/bin"
@@ -88,6 +89,11 @@ class SystemPaths:
     def tests_root(cls) -> Path:
         """Get tests root directory path."""
         return Path(cls.KUBE_GALAXY_TESTS_ROOT)
+
+    @classmethod
+    def tests_component_root(cls, name: str) -> Path:
+        path = cls.tests_root() / name / cls.KUBE_GALAXY_TESTS_COMP_TASK
+        return path.parent
 
     @classmethod
     def tests_spread_yaml(cls) -> Path:
@@ -126,6 +132,7 @@ class Commands:
 
     # ctr images
     SUDO_CTR_IMAGES: ClassVar[list[str]] = ["sudo", "ctr", "-n", "k8s.io", "images"]
+    SUDO_CRICTL_PULL: ClassVar[list[str]] = ["sudo", "crictl", "pull"]
 
     # systemctl commands
     SYSTEMCTL_DAEMON_RELOAD: ClassVar[list[str]] = ["sudo", "systemctl", "daemon-reload"]
