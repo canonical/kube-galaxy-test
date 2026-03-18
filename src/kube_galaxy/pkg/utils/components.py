@@ -7,16 +7,19 @@ import shutil
 import tarfile
 import urllib.request
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import chevron
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
-from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
+from kube_galaxy.pkg.literals import Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
-from kube_galaxy.pkg.utils.shell import run
 from kube_galaxy.pkg.utils.url import http_headers
+
+if TYPE_CHECKING:
+    from kube_galaxy.pkg.units._base import Unit
 
 
 def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> None:
@@ -105,6 +108,7 @@ def install_binary(
     binary_path: Path,
     binary_name: str,
     component_name: str,
+    unit: "Unit",
 ) -> str:
     """
     Install a binary to component directory and register with update-alternatives.
@@ -113,6 +117,7 @@ def install_binary(
         binary_path: Path to the binary
         binary_name: Name of the binary (e.g., 'containerd')
         component_name: Component name for directory structure
+        unit: Unit to run privileged commands on
 
     Raises:
         ComponentError: If installation fails
@@ -120,22 +125,24 @@ def install_binary(
     # Use component-specific directory
     dest_dir = SystemPaths.component_bin_dir(component_name)
     try:
-        # Create directory and install binary
+        # Create directory and install binary (local operations — no privilege needed)
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = dest_dir / binary_name
         shutil.copyfile(binary_path, dest_path)
         dest_path.chmod(0o755)
 
-        # Register with update-alternatives
+        # Register with update-alternatives (requires elevated privileges)
         alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
-        run(
+        unit.run(
             [
-                *Commands.UPDATE_ALTERNATIVES_INSTALL,
+                "update-alternatives",
+                "--install",
                 alternative_path,
                 binary_name,
                 str(dest_path),
                 Permissions.ALTERNATIVES_PRIORITY,
             ],
+            privileged=True,
             check=True,
         )
         return alternative_path
@@ -143,17 +150,19 @@ def install_binary(
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
 
 
-def remove_binary(binary_path: Path) -> None:
+def remove_binary(binary_path: Path, unit: "Unit") -> None:
     """
     Remove a binary from a directory.
 
     Args:
         binary_path: Path to the binary to remove
+        unit: Unit to run privileged commands on
     """
     if binary_path.is_file():
         try:
-            run(
-                [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary_path.name, str(binary_path)],
+            unit.run(
+                ["update-alternatives", "--remove", binary_path.name, str(binary_path)],
+                privileged=True,
                 check=False,
             )  # Don't fail if alternative doesn't exist
             binary_path.unlink()

@@ -208,7 +208,7 @@ class TestBinaryInstall:
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components._base.install_binary",
-            lambda path, name, comp_name: f"/usr/local/bin/{name}",
+            lambda path, name, comp_name, unit: f"/usr/local/bin/{name}",
         )
 
         comp.install_hook()
@@ -369,7 +369,7 @@ class TestBinaryArchiveInstall:
 
         installed: list[str] = []
 
-        def fake_install_binary(path: Path, name: str, comp_name: str) -> str:
+        def fake_install_binary(path: Path, name: str, comp_name: str, unit: object) -> str:
             installed.append(name)
             return f"/usr/local/bin/{name}"
 
@@ -402,7 +402,7 @@ class TestBinaryArchiveInstall:
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components._base.install_binary",
-            lambda path, name, comp_name: f"/usr/local/bin/{name}",
+            lambda path, name, comp_name, unit: f"/usr/local/bin/{name}",
         )
 
         comp.install_hook()

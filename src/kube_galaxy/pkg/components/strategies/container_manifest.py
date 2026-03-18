@@ -9,7 +9,6 @@ import yaml
 from kube_galaxy.pkg.literals import Commands
 from kube_galaxy.pkg.utils.client import apply_manifest
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
-from kube_galaxy.pkg.utils.shell import run
 
 from ._base import _fetch_to_temp, _InstallStrategy
 
@@ -35,14 +34,13 @@ def _verify(comp: ComponentBase) -> None:
     if not comp.manifest_path or not comp.manifest_path.exists():
         raise ComponentError(f"{comp.config.name} manifest not downloaded")
 
-    docs_str = run(
+    result = comp.unit.run(
         [*Commands.K_CREATE_DRY_RUN, "-f", str(comp.manifest_path)],
         check=True,
-        capture_output=True,
     )
     # yaml.safe_load_all may yield None or non-mapping documents (e.g. for empty YAML docs).
     # Restrict to dicts before attempting to access mapping methods/keys.
-    docs = [doc for doc in yaml.safe_load_all(docs_str.stdout) if isinstance(doc, dict)]
+    docs = [doc for doc in yaml.safe_load_all(result.stdout) if isinstance(doc, dict)]
 
     for doc in docs:
         kind = doc.get("kind")
@@ -61,7 +59,7 @@ def _verify(comp: ComponentBase) -> None:
         if not isinstance(namespace, str):
             namespace = "default"
 
-        run(
+        comp.unit.run(
             [*Commands.K_ROLLOUT_STATUS, f"{kind.lower()}/{name.lower()}", "-n", namespace.lower()],
             check=True,
             timeout=comp.BOOTSTRAP_TIMEOUT,

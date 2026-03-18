@@ -5,6 +5,22 @@ from enum import StrEnum
 from pathlib import Path
 
 
+class NodeRole(StrEnum):
+    """Role of a node in the cluster."""
+
+    CONTROL_PLANE = "control-plane"
+    WORKER = "worker"
+
+
+class Placement(StrEnum):
+    """Which nodes a component is placed on."""
+
+    ALL = "all"
+    CONTROL_PLANE = "control-plane"
+    WORKERS = "workers"
+    ORCHESTRATOR = "orchestrator"
+
+
 class InstallMethod(StrEnum):
     """Installation method for components."""
 
@@ -66,6 +82,31 @@ class TestConfig:
 
 
 @dataclass
+class ProviderConfig:
+    """Provider configuration for cluster nodes.
+
+    Defaults to ``type: local`` when the ``provider`` block is absent from a
+    manifest, preserving backward-compatible single-node behaviour.
+    """
+
+    type: str = "local"  # local | lxd | multipass | ssh
+    image: str = "ubuntu:24.04"  # base image for lxd / multipass providers
+    hosts: list[str] = field(default_factory=list)  # pre-existing hosts for ssh provider
+
+
+@dataclass
+class NodesConfig:
+    """Node count configuration.
+
+    Defaults to ``control-plane: 1, worker: 0`` when the ``nodes`` block is
+    absent from a manifest, preserving backward-compatible single-node behaviour.
+    """
+
+    control_plane: int = 1
+    worker: int = 0
+
+
+@dataclass
 class ComponentConfig:
     """Kubernetes component configuration from manifest YAML."""
 
@@ -79,6 +120,7 @@ class ComponentConfig:
 
     # Component lifecycle configuration
     dependencies: list[str] = field(default_factory=list)  # Must install after these components
+    placement: Placement = Placement.ALL  # Which nodes this component is placed on
 
 
 @dataclass
@@ -100,6 +142,8 @@ class Manifest:
     description: str = ""
     components: list[ComponentConfig] = field(default_factory=list)
     networking: list[NetworkConfig] = field(default_factory=list)
+    provider: ProviderConfig = field(default_factory=ProviderConfig)
+    nodes: NodesConfig = field(default_factory=NodesConfig)
 
     def get_component(self, name: str) -> ComponentConfig | None:
         """Get component config by name."""

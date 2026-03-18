@@ -4,6 +4,7 @@ Kubeadm component installation and management.
 Kubeadm is used to bootstrap Kubernetes clusters.
 """
 
+import shlex
 import shutil
 from functools import cached_property
 from pathlib import Path
@@ -13,7 +14,8 @@ from urllib.request import urlopen
 import yaml
 
 from kube_galaxy.pkg.components import ClusterComponentBase, register_component
-from kube_galaxy.pkg.literals import Commands, SystemPaths, URLs
+from kube_galaxy.pkg.literals import SystemPaths, URLs
+from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.utils.client import (
     get_api_server_status,
     verify_connectivity,
@@ -21,7 +23,6 @@ from kube_galaxy.pkg.utils.client import (
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
-from kube_galaxy.pkg.utils.shell import run
 
 
 @register_component("kubeadm")
@@ -43,7 +44,7 @@ class Kubeadm(ClusterComponentBase):
         """
         # Enable IP forwarding for kubeadm networking
         info("    Setting net.ipv4.ip_forward = 1")
-        run(["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"], check=True)
+        self.unit.run(["sysctl", "-w", "net.ipv4.ip_forward=1"], privileged=True)
 
     def _update_cluster_config(self, config: dict[str, Any]) -> None:
         """
@@ -91,8 +92,8 @@ class Kubeadm(ClusterComponentBase):
             "--image-repository",
             self.LOCAL_REGISTRY,
         ]
-        config_str = run(cmd, check=True, capture_output=True)
-        return config_str.stdout.splitlines()
+        result = self.unit.run(cmd, check=True)
+        return result.stdout.splitlines()
 
     def find_image_retag(self, image: str) -> str:
         """
@@ -140,9 +141,10 @@ class Kubeadm(ClusterComponentBase):
         if not self.manifest:
             raise ComponentError("Manifest required for kubeadm bootstrap")
 
-        cmd = ["kubeadm", "config", "print", "init-defaults"]
-        config_str = run(cmd, check=True, capture_output=True)
-        configs = list(yaml.safe_load_all(config_str.stdout))
+        result = self.unit.run(
+            ["kubeadm", "config", "print", "init-defaults"], check=True
+        )
+        configs = list(yaml.safe_load_all(result.stdout))
         for config in configs:
             match config.get("kind"):
                 case "InitConfiguration":
@@ -155,33 +157,57 @@ class Kubeadm(ClusterComponentBase):
         config_content = yaml.safe_dump_all(configs)
         self.write_config_file(config_content, self._cluster_config)
 
+    # ------------------------------------------------------------------
+    # ClusterComponentBase implementation
+    # ------------------------------------------------------------------
+
+    def init_cluster(self) -> None:
+        """Bootstrap the initial control-plane on this unit."""
+        if not self._cluster_config or not self._cluster_config.exists():
+            raise ComponentError("Cluster config not generated. Run configure hook first.")
+        self.unit.run(
+            ["kubeadm", "init", f"--config={self._cluster_config}"],
+            privileged=True,
+        )
+
+    def pull_kubeconfig(self) -> None:
+        """Pull kubeconfig from this unit to the orchestrator's ~/.kube/config."""
+        home = Path.home()
+        kube_dir = home / ".kube"
+        kube_dir.mkdir(exist_ok=True)
+        self.unit.run(
+            ["cp", "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
+            privileged=True,
+        )
+        owner = home.owner()
+        group = home.group()
+        self.unit.run(
+            ["chown", f"{owner}:{group}", str(kube_dir / "config")],
+            privileged=True,
+        )
+
+    def generate_join_token(self, role: NodeRole) -> str:
+        """Generate a single-use join token on the control-plane unit."""
+        result = self.unit.run(
+            ["kubeadm", "token", "create", "--print-join-command"],
+            privileged=True,
+            check=True,
+        )
+        return result.stdout.strip()
+
+    def join_cluster(self, token: str, role: NodeRole) -> None:
+        """Join this unit to the cluster using the token from generate_join_token()."""
+        # token is the full join command returned by generate_join_token
+        self.unit.run(shlex.split(token), privileged=True, check=True)
+
     def bootstrap_hook(self) -> None:
         """
         Bootstrap Kubernetes cluster with kubeadm init.
 
         This is where the cluster is actually created.
         """
-
-        if not self._cluster_config or not self._cluster_config.exists():
-            raise ComponentError("Cluster config not generated. Run configure hook first.")
-
-        # Initialize cluster
-        cmd = ["sudo", "kubeadm", "init", f"--config={self._cluster_config}"]
-        run(cmd, check=True)
-
-        # Copy admin config
-        home = Path.home()
-        kube_dir = home / ".kube"
-        kube_dir.mkdir(exist_ok=True)
-        run(
-            [*Commands.SUDO_CP, "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
-            check=True,
-        )
-
-        # Set proper ownership
-        owner = home.owner()
-        group = home.group()
-        run([*Commands.SUDO_CHOWN, f"{owner}:{group}", str(kube_dir / "config")], check=True)
+        self.init_cluster()
+        self.pull_kubeconfig()
 
     def verify_hook(self) -> None:
         """
@@ -205,7 +231,7 @@ class Kubeadm(ClusterComponentBase):
             return
 
         info("Performing kubeadm reset to stop cluster")
-        run(["sudo", "kubeadm", "reset", "--force"], check=True)
+        self.unit.run(["kubeadm", "reset", "--force"], privileged=True)
         info("Kubeadm reset completed successfully")
 
     def delete_hook(self) -> None:

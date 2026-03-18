@@ -4,18 +4,16 @@ Containerd component installation and management.
 Containerd is the container runtime used by Kubernetes clusters.
 """
 
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from kube_galaxy.pkg.components import ClusterComponentBase, ComponentBase, register_component
-from kube_galaxy.pkg.literals import Commands, Permissions
+from kube_galaxy.pkg.literals import Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
-from kube_galaxy.pkg.utils.shell import run
 from kube_galaxy.pkg.utils.url import authentication_headers
 
 HOSTS_D = Path("/etc/containerd/hosts.d")
@@ -52,10 +50,10 @@ def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: Componen
     # Use ctr to pull images directly into containerd
     to_pull = f"{image.image_repository}:{image.image_tag}"
     info(f"    Pulling image: {to_pull}")
-    run([*Commands.SUDO_CRICTL_PULL, to_pull], check=True, stdout=subprocess.DEVNULL)
+    image.unit.run(["crictl", "pull", to_pull], privileged=True)
     if to_tag := cluster_manager.find_image_retag(to_pull):
         info(f"    Retag pulled image: {to_pull} -> {to_tag}")
-        run([*Commands.SUDO_CTR_IMAGES, "tag", to_pull, to_tag], check=True)
+        image.unit.run(["ctr", "-n", "k8s.io", "images", "tag", to_pull, to_tag], privileged=True)
     else:
         info(f"    No retag found for image: {to_pull}")
 
@@ -76,24 +74,24 @@ def _image_import_and_retag(cluster_manager: ClusterComponentBase, image: Compon
         )
 
     tar_archive = str(image.extracted_dir / "image.tar")
-    before = run(
-        [*Commands.SUDO_CTR_IMAGES, "list", "--quiet"],
-        capture_output=True,
-        text=True,
+    before_result = image.unit.run(
+        ["ctr", "-n", "k8s.io", "images", "list", "--quiet"],
+        privileged=True,
         check=True,
     )
-    run([*Commands.SUDO_CTR_IMAGES, "import", tar_archive], check=True)
-    after = run(
-        [*Commands.SUDO_CTR_IMAGES, "list", "--quiet"],
-        capture_output=True,
-        text=True,
+    image.unit.run(["ctr", "-n", "k8s.io", "images", "import", tar_archive], privileged=True)
+    after_result = image.unit.run(
+        ["ctr", "-n", "k8s.io", "images", "list", "--quiet"],
+        privileged=True,
         check=True,
     )
-    new_images = set(after.stdout.splitlines()) - set(before.stdout.splitlines())
+    new_images = set(after_result.stdout.splitlines()) - set(before_result.stdout.splitlines())
     for img in new_images:
         if to_tag := cluster_manager.find_image_retag(img):
             info(f"    Retag imported image: {img} -> {to_tag}")
-            run([*Commands.SUDO_CTR_IMAGES, "tag", img, to_tag], check=True)
+            image.unit.run(
+                ["ctr", "-n", "k8s.io", "images", "tag", img, to_tag], privileged=True
+            )
         else:
             info(f"    No retag found for imported image: {img}")
 
@@ -159,7 +157,7 @@ class Containerd(ComponentBase):
     def pre_install_hook(self) -> None:
         """Remove any existing containerd installation to avoid conflicts."""
         info("  Removing existing containerd installation if present")
-        run([*Commands.SUDO_APT_REMOVE, "-y", "containerd.io"], check=False)
+        self.unit.run(["apt", "remove", "-y", "containerd.io"], privileged=True, check=False)
 
     def configure_hook(self) -> None:
         """
@@ -197,8 +195,8 @@ class Containerd(ComponentBase):
         """
         Start containerd service.
         """
-        run([*Commands.SYSTEMCTL_START, "containerd"], check=True)
-        run([*Commands.SYSTEMCTL_IS_ACTIVE, "--wait", "containerd"], check=True)
+        self.unit.run(["systemctl", "start", "containerd"], privileged=True)
+        self.unit.run(["systemctl", "is-active", "--wait", "containerd"], privileged=True)
 
         start = time.time()
         while not self.SOCKET_PATH.exists():
@@ -236,10 +234,10 @@ class Containerd(ComponentBase):
         Checks service status and command availability.
         """
         # Check service is active
-        run([*Commands.SYSTEMCTL_IS_ACTIVE, "containerd"], check=True)
+        self.unit.run(["systemctl", "is-active", "containerd"], privileged=True)
 
         # Check containerd command works
-        run(["containerd", "--version"], check=True)
+        self.unit.run(["containerd", "--version"])
 
     def stop_hook(self) -> None:
         """
@@ -249,7 +247,7 @@ class Containerd(ComponentBase):
         """
         try:
             # Stop containerd service
-            run([*Commands.SYSTEMCTL_STOP, "containerd"], check=False)
+            self.unit.run(["systemctl", "stop", "containerd"], privileged=True, check=False)
             info("Stopped containerd service")
 
             # TODO: Add crictl commands to remove containers and images
@@ -281,8 +279,8 @@ class Containerd(ComponentBase):
         """
         # Disable and reload systemd if service still exists
         try:
-            run([*Commands.SYSTEMCTL_DISABLE, "containerd"], check=False)
-            run([*Commands.SYSTEMCTL_DAEMON_RELOAD], check=False)
+            self.unit.run(["systemctl", "disable", "containerd"], privileged=True, check=False)
+            self.unit.run(["systemctl", "daemon-reload"], privileged=True, check=False)
             info("Disabled containerd service")
         except Exception:
             pass

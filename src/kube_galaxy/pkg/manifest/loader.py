@@ -11,6 +11,9 @@ from kube_galaxy.pkg.manifest.models import (
     InstallMethod,
     Manifest,
     NetworkConfig,
+    NodesConfig,
+    Placement,
+    ProviderConfig,
     RepoInfo,
     TestConfig,
     TestMethod,
@@ -99,6 +102,7 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
             release=comp_data["release"],
             installation=installation,
             test=test_config,
+            placement=Placement(comp_data.get("placement", Placement.ALL)),
         )
         components.append(component)
 
@@ -112,6 +116,25 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         )
         networking.append(net_config)
 
+    # Parse provider (optional; defaults to local)
+    provider_data = data.get("provider", {})
+    if not isinstance(provider_data, dict):
+        raise ValueError("'provider' must be a dictionary")
+    provider = ProviderConfig(
+        type=provider_data.get("type", "local"),
+        image=provider_data.get("image", "ubuntu:24.04"),
+        hosts=provider_data.get("hosts", []),
+    )
+
+    # Parse nodes (optional; defaults to control-plane: 1, worker: 0)
+    nodes_data = data.get("nodes", {})
+    if not isinstance(nodes_data, dict):
+        raise ValueError("'nodes' must be a dictionary")
+    nodes = NodesConfig(
+        control_plane=nodes_data.get("control-plane", 1),
+        worker=nodes_data.get("worker", 0),
+    )
+
     return Manifest(
         name=data["name"],
         path=path,
@@ -119,4 +142,6 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         kubernetes_version=data["kubernetes-version"],
         components=components,
         networking=networking,
+        provider=provider,
+        nodes=nodes,
     )

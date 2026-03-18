@@ -6,11 +6,10 @@ from pathlib import Path
 from textwrap import dedent
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
-from kube_galaxy.pkg.literals import Commands, Permissions
+from kube_galaxy.pkg.literals import Permissions
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
-from kube_galaxy.pkg.utils.shell import run
 
 
 @register_component("cni-plugins")
@@ -41,17 +40,18 @@ class CNIPlugins(ComponentBase):
                     raise ComponentError(
                         f"{comp_name} archive not downloaded. Run download hook first."
                     )
-                run([*Commands.SUDO_MKDIR_P, str(self.OPT_CNI_PLUGINS_DIR)], check=True)
+                self.unit.run(["mkdir", "-p", str(self.OPT_CNI_PLUGINS_DIR)], privileged=True)
                 for item in self.extracted_dir.iterdir():
                     if item.is_file() and item.stat().st_mode & 0o111:
                         info(f"    Symlink {comp_name} binary: {item.name}")
-                        run(
+                        self.unit.run(
                             [
-                                *Commands.SUDO_SYMLINK,
+                                "ln",
+                                "-s",
                                 str(item),
                                 str(self.OPT_CNI_PLUGINS_DIR / item.name),
                             ],
-                            check=True,
+                            privileged=True,
                         )
                 self.install_path = str(self.OPT_CNI_PLUGINS_DIR)
             case _:
@@ -81,7 +81,11 @@ class CNIPlugins(ComponentBase):
             for item in self.extracted_dir.iterdir():
                 if item.is_file() and item.stat().st_mode & 0o111:
                     info(f"    Removed {self.name} binary: {item.name}")
-                    run([*Commands.SUDO_RM_RF, str(self.OPT_CNI_PLUGINS_DIR / item.name)])
+                    self.unit.run(
+                        ["rm", "-rf", str(self.OPT_CNI_PLUGINS_DIR / item.name)],
+                        privileged=True,
+                        check=False,
+                    )
 
         # This will handle alternatives and binaries
         super().delete_hook()

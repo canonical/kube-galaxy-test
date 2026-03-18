@@ -5,7 +5,7 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
-import shutil
+from abc import abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
 from typing import LiteralString, cast
@@ -17,12 +17,13 @@ from kube_galaxy.pkg.components.strategies import (
     _InstallStrategy,
     _TestStrategy,
 )
-from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths, Timeouts
-from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest
+from kube_galaxy.pkg.literals import Permissions, SystemPaths, Timeouts
+from kube_galaxy.pkg.manifest.models import ComponentConfig, InstallMethod, Manifest, NodeRole
+from kube_galaxy.pkg.units._base import Unit
+from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.components import install_binary, remove_binary
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
-from kube_galaxy.pkg.utils.shell import run
 
 
 class ComponentBase:
@@ -34,6 +35,7 @@ class ComponentBase:
     - The full manifest (self.manifest)
     - Its own component configuration (self.config)
     - Architecture information (self.arch_info)
+    - The unit it runs on (self.unit)
 
     Lifecycle hooks (all have default empty implementations):
     Setup Hooks:
@@ -67,20 +69,25 @@ class ComponentBase:
         manifest: Manifest,
         config: ComponentConfig,
         arch_info: ArchInfo,
+        unit: Unit | None = None,
     ) -> None:
         """
-        Initialize component with components, manifest, and config.
+        Initialize component with components, manifest, config, and unit.
 
         Args:
             components: Dict of all components
             manifest: The full Manifest object
             config: The ComponentConfig object for this specific component
+            arch_info: Architecture information
+            unit: The unit this component runs on (defaults to LocalUnit)
         """
         self.components = components
         self.manifest = manifest
         self.config = config
         # Allow tests and callers to omit arch_info; default to detected arch
         self.arch_info = arch_info
+        # Unit abstraction — defaults to LocalUnit for backward compatibility
+        self.unit: Unit = unit if unit is not None else LocalUnit()
         # for InstallMethod Binary or BinaryArchive
         self.binary_path: Path | None = None  # path to downloaded binary (before installation)
         self.install_path: str | None = None  # path to root installed bin
@@ -251,13 +258,14 @@ class ComponentBase:
         component_bin_dir = SystemPaths.component_bin_dir(self.name)
         if component_bin_dir.exists():
             for binary in component_bin_dir.glob("*"):
-                remove_binary(binary)
+                remove_binary(binary, self.unit)
 
     def cleanup_component_dir(self) -> None:
         """
         Remove the entire component directory.
         """
-        shutil.rmtree(self.component_dir, ignore_errors=True)
+        if self.component_dir.exists():
+            self.unit.run(["rm", "-rf", str(self.component_dir)], privileged=True, check=False)
 
     # Teardown hooks - all have default empty implementations
     # Override in subclass as needed
@@ -282,7 +290,9 @@ class ComponentBase:
         self.remove_component_alternatives()
 
         if self.extracted_dir and self.extracted_dir.exists():
-            shutil.rmtree(self.extracted_dir, ignore_errors=True)
+            self.unit.run(
+                ["rm", "-rf", str(self.extracted_dir)], privileged=True, check=False
+            )
 
         # Remove component directory (binaries)
         self.cleanup_component_dir()
@@ -327,7 +337,7 @@ class ComponentBase:
             raise ComponentError(f"{self.name} binary not found at {binary_path}")
 
         name = binary_name or self.name
-        return install_binary(binary_path, name, self.name)
+        return install_binary(binary_path, name, self.name, self.unit)
 
     def create_systemd_service(
         self,
@@ -348,21 +358,21 @@ class ComponentBase:
             ComponentError: If service file creation fails
         """
         try:
-            # Write to temp file first
+            # Write to a local temp file first
             temp_dir = self.ensure_temp_dir()
             temp_unit = temp_dir / f"{service_name}.service"
             temp_unit.write_text(service_content)
 
-            # Create target directory and copy
+            # Create target directory and copy via unit
             target_dir = "/etc/systemd/system" if system_location else "/usr/lib/systemd/system"
             target_path = f"{target_dir}/{service_name}.service"
-            run([*Commands.SUDO_MKDIR_P, target_dir], check=True)
-            run([*Commands.SUDO_CP, str(temp_unit), target_path], check=True)
+            self.unit.run(["mkdir", "-p", target_dir], privileged=True)
+            self.unit.run(["cp", str(temp_unit), target_path], privileged=True)
 
             # Reload systemd and enable service
-            run([*Commands.SYSTEMCTL_DAEMON_RELOAD], check=True)
+            self.unit.run(["systemctl", "daemon-reload"], privileged=True)
             if enabled:
-                run([*Commands.SYSTEMCTL_ENABLE, service_name], check=True)
+                self.unit.run(["systemctl", "enable", service_name], privileged=True)
         except Exception as e:
             raise ComponentError(f"Failed to create {service_name} service: {e}") from e
 
@@ -385,10 +395,10 @@ class ComponentBase:
             temp_config = temp_dir / "config"
             temp_config.write_text(config_content)
 
-            # Write to temp file, then copy and set permissions
-            run([*Commands.SUDO_MKDIR_P, str(Path(target_path).parent)], check=True)
-            run([*Commands.SUDO_CP, str(temp_config), str(target_path)], check=True)
-            run([*Commands.SUDO_CHMOD, mode, str(target_path)], check=True)
+            # Write to temp file, then copy and set permissions via unit
+            self.unit.run(["mkdir", "-p", str(Path(target_path).parent)], privileged=True)
+            self.unit.run(["cp", str(temp_config), str(target_path)], privileged=True)
+            self.unit.run(["chmod", mode, str(target_path)], privileged=True)
         except Exception as e:
             raise ComponentError(f"Failed to write config to {target_path}: {e}") from e
 
@@ -407,7 +417,7 @@ class ComponentBase:
             dir_path = Path(directory)
             if dir_path.exists():
                 try:
-                    run([*Commands.SUDO_RM_RF, str(dir_path)], check=False)
+                    self.unit.run(["rm", "-rf", str(dir_path)], privileged=True, check=False)
                     info(f"Removed {name} directory: {dir_path}")
                 except Exception as e:
                     info(f"Failed to remove {dir_path}: {e}")
@@ -425,7 +435,7 @@ class ComponentBase:
         name = component_name or self.name
         for config_path in config_files:
             try:
-                run([*Commands.SUDO_RM_RF, str(config_path)])
+                self.unit.run(["rm", "-rf", str(config_path)], privileged=True, check=False)
                 info(f"Removed {name} config: {config_path}")
             except Exception as e:
                 info(f"Failed to remove {config_path}: {e}")
@@ -441,10 +451,30 @@ class ComponentBase:
 
 class ClusterComponentBase(ComponentBase):
     """
-    Base class for cluster components.
+    Base class for cluster lifecycle managers (kubeadm, k3s, rke2, …).
 
-    kubeadm, kind, and other cluster lifecycle managers should inherit from this class.
+    The Orchestrator coordinates multi-node join via this interface — never by
+    knowing the concrete class.  ``KubeadmComponent`` implements all four methods.
+    A future k3s component implements the same interface with a different token format.
     """
+
+    @abstractmethod
+    def init_cluster(self) -> None:
+        """Bootstrap the initial control-plane on this unit."""
+
+    @abstractmethod
+    def generate_join_token(self, role: NodeRole) -> str:
+        """Called on the control-plane unit.  Returns a single-use token for the
+        joining unit.  Role distinguishes HA control-plane joins from worker joins.
+        """
+
+    @abstractmethod
+    def join_cluster(self, token: str, role: NodeRole) -> None:
+        """Called on the joining unit.  Consumes the token from generate_join_token()."""
+
+    @abstractmethod
+    def pull_kubeconfig(self) -> None:
+        """Pull kubeconfig from this unit to the orchestrator's ~/.kube/config."""
 
     def find_image_retag(self, image: str) -> str:
         """

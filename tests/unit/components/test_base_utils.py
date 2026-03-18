@@ -16,6 +16,7 @@ from kube_galaxy.pkg.manifest.models import (
     TestMethod as ComponentTestMethod,
 )
 from kube_galaxy.pkg.utils.components import format_component_pattern
+from tests.unit.components.conftest import MockUnit
 
 
 class ExampleComponent(ComponentBase):
@@ -270,7 +271,7 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
     bin_path = tmp_path / "tool"
     bin_path.write_text("binary")
 
-    def fake_install(binary_path, name, compname):
+    def fake_install(binary_path, name, compname, unit):
         return f"/usr/local/bin/{name}"
 
     monkeypatch.setattr("kube_galaxy.pkg.components._base.install_binary", fake_install)
@@ -279,16 +280,12 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
     assert install_path == "/usr/local/bin/tool"
 
 
-def test_create_systemd_service_and_write_config(monkeypatch, tmp_path, arch_info):
+def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_path):
+    mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info,
+        unit=mock_unit,
     )
-    recorded = []
-
-    def fake_run(cmd, **kwargs):
-        recorded.append(list(cmd))
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
 
     # redirect component temp dir to test tmp_path to avoid /opt writes
     monkeypatch.setattr(
@@ -300,20 +297,23 @@ def test_create_systemd_service_and_write_config(monkeypatch, tmp_path, arch_inf
     service_name = "svc"
     content = "[Unit]\nDescription=svc"
     comp.create_systemd_service(service_name, content, system_location=False)
-    # Expect copy calls recorded (we use sudo cp now)
-    assert any("cp" in cmd for cmd in recorded)
+    # Expect cp calls recorded via mock unit
+    recorded_cmds = [c[0] for c in mock_unit.run_calls]
+    assert any("cp" in cmd for cmd in recorded_cmds)
 
     # test write_config_file
-    recorded.clear()
+    mock_unit.run_calls.clear()
     comp.write_config_file("cfg", str(tmp_path / "cfgfile"))
-    # Expect copy and chmod recorded for config write
-    assert any("cp" in cmd for cmd in recorded)
-    assert any("chmod" in cmd for cmd in recorded)
+    recorded_cmds = [c[0] for c in mock_unit.run_calls]
+    assert any("cp" in cmd for cmd in recorded_cmds)
+    assert any("chmod" in cmd for cmd in recorded_cmds)
 
 
-def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, tmp_path, arch_info):
+def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp_path):
+    mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info,
+        unit=mock_unit,
     )
 
     # create dirs and files
@@ -322,17 +322,11 @@ def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, t
     f1 = tmp_path / "f1"
     f1.write_text("x")
 
-    recorded = []
-
-    def fake_run(cmd, **kwargs):
-        recorded.append(list(cmd))
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
-
     comp.remove_directories([str(d1)], "T")
     comp.remove_config_files([str(f1)], "T")
 
-    assert any("rm" in cmd for cmd in recorded)
+    recorded_cmds = [c[0] for c in mock_unit.run_calls]
+    assert any("rm" in cmd for cmd in recorded_cmds)
 
     # test remove_installed_binary actually deletes file
     b = tmp_path / "binfile"

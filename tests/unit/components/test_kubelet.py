@@ -9,6 +9,8 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     RepoInfo,
 )
+from kube_galaxy.pkg.units._base import RunResult
+from tests.unit.components.conftest import MockUnit
 
 
 class ExampleResp:
@@ -26,6 +28,7 @@ class ExampleResp:
 
 
 def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_path):
+
     # Prepare minimal manifest/config
     manifest = Manifest(name="m", description="d", kubernetes_version="1.24")
     repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
@@ -37,28 +40,20 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
     )
     config = ComponentConfig(name="kubelet", category="k8s", release="v1", installation=install)
 
-    comp = Kubelet({}, manifest, config, arch_info)
+    mock_unit = MockUnit()
+    # Queue results for: mkdir, cp, daemon-reload, mkdir, cp, chmod (systemd service writes)
+    for _ in range(10):
+        mock_unit._run_results.append(RunResult(0, "", ""))
+
+    comp = Kubelet({}, manifest, config, arch_info, unit=mock_unit)
     # set an install path so replace works
     comp.install_path = "/usr/local/bin/kubelet"
-
-    calls = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-
-        class R:
-            stdout = ""
-
-        return R()
 
     # Fake urlopen to return service content containing /usr/bin/kubelet
     monkeypatch.setattr(
         "kube_galaxy.pkg.components.kubelet.urlopen",
         lambda url: ExampleResp(b"ExecStart=/usr/bin/kubelet\n"),
     )
-    monkeypatch.setattr("kube_galaxy.pkg.components.kubelet.run", fake_run)
-    # Patch the base module run used by create_systemd_service
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
 
     # redirect component temp dir to test tmp_path to avoid /opt writes
     monkeypatch.setattr(
@@ -72,4 +67,5 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
 
     # Expect cp to be called to copy temp service file to system location
     temp_service = comp.component_tmp_dir / "kubelet.service"
-    assert any(cmd[:2] == ["sudo", "cp"] and str(temp_service) in cmd for cmd in calls)
+    cp_calls = [c for c, _ in mock_unit.run_calls if "cp" in c and str(temp_service) in c]
+    assert len(cp_calls) >= 1
