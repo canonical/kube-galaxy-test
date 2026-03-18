@@ -197,7 +197,8 @@ class Kubeadm(ClusterComponentBase):
 
     def join_cluster(self, token: str, role: NodeRole) -> None:
         """Join this unit to the cluster using the token from generate_join_token()."""
-        # token is the full join command returned by generate_join_token
+        # token is the full join command returned by kubeadm token create --print-join-command
+        # shlex.split() safely parses the command string into a list for subprocess execution
         self.unit.run(shlex.split(token), privileged=True, check=True)
 
     def bootstrap_hook(self) -> None:

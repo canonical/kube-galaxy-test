@@ -17,7 +17,6 @@ from tests.unit.components.conftest import MockUnit
 
 
 def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_path):
-
     # Build manifest with networking
     net = NetworkConfig(name="default", service_cidr="10.96.0.0/12", pod_cidr="192.168.0.0/16")
     manifest = Manifest(

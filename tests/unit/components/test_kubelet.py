@@ -28,7 +28,6 @@ class ExampleResp:
 
 
 def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_path):
-
     # Prepare minimal manifest/config
     manifest = Manifest(name="m", description="d", kubernetes_version="1.24")
     repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
