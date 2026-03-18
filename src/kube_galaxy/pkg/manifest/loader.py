@@ -109,6 +109,43 @@ def _parse_artifact(artifact_data: Any) -> ArtifactConfig:
     )
 
 
+def _parse_environment(env_data: Any, comp_name: str) -> dict[str, str]:
+    """Parse a ``test.environment`` block from a YAML value.
+
+    Args:
+        env_data: The raw value of an ``environment`` key in the manifest.
+        comp_name: Component name used in error messages.
+
+    Returns:
+        A ``dict[str, str]`` of environment variable names to values.
+        ``None`` is treated as an empty dict.
+
+    Raises:
+        ValueError: When ``env_data`` is not a mapping, or contains non-string
+            keys or values.
+    """
+    if env_data is None:
+        return {}
+    if not isinstance(env_data, dict):
+        raise ValueError(
+            f"Component {comp_name}: 'test.environment' must be a mapping, "
+            f"got: {type(env_data).__name__}"
+        )
+    result: dict[str, str] = {}
+    for key, value in env_data.items():
+        if not isinstance(key, str):
+            raise ValueError(
+                f"Component {comp_name}: 'test.environment' key must be a string, got: {key!r}"
+            )
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Component {comp_name}: 'test.environment' value for key {key!r} "
+                f"must be a string, got: {value!r}"
+            )
+        result[key] = value
+    return result
+
+
 def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     """Deserialize manifest dictionary to Manifest dataclass."""
     # Parse components
@@ -132,7 +169,7 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
             method=TestMethod(test_data.get("method", "none")),
             source_format=test_data.get("source-format", ""),
             repo=_parse_repo(test_data.get("repo"), comp_name),
-            environment=test_data.get("environment", {}),
+            environment=_parse_environment(test_data.get("environment"), comp_name),
         )
 
         component = ComponentConfig(
