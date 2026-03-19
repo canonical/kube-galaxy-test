@@ -7,9 +7,10 @@ per-hostname credentials.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo
+from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
 from kube_galaxy.pkg.literals import SystemPaths
 
 
@@ -49,10 +50,20 @@ class Unit(ABC):
     def name(self) -> str:
         """Stable identifier for this unit, e.g. ``cp-0`` or ``worker-1``."""
 
-    @property
-    @abstractmethod
+    @cached_property
     def arch(self) -> ArchInfo:
-        """Architecture detected from the unit itself (e.g. via ``uname -m``)."""
+        result = self.run(["uname", "-m"])
+        system = result.stdout.strip()
+        return ArchInfo(
+            system=system,
+            k8s=map_to_k8s_arch(system),
+            image=map_to_image_arch(system),
+        )
+
+    def path_exists(self, path: str | Path) -> bool:
+        """Return True if a file or directory exists at the given path on the unit."""
+        result = self.run(["test", "-e", str(path)], check=False)
+        return result.returncode == 0
 
     @abstractmethod
     def run(

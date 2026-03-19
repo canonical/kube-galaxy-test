@@ -3,10 +3,8 @@
 import subprocess
 import tempfile
 import time
-from functools import cached_property
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
 from kube_galaxy.pkg.literals import Timeouts
 from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
@@ -28,16 +26,6 @@ class MultipassUnit(Unit):
     @property
     def name(self) -> str:
         return self._name
-
-    @cached_property
-    def arch(self) -> ArchInfo:
-        result = self._mp_exec(["uname", "-m"])
-        system = result.stdout.strip()
-        return ArchInfo(
-            system=system,
-            k8s=map_to_k8s_arch(system),
-            image=map_to_image_arch(system),
-        )
 
     def _mp_exec(
         self,

@@ -197,7 +197,7 @@ class Containerd(ComponentBase):
         self.unit.run(["systemctl", "is-active", "--wait", "containerd"], privileged=True)
 
         start = time.time()
-        while not self.SOCKET_PATH.exists():
+        while not self.unit.path_exists(self.SOCKET_PATH):
             if time.time() - start > self.BOOTSTRAP_TIMEOUT:
                 raise TimeoutError(
                     f"Socket {self.SOCKET_PATH} did not appear within {self.BOOTSTRAP_TIMEOUT}s"

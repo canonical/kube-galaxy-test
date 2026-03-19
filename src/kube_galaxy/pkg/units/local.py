@@ -11,13 +11,10 @@ import os
 import shutil
 import subprocess
 import zipfile
-from functools import cached_property
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CREDENTIALS_DIR = Path("/opt/kube-galaxy/credentials")
@@ -34,10 +31,6 @@ class LocalUnit(Unit):
     @property
     def name(self) -> str:
         return "local"
-
-    @cached_property
-    def arch(self) -> ArchInfo:
-        return get_arch_info()
 
     def run(
         self,

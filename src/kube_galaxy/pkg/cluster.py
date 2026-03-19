@@ -3,7 +3,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.components import ComponentBase, find_component
 from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
@@ -19,9 +18,7 @@ from kube_galaxy.pkg.utils.shell import run
 __all__ = ["setup_cluster", "teardown_cluster"]
 
 
-def _log_cluster_info(
-    task: str, manifest: Manifest, arch_info: ArchInfo, force: None | bool = None
-) -> None:
+def _log_cluster_info(task: str, manifest: Manifest, force: None | bool = None) -> None:
     """Log cluster configuration and detected architecture."""
 
     section(f"Kubernetes Cluster {task}")
@@ -34,13 +31,8 @@ def _log_cluster_info(
     info(f"Cluster Name: {manifest.name}")
     info(f"Kubernetes Version: {manifest.kubernetes_version}")
 
-    # Detect architecture
-    info(f"System Architecture: {arch_info.system}")
-    info(f"Kubernetes Architecture: {arch_info.k8s}")
-    info(f"Image Architecture: {arch_info.image}")
 
-
-def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
+def setup_cluster(manifest_path: str) -> None:
     """
     Set up a Kubernetes cluster using 6-stage component lifecycle.
 
@@ -54,32 +46,32 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
     try:
         # Load and validate manifest
         manifest = load_manifest(manifest_path)
-        arch_info = get_arch_info()
-        work_dir_path = Path(work_dir)
 
-        _log_cluster_info("Setup", manifest, arch_info)
+        _log_cluster_info("Setup", manifest)
 
         # Create working directories
-        ensure_dir(work_dir_path)
-        ensure_dir(work_dir_path / "components")
-        ensure_dir(work_dir_path / "logs")
+        ensure_dir(Path() / "logs")
 
         # Get components in dependency order
         configs = manifest.components
 
         # Provision the orchestrator unit via the manifest's provider
         provider = provider_factory(manifest)
-        orchestrator = provider.provision(NodeRole.CONTROL_PLANE, 0)
-        info("Waiting for orchestrator unit to become ready...")
-        orchestrator.wait_until_ready()
-        info(f"Orchestrator unit '{orchestrator.name}' is ready")
+        lead_unit = provider.provision(NodeRole.CONTROL_PLANE, 0)
+        info("Waiting for Lead Control-Plane unit to become ready...")
+        lead_unit.wait_until_ready()
+        info(f"Lead Control-Plane unit '{lead_unit.name}' is ready")
+
+        # TODO: Support multiple units based on manifest
+        units = [lead_unit]
 
         # Create all component resources
         resources: dict[str, ComponentBase] = {}
         for config in configs:
-            component_class = find_component(config.name)
-            resource = component_class(resources, manifest, config, arch_info, unit=orchestrator)
-            resources[config.name] = resource
+            for unit in units:
+                component_class = find_component(config.name)
+                resource = component_class(resources, manifest, config, unit.arch, unit)
+                resources[config.name] = resource
 
         # Execute 6-stage lifecycle
         resources_list = list(resources.values())
@@ -131,23 +123,26 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
     try:
         # Load and validate manifest
         manifest = load_manifest(manifest_path)
-        arch_info = get_arch_info()
 
-        _log_cluster_info("Teardown", manifest, arch_info, force)
+        _log_cluster_info("Teardown", manifest, force)
 
         # Get components in dependency order, then reverse for teardown
         configs = list(reversed(manifest.components))
 
         # Locate the orchestrator unit via the manifest's provider (no new provisioning)
         provider = provider_factory(manifest)
-        orchestrator = provider.locate(NodeRole.CONTROL_PLANE, 0)
+        lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
+
+        # TODO: Support multiple units based on manifest
+        units = [lead_unit]
 
         # Create all component resources
         resources: dict[str, ComponentBase] = {}
         for config in configs:
-            component_class = find_component(config.name)
-            resource = component_class(resources, manifest, config, arch_info, unit=orchestrator)
-            resources[config.name] = resource
+            for unit in units:
+                component_class = find_component(config.name)
+                resource = component_class(resources, manifest, config, unit.arch, unit)
+                resources[config.name] = resource
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
         resources_list = list(resources.values())

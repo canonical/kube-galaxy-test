@@ -9,7 +9,6 @@ from pathlib import Path
 
 import yaml
 
-from kube_galaxy.pkg.arch.detector import get_arch_info
 from kube_galaxy.pkg.literals import SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
@@ -173,7 +172,6 @@ def _generate_orchestration_spread_yaml(
     try:
         info("Generating test orchestration spread.yaml...")
         # Get architecture info
-        arch_info = get_arch_info()
 
         # Load template
         suites = {}
@@ -184,9 +182,6 @@ def _generate_orchestration_spread_yaml(
                 "TEST_TIMEOUT_S": str(Timeouts.TEST_EXECUTION_TIMEOUT_S),
                 "TEST_TIMEOUT_M": str(Timeouts.TEST_EXECUTION_TIMEOUT_S // 60),
                 "KUBECONFIG": str(kubeconfig),
-                "SYSTEM_ARCH": arch_info.system,
-                "K8S_ARCH": arch_info.k8s,
-                "IMAGE_ARCH": arch_info.image,
             },
         }
 

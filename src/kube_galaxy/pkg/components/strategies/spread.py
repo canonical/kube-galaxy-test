@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
@@ -22,11 +24,15 @@ def _download(comp: ComponentBase) -> None:
     on URL scheme:
     """
     test_cfg = comp.config.test
-    src = format_component_pattern(
+    url = format_component_pattern(
         test_cfg.source_format, comp.config, comp.arch_info, test_cfg.repo
     )
-    dest = SystemPaths.tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
-    download_file(src, dest)
+    parsed = urlparse(url)
+    filename = Path(parsed.path).name or "download"
+    dest = comp.ensure_temp_dir() / filename
+    download_file(url, dest)
+    remote = SystemPaths.tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
+    comp.unit.put(dest, str(remote))
 
 
 _SpreadTestStrategy = _TestStrategy(download=_download)
