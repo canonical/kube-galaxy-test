@@ -242,7 +242,7 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
     assert (dest / "task.yaml").read_text() == "summary: A fake task"
 
 
-def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
+def test_ensure_temp_dir_creates_local_dir_only(monkeypatch, arch_info, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
         {},
@@ -260,16 +260,11 @@ def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
     assert ret == p
     assert ret.exists()
 
-    # ensure_temp_dir must run mkdir -p for the corresponding unit path on the unit
-    # unit path = "/" + str(local_path.relative_to(staging_root))
-    expected_unit_dir = "/" + str(p.relative_to(tmp_path))
-    mkdir_calls = [
-        (cmd, kwargs)
-        for cmd, kwargs in mock_unit.run_calls
-        if "mkdir" in cmd and "-p" in cmd and expected_unit_dir in cmd
-    ]
-    assert mkdir_calls, f"expected mkdir -p {expected_unit_dir!r} on unit"
-    assert all(kwargs.get("privileged") for _, kwargs in mkdir_calls)
+    # ensure_temp_dir must NOT call unit.run — the unit may not be ready yet
+    # (e.g. LXD VM agent not started) when this is called during DOWNLOAD hook
+    assert not mock_unit.run_calls, (
+        "ensure_temp_dir must not contact the unit — unit may not be ready at download time"
+    )
 
 
 def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, arch_info):

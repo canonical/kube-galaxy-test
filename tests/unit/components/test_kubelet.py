@@ -38,8 +38,8 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
     config = ComponentConfig(name="kubelet", category="k8s", release="v1", installation=install)
 
     mock_unit = MockUnit()
-    # Queue results for: ensure_temp_dir mkdir, mkdir target_dir, daemon-reload (service write)
-    # plus ensure_temp_dir mkdir, mkdir parent, chmod (config file write)
+    # Queue results for: mkdir target_dir, daemon-reload (service write)
+    # plus mkdir parent, chmod (config file write)
     for _ in range(10):
         mock_unit._run_results.append(RunResult(0, "", ""))
 

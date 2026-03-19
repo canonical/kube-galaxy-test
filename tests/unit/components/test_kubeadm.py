@@ -47,10 +47,8 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
     mock_unit = MockUnit()
     mock_unit.set_run_results(
         RunResult(0, defaults_yaml, ""),  # kubeadm config print init-defaults
-        RunResult(0, "", ""),  # write_config_file: ensure_temp_dir mkdir on unit
         RunResult(0, "", ""),  # write_config_file: mkdir parent (kubelet conf)
         RunResult(0, "", ""),  # write_config_file: chmod (kubelet conf)
-        RunResult(0, "", ""),  # write_config_file: ensure_temp_dir mkdir on unit
         RunResult(0, "", ""),  # write_config_file: mkdir parent (cluster config)
         RunResult(0, "", ""),  # write_config_file: chmod (cluster config)
     )

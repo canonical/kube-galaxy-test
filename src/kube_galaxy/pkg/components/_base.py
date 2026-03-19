@@ -316,25 +316,24 @@ class ComponentBase:
 
     def ensure_temp_dir(self) -> Path:
         """
-        Ensure the component staging directory exists and return its path.
+        Ensure the component local staging directory exists and return its path.
 
-        Two directories are created:
+        Creates ``cwd()/tmp/opt/kube-galaxy/<name>/temp`` on the orchestrator.
+        This directory is user-writable and requires no root access.  It is
+        used to stage files (downloads, generated configs) before they are
+        pushed to the unit via ``unit.put()``.
 
-        1. A **local staging directory** at
-           ``cwd()/tmp/opt/kube-galaxy/<name>/temp`` on the orchestrator
-           (user-writable, no root required).
-        2. A **unit-side temp directory** at
-           ``/opt/kube-galaxy/<name>/temp`` on the unit, derived by stripping
-           the ``cwd()/tmp`` staging-root prefix from the local path (so the
-           two paths always mirror each other).
+        Unit-side directories are **not** created here — each operation that
+        writes to the unit (``install_binary``, ``create_systemd_service``,
+        ``write_config_file``, …) creates the necessary remote directories
+        immediately before pushing, so this method is safe to call during the
+        DOWNLOAD hook when the unit agent may not yet be running.
 
         Returns:
             Path to the local staging directory (``component_tmp_dir``).
         """
         staging_dir = self.component_tmp_dir
         staging_dir.mkdir(parents=True, exist_ok=True)
-        unit_dir = "/" + str(staging_dir.relative_to(SystemPaths.staging_root()))
-        self.unit.run(["mkdir", "-p", unit_dir], privileged=True)
         return staging_dir
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
