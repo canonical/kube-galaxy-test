@@ -5,6 +5,8 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
+import shutil
+import tempfile
 from abc import abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
@@ -234,12 +236,17 @@ class ComponentBase:
     @property
     def component_tmp_dir(self) -> Path:
         """
-        Get the component's secure temporary directory.
+        Get the component's local staging directory.
+
+        This is a user-writable directory on the orchestrator host used to
+        stage files (downloads, generated configs) before pushing them to the
+        unit.  It lives under :func:`tempfile.gettempdir` so that no root
+        access is required on the orchestrator.
 
         Returns:
-            Path to /opt/kube-galaxy/{self.name}/tmp/
+            Path to <tmp>/kube-galaxy/{self.name}/
         """
-        return SystemPaths.component_temp_dir(self.name)
+        return Path(tempfile.gettempdir()) / "kube-galaxy" / self.name
 
     @property
     def extracted_dir(self) -> Path | None:
@@ -256,16 +263,19 @@ class ComponentBase:
         Remove all alternatives for binaries in this component's bin directory.
         """
         component_bin_dir = SystemPaths.component_bin_dir(self.name)
-        if component_bin_dir.exists():
-            for binary in component_bin_dir.glob("*"):
-                remove_binary(binary, self.unit)
+        result = self.unit.run(
+            ["ls", str(component_bin_dir)], privileged=True, check=False
+        )
+        if result.returncode == 0:
+            for binary_name in result.stdout.split():
+                binary_path = component_bin_dir / binary_name
+                remove_binary(binary_path, self.unit)
 
     def cleanup_component_dir(self) -> None:
         """
-        Remove the entire component directory.
+        Remove the entire component directory on the unit.
         """
-        if self.component_dir.exists():
-            self.unit.run(["rm", "-rf", str(self.component_dir)], privileged=True, check=False)
+        self.unit.run(["rm", "-rf", str(self.component_dir)], privileged=True, check=False)
 
     # Teardown hooks - all have default empty implementations
     # Override in subclass as needed
@@ -310,19 +320,25 @@ class ComponentBase:
 
     def ensure_temp_dir(self) -> Path:
         """
-        Ensure component temp directory exists and return path.
+        Ensure the component staging directory exists and return its path.
 
-        The directory is created both locally (for staging temporary files
-        before they are pushed to the unit) and on the unit itself (so that
-        operations running directly on the unit can also use it).
+        Two directories are created:
+
+        1. A **local staging directory** (user-writable, under
+           :func:`tempfile.gettempdir`) for files that the orchestrator needs
+           to prepare before pushing them to the unit.
+        2. A **unit-side temp directory** at
+           ``/opt/kube-galaxy/<name>/temp`` on the unit (created via
+           ``unit.run``, which may use root on the unit).
 
         Returns:
-            Path to component temp directory
+            Path to the local staging directory (``component_tmp_dir``).
         """
-        temp_dir = self.component_tmp_dir
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        self.unit.run(["mkdir", "-p", str(temp_dir)], privileged=True)
-        return temp_dir
+        staging_dir = self.component_tmp_dir
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        unit_temp_dir = SystemPaths.component_temp_dir(self.name)
+        self.unit.run(["mkdir", "-p", str(unit_temp_dir)], privileged=True)
+        return staging_dir
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
         """
@@ -363,16 +379,16 @@ class ComponentBase:
             ComponentError: If service file creation fails
         """
         try:
-            # Write to a local temp file first
-            temp_dir = self.ensure_temp_dir()
-            temp_unit = temp_dir / f"{service_name}.service"
-            temp_unit.write_text(service_content)
+            # Write content to a local staging file (user-writable)
+            staging_dir = self.ensure_temp_dir()
+            local_file = staging_dir / f"{service_name}.service"
+            local_file.write_text(service_content)
 
-            # Create target directory and copy via unit
+            # Create target directory on unit, push file, then reload
             target_dir = "/etc/systemd/system" if system_location else "/usr/lib/systemd/system"
             target_path = f"{target_dir}/{service_name}.service"
             self.unit.run(["mkdir", "-p", target_dir], privileged=True)
-            self.unit.run(["cp", str(temp_unit), target_path], privileged=True)
+            self.unit.put(local_file, target_path)
 
             # Reload systemd and enable service
             self.unit.run(["systemctl", "daemon-reload"], privileged=True)
@@ -389,20 +405,20 @@ class ComponentBase:
 
         Args:
             config_content: Configuration file content
-            target_path: Final path for config file
+            target_path: Final path for config file on the unit
             mode: File permissions (default: 644)
 
         Raises:
             ComponentError: If file writing fails
         """
         try:
-            temp_dir = self.ensure_temp_dir()
-            temp_config = temp_dir / "config"
-            temp_config.write_text(config_content)
+            staging_dir = self.ensure_temp_dir()
+            local_file = staging_dir / "config"
+            local_file.write_text(config_content)
 
-            # Write to temp file, then copy and set permissions via unit
+            # Create parent directory on unit, push file, set permissions
             self.unit.run(["mkdir", "-p", str(Path(target_path).parent)], privileged=True)
-            self.unit.run(["cp", str(temp_config), str(target_path)], privileged=True)
+            self.unit.put(local_file, str(target_path))
             self.unit.run(["chmod", mode, str(target_path)], privileged=True)
         except Exception as e:
             raise ComponentError(f"Failed to write config to {target_path}: {e}") from e
