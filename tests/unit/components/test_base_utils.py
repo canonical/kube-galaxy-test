@@ -248,8 +248,8 @@ def test_ensure_temp_dir_creates_local_dir_only(monkeypatch, arch_info, tmp_path
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
-        unit=mock_unit,
     )
+    comp.unit = mock_unit
     # Redirect staging root to tmp_path so no writes outside the test sandbox
     monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
@@ -292,8 +292,8 @@ def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_pat
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
-        unit=mock_unit,
     )
+    comp.unit = mock_unit
 
     # Redirect staging root to tmp_path so no writes outside the test sandbox
     monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
@@ -325,8 +325,8 @@ def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
-        unit=mock_unit,
     )
+    comp.unit = mock_unit
 
     # create dirs and files
     d1 = tmp_path / "d1"

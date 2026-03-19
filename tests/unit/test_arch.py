@@ -6,19 +6,10 @@ import pytest
 
 from kube_galaxy.pkg.arch.detector import (
     ArchInfo,
-    detect_system_arch,
     get_arch_info,
     map_to_image_arch,
     map_to_k8s_arch,
 )
-
-
-def test_detect_system_arch():
-    """Test system architecture detection."""
-    arch = detect_system_arch()
-    assert isinstance(arch, str)
-    assert len(arch) > 0
-    assert arch == platform.machine()
 
 
 def test_map_to_k8s_arch_amd64():
@@ -80,7 +71,7 @@ def test_map_to_image_arch_unsupported():
 
 def test_get_arch_info():
     """Test getting complete architecture info."""
-    info = get_arch_info()
+    info = get_arch_info(platform.machine())
 
     assert isinstance(info, ArchInfo)
     assert info.system == platform.machine()
@@ -92,7 +83,7 @@ def test_get_arch_info():
 
 def test_arch_info_consistency():
     """Test that arch info fields are consistent."""
-    info = get_arch_info()
+    info = get_arch_info(platform.machine())
 
     # All fields should match expected mappings
     assert info.k8s == map_to_k8s_arch(info.system)

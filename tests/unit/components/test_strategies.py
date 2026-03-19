@@ -7,6 +7,7 @@ Covers: binary, binary_archive, container_image, container_image_archive,
 import bz2
 import gzip
 import lzma
+import platform
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,7 @@ def _make_component(
     if monkeypatch is not None and tmp_path is not None:
         monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
-    ai = arch_info if arch_info is not None else get_arch_info()
+    ai = arch_info if arch_info is not None else get_arch_info(platform.machine())
     return ComponentBase({}, manifest, config, ai)
 
 
@@ -786,7 +787,7 @@ class TestContainerManifestRemainingBranches:
         manifest_file.write_text("apiVersion: v1\n")
         comp.manifest_path = manifest_file
 
-        def fake_apply(path: Path) -> None:
+        def fake_apply(unit, path: Path) -> None:
             raise ClusterError("kubectl apply failed")
 
         monkeypatch.setattr(
@@ -837,7 +838,7 @@ def _make_spread_component(
         "tests_root",
         classmethod(lambda cls: Path(tmp_path) / "tests"),
     )
-    ai = arch_info if arch_info is not None else get_arch_info()
+    ai = arch_info if arch_info is not None else get_arch_info(platform.machine())
     return ComponentBase({}, manifest, config, ai)
 
 
@@ -857,6 +858,7 @@ class TestSpreadRemainingBranches:
         def fake_download(url: str, dest: Path) -> None:
             calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"")  # create placeholder so shutil.copy succeeds
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.spread.download_file", fake_download
@@ -882,6 +884,7 @@ class TestSpreadRemainingBranches:
         def fake_download(url: str, dest: Path) -> None:
             calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"")  # create placeholder so shutil.copy succeeds
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.spread.download_file", fake_download

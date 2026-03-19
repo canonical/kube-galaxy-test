@@ -11,26 +11,26 @@ def test_status_wait_runs_readiness_checks(monkeypatch):
     wait_for_nodes_called = []
     wait_for_pods_called = []
 
-    def fake_wait_for_nodes(timeout=300, condition="Ready"):
+    def fake_wait_for_nodes(_unit, timeout=300, condition="Ready"):
         wait_for_nodes_called.append({"timeout": timeout, "condition": condition})
 
-    def fake_wait_for_pods(namespace="kube-system", timeout=300, condition="Ready"):
+    def fake_wait_for_pods(_unit, namespace="kube-system", timeout=300, condition="Ready"):
         wait_for_pods_called.append(
             {"namespace": namespace, "timeout": timeout, "condition": condition}
         )
 
-    def fake_get_context():
+    def fake_get_context(_unit):
         return "test-context"
 
-    def fake_get_nodes():
+    def fake_get_nodes(_unit):
         return "NAME STATUS ROLES AGE VERSION\nnode-1 Ready control-plane 1m v1.36.0\n"
 
     monkeypatch.setattr(status_cmd, "wait_for_nodes", fake_wait_for_nodes)
     monkeypatch.setattr(status_cmd, "wait_for_pods", fake_wait_for_pods)
     monkeypatch.setattr(status_cmd, "get_context", fake_get_context)
     monkeypatch.setattr(status_cmd, "get_nodes", fake_get_nodes)
-    monkeypatch.setattr(status_cmd, "get_cluster_info", lambda: "cluster-info")
-    monkeypatch.setattr(status_cmd, "get_pods", lambda: "pods-output")
+    monkeypatch.setattr(status_cmd, "get_cluster_info", lambda _unit: "cluster-info")
+    monkeypatch.setattr(status_cmd, "get_pods", lambda _unit: "pods-output")
     monkeypatch.setattr(status_cmd, "_check_command", lambda _cmd: "ok")
     monkeypatch.setattr(status_cmd.shutil, "which", lambda _cmd: "/usr/bin/tool")
 
@@ -46,13 +46,13 @@ def test_status_wait_runs_readiness_checks(monkeypatch):
 def test_status_wait_exits_non_zero_on_readiness_failure(monkeypatch):
     """Test that status exits with error code on readiness failure."""
 
-    def fake_wait_for_nodes(timeout=300, condition="Ready"):
+    def fake_wait_for_nodes(_unit, timeout=300, condition="Ready"):
         raise ClusterError("timed out waiting for node readiness")
 
-    def fake_get_context():
+    def fake_get_context(_unit):
         return "test-context"
 
-    def fake_get_nodes():
+    def fake_get_nodes(_unit):
         return "NAME STATUS ROLES AGE VERSION\nnode-1 Ready control-plane 1m v1.36.0\n"
 
     monkeypatch.setattr(status_cmd, "wait_for_nodes", fake_wait_for_nodes)

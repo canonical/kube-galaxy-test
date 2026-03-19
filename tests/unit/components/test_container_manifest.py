@@ -142,7 +142,7 @@ def test_bootstrap_hook_applies_manifest(component, monkeypatch, tmp_path):
 
     apply_manifest_calls = []
 
-    def fake_apply_manifest(path):
+    def fake_apply_manifest(unit, path):
         apply_manifest_calls.append(path)
 
     _target = "kube_galaxy.pkg.components.strategies.container_manifest.apply_manifest"
@@ -299,7 +299,8 @@ metadata:
     cmd = dry_run_calls[0]
     assert "kubectl" in cmd
     assert "-f" in cmd
-    assert str(manifest_path) in cmd
+    # source puts the file via unit.put() then references the remote temp path
+    assert any(str(manifest_path) in str(local) for local, _ in mock_unit.put_calls)
 
     # Verify kubectl rollout status was called for each workload
     rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c and "status" in c]

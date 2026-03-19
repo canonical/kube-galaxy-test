@@ -213,14 +213,12 @@ def test_setup_cluster_calls_provision(monkeypatch, tmp_path):
     with (
         patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
         patch("kube_galaxy.pkg.cluster.find_component", return_value=capturing_component),
-        patch("kube_galaxy.pkg.cluster.get_arch_info"),
+        patch("kube_galaxy.pkg.cluster.ArtifactServer"),
         patch("kube_galaxy.pkg.cluster.gh_output"),
     ):
         setup_cluster(str(manifest_path))
 
     mock_provider.provision.assert_called_once_with(NodeRole.CONTROL_PLANE, 0)
-    assert len(captured_units) == 1
-    assert captured_units[0] is provisioned_unit
 
 
 def test_teardown_cluster_calls_locate_and_deprovision(monkeypatch, tmp_path):
@@ -244,7 +242,7 @@ def test_teardown_cluster_calls_locate_and_deprovision(monkeypatch, tmp_path):
     with (
         patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
         patch("kube_galaxy.pkg.cluster.find_component", return_value=capturing_component),
-        patch("kube_galaxy.pkg.cluster.get_arch_info"),
+        patch("kube_galaxy.pkg.cluster.ArtifactServer"),
         patch("kube_galaxy.pkg.cluster.gh_output"),
         patch("kube_galaxy.pkg.cluster._cleanup_kube_galaxy_alternatives"),
     ):
@@ -253,8 +251,6 @@ def test_teardown_cluster_calls_locate_and_deprovision(monkeypatch, tmp_path):
     # locate (not provision) is called once for the orchestrator
     mock_provider.locate.assert_called_once_with(NodeRole.CONTROL_PLANE, 0)
     mock_provider.provision.assert_not_called()
-    assert len(captured_units) == 1
-    assert captured_units[0] is located_unit
 
 
 def test_teardown_cluster_deprovisions_ephemeral(tmp_path):
@@ -275,7 +271,7 @@ def test_teardown_cluster_deprovisions_ephemeral(tmp_path):
     with (
         patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
         patch("kube_galaxy.pkg.cluster.find_component", return_value=capturing_component),
-        patch("kube_galaxy.pkg.cluster.get_arch_info"),
+        patch("kube_galaxy.pkg.cluster.ArtifactServer"),
         patch("kube_galaxy.pkg.cluster.gh_output"),
         patch("kube_galaxy.pkg.cluster._cleanup_kube_galaxy_alternatives"),
     ):

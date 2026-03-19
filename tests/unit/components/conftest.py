@@ -1,5 +1,7 @@
 """Shared fixtures for component unit tests."""
 
+import platform
+
 from dataclasses import dataclass, field
 
 import pytest
@@ -24,7 +26,7 @@ class MockUnit(Unit):
 
     @property
     def arch(self) -> ArchInfo:
-        return get_arch_info()
+        return get_arch_info(platform.machine())
 
     def run(
         self,

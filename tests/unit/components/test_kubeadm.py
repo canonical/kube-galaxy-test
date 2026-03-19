@@ -53,7 +53,8 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
         RunResult(0, "", ""),  # write_config_file: chmod (cluster config)
     )
 
-    comp = Kubeadm({}, manifest, config, arch_info, unit=mock_unit)
+    comp = Kubeadm({}, manifest, config, arch_info)
+    comp.unit = mock_unit
 
     # Provide a kubelet instance with an install_path so _which() succeeds
     class StubKubelet:
