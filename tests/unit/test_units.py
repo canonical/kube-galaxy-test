@@ -359,6 +359,7 @@ def test_lxd_unit_wait_until_ready_retries_on_failure(monkeypatch):
             stderr = "VM agent isn't running"
             return type("R", (), {"returncode": rc, "stdout": "", "stderr": stderr})()
         return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.time.sleep", lambda _: None)
 

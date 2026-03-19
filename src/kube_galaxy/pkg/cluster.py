@@ -9,6 +9,7 @@ from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NodeRole
 from kube_galaxy.pkg.units.provider import UnitProvider, provider_factory
+from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
@@ -88,10 +89,21 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
                 f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
             )
 
-        num_hooks = len(SetupHooks)
-        for idx, hook in enumerate(SetupHooks, 1):
-            section(f"Stage {idx}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(resources_list, configs, hook.value, parallel=hook.is_parallel)
+        # DOWNLOAD phase runs before the artifact server so artifacts are
+        # present on disk when the server starts.
+        section(f"Stage 1/{len(SetupHooks)}: Download Components")
+        _run_hook(resources_list, configs, SetupHooks.DOWNLOAD.value, parallel=True)
+
+        # Start the artifact server so nodes can pull binaries without
+        # the orchestrator pushing files directly onto them.
+        with ArtifactServer() as artifact_server:
+            info(f"Artifact server started at {artifact_server.base_url}")
+            orchestrator.set_artifact_server(artifact_server.base_url)
+
+            remaining_hooks = [h for h in SetupHooks if h != SetupHooks.DOWNLOAD]
+            for idx, hook in enumerate(remaining_hooks, 2):
+                section(f"Stage {idx}/{len(SetupHooks)}: {hook.value.capitalize()} Components")
+                _run_hook(resources_list, configs, hook.value, parallel=hook.is_parallel)
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: $HOME/.kube/config")

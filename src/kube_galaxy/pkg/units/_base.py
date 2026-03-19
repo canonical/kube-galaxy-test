@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
+from kube_galaxy.pkg.literals import SystemPaths
 
 
 @dataclass
@@ -132,3 +133,48 @@ class Unit(ABC):
         Raises:
             ClusterError: If the unit does not become ready within *timeout*.
         """
+
+    # ------------------------------------------------------------------
+    # Artifact server integration
+    # ------------------------------------------------------------------
+
+    #: Base URL of the orchestrator's artifact HTTP server.
+    #: ``None`` until :meth:`set_artifact_server` is called.
+    _artifact_base_url: str | None = None
+
+    def set_artifact_server(self, base_url: str) -> None:
+        """Configure the artifact server URL for this unit.
+
+        After this call, :meth:`staging_url` returns an HTTP URL pointing to
+        *base_url* instead of a local ``file://`` URL.  This allows remote
+        units (LXD, Multipass, SSH) to pull artifacts from the orchestrator's
+        :class:`~kube_galaxy.pkg.utils.artifact_server.ArtifactServer` via
+        their normal :meth:`download` method.
+
+        Args:
+            base_url: HTTP base URL of the artifact server,
+                e.g. ``"http://192.168.1.1:8765"``.
+        """
+        self._artifact_base_url = base_url
+
+    def staging_url(self, local_path: Path) -> str:
+        """Return a URL suitable for this unit to download a staged file.
+
+        When an artifact server has been configured via
+        :meth:`set_artifact_server`, the URL uses the HTTP scheme so that
+        remote units can pull the file from the orchestrator.  Otherwise
+        a ``file://`` URL is returned, which works for
+        :class:`~kube_galaxy.pkg.units.local.LocalUnit` whose
+        :meth:`download` delegates to :func:`urllib.request.urlopen`.
+
+        Args:
+            local_path: Absolute path to a file inside
+                ``SystemPaths.staging_root()`` on the orchestrator.
+
+        Returns:
+            A URL string that this unit can pass to :meth:`download`.
+        """
+        if self._artifact_base_url is not None:
+            relative = local_path.relative_to(SystemPaths.staging_root())
+            return f"{self._artifact_base_url.rstrip('/')}/{relative}"
+        return local_path.as_uri()

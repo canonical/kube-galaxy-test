@@ -114,13 +114,21 @@ def install_binary(
     Install a binary to the component directory on the unit and register with
     update-alternatives.
 
-    The binary is pushed from the local staging path to the unit via
-    ``unit.put()``.  All directory creation, permission setting, and
-    update-alternatives registration are performed on the unit via
-    ``unit.run()``.  No root access is required on the orchestrator.
+    The unit is instructed to download the binary from the orchestrator's
+    staging area via :meth:`~kube_galaxy.pkg.units._base.Unit.staging_url`
+    and :meth:`~kube_galaxy.pkg.units._base.Unit.download`.  For a
+    :class:`~kube_galaxy.pkg.units.local.LocalUnit` this resolves to a
+    ``file://`` URL; for remote units the artifact server must have been
+    started and configured via
+    :meth:`~kube_galaxy.pkg.units._base.Unit.set_artifact_server` before
+    this function is called.
+
+    All directory creation, permission setting, and update-alternatives
+    registration are performed on the unit via ``unit.run()``.  No root
+    access is required on the orchestrator.
 
     Args:
-        binary_path: Local path to the binary (in orchestrator staging area)
+        binary_path: Local path to the binary in the orchestrator staging area.
         binary_name: Name of the binary (e.g., 'containerd')
         component_name: Component name for directory structure
         unit: Unit to install onto
@@ -131,9 +139,15 @@ def install_binary(
     dest_dir = SystemPaths.component_bin_dir(component_name)
     dest_path = dest_dir / binary_name
     try:
-        # Create directory and install binary on the unit
+        # Create directory on the unit
         unit.run(["mkdir", "-p", str(dest_dir)], privileged=True, check=True)
-        unit.put(binary_path, str(dest_path))
+
+        # Fetch artifact from the orchestrator's staging area.
+        # For LocalUnit this resolves to a file:// URL; for remote units the
+        # artifact server must be started and configured via
+        # unit.set_artifact_server() before calling install_binary.
+        artifact_url = unit.staging_url(binary_path)
+        unit.download(artifact_url, str(dest_path))
         unit.run(["chmod", "755", str(dest_path)], privileged=True, check=True)
 
         # Register with update-alternatives (requires elevated privileges)

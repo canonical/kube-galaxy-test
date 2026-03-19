@@ -14,6 +14,7 @@ from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8
 from kube_galaxy.pkg.literals import Timeouts
 from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
@@ -97,7 +98,7 @@ class LXDUnit(Unit):
             )
 
     def get(self, remote: str, local: Path) -> None:
-        local.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(local.parent)
         result = subprocess.run(
             ["lxc", "file", "pull", f"{self._name}/{remote}", str(local)],
             capture_output=True,

@@ -1,4 +1,3 @@
-
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (

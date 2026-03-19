@@ -70,11 +70,11 @@ class LocalUnit(Unit):
 
     def put(self, local: Path, remote: str) -> None:
         dest = Path(remote)
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(dest.parent)
         shutil.copy2(local, dest)
 
     def get(self, remote: str, local: Path) -> None:
-        local.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(local.parent)
         shutil.copy2(Path(remote), local)
 
     def download(self, url: str, dest: str) -> None:
@@ -93,7 +93,7 @@ class LocalUnit(Unit):
             with zipfile.ZipFile(zip_file) as zf:
                 data = zf.read(path_in_zip)
             dest_path = Path(dest)
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            ensure_dir(dest_path.parent)
             dest_path.write_bytes(data)
         except Exception as e:
             raise ComponentError(f"Failed to extract '{path_in_zip}' from '{zip_file}': {e}") from e
@@ -104,7 +104,7 @@ class LocalUnit(Unit):
         return compute_sha256(Path(path))
 
     def enlist(self, credentials: list[SiteCredential]) -> None:
-        _CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
+        ensure_dir(_CREDENTIALS_DIR)
         for cred in credentials:
             curlrc = _CREDENTIALS_DIR / f"{cred.hostname}.curlrc"
             curlrc.write_text(f'header = "Authorization: {cred.auth_header}"\n')
