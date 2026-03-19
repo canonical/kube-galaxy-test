@@ -2,9 +2,11 @@
 
 import shutil
 from collections.abc import Callable
+from functools import partial
 
 import typer
 
+from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.client import (
     get_cluster_info,
     get_context,
@@ -16,6 +18,8 @@ from kube_galaxy.pkg.utils.client import (
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, print_dict, section, success, warning
 from kube_galaxy.pkg.utils.shell import run
+
+_LOCAL = LocalUnit()
 
 
 def status(wait: bool = False, timeout: int = 300) -> None:
@@ -34,7 +38,6 @@ def _print_dependency_status() -> None:
     """Print required command dependency status."""
     info("Dependencies:")
     deps = {
-        "kubectl": _check_command("kubectl"),
         "spread": _check_command("spread"),
     }
     print_dict(deps)
@@ -48,9 +51,9 @@ def _print_cluster_context() -> None:
 
     info("")
     try:
-        context = get_context()
+        context = get_context(_LOCAL)
         info(f"Active Cluster: {context}")
-        nodes_output = get_nodes()
+        nodes_output = get_nodes(_LOCAL)
         if nodes_output:
             lines = nodes_output.strip().split("\n")
             info(f"Cluster Nodes: {len(lines) - 1}")
@@ -71,16 +74,16 @@ def _verify_cluster_health(timeout: int) -> None:
     info("Waiting for nodes to be Ready...")
 
     try:
-        wait_for_nodes(timeout=timeout)
-        wait_for_pods(namespace="kube-system", timeout=timeout)
+        wait_for_nodes(_LOCAL, timeout=timeout)
+        wait_for_pods(_LOCAL, namespace="kube-system", timeout=timeout)
     except ClusterError as exc:
         error(str(exc), show_traceback=False)
         error("Cluster readiness checks failed", show_traceback=False)
         raise typer.Exit(code=1) from exc
 
-    _print_command_output(get_cluster_info, "Cluster Info")
-    _print_command_output(get_nodes, "Nodes")
-    _print_command_output(get_pods, "Pods")
+    _print_command_output(partial(get_cluster_info, _LOCAL), "Cluster Info")
+    _print_command_output(partial(get_nodes, _LOCAL), "Nodes")
+    _print_command_output(partial(get_pods, _LOCAL), "Pods")
 
 
 def _print_command_output(command: Callable[[], str], title: str) -> None:

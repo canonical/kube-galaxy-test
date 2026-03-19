@@ -113,6 +113,19 @@ class SystemPaths:
         return Path(cls.KUBE_GALAXY_TESTS_ROOT)
 
     @classmethod
+    def local_tests_root(cls) -> Path:
+        """Get local staging tests root directory on the orchestrator."""
+        return cls.staging_root() / cls.tests_root().relative_to("/")
+
+    @classmethod
+    def kube_config(cls) -> Path:
+        return cls.tests_root() / "kubeconfig"
+
+    @classmethod
+    def local_kube_config(cls) -> Path:
+        return cls.local_tests_root() / "kubeconfig"
+
+    @classmethod
     def tests_component_root(cls, name: str) -> Path:
         path = cls.tests_root() / name / cls.KUBE_GALAXY_TESTS_COMP_TASK
         return path.parent
@@ -173,10 +186,6 @@ class Commands:
         "update-alternatives",
         "--remove-all",
     ]
-
-    # kubectl commands
-    K_CREATE_DRY_RUN: ClassVar[list[str]] = ["kubectl", "create", "--dry-run=client", "-o", "yaml"]
-    K_ROLLOUT_STATUS: ClassVar[list[str]] = ["kubectl", "rollout", "status"]
 
 
 class Permissions:

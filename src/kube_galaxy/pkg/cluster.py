@@ -1,12 +1,15 @@
 """Cluster setup and provisioning with 8-stage component lifecycle."""
 
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 from kube_galaxy.pkg.components import ComponentBase, find_component
 from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NodeRole
+from kube_galaxy.pkg.units import Unit
 from kube_galaxy.pkg.units.provider import UnitProvider, provider_factory
 from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
 from kube_galaxy.pkg.utils.errors import ClusterError
@@ -68,10 +71,9 @@ def setup_cluster(manifest_path: str) -> None:
         # Create all component resources
         resources: dict[str, ComponentBase] = {}
         for config in configs:
-            for unit in units:
-                component_class = find_component(config.name)
-                resource = component_class(resources, manifest, config, unit.arch, unit)
-                resources[config.name] = resource
+            component_class = find_component(config.name)
+            resource = component_class(resources, manifest, config, lead_unit.arch)
+            resources[config.name] = resource
 
         # Execute 6-stage lifecycle
         resources_list = list(resources.values())
@@ -84,21 +86,22 @@ def setup_cluster(manifest_path: str) -> None:
         # DOWNLOAD phase runs before the artifact server so artifacts are
         # present on disk when the server starts.
         section(f"Stage 1/{len(SetupHooks)}: Download Components")
-        _run_hook(resources_list, configs, SetupHooks.DOWNLOAD.value, parallel=True)
+        _run_hook(lead_unit, resources_list, configs, SetupHooks.DOWNLOAD.value, parallel=True)
 
         # Start the artifact server so nodes can pull binaries without
         # the orchestrator pushing files directly onto them.
         with ArtifactServer() as artifact_server:
             info(f"Artifact server started at {artifact_server.base_url}")
-            orchestrator.set_artifact_server(artifact_server.base_url)
+            lead_unit.set_artifact_server(artifact_server.base_url)
 
             remaining_hooks = [h for h in SetupHooks if h != SetupHooks.DOWNLOAD]
             for idx, hook in enumerate(remaining_hooks, 2):
-                section(f"Stage {idx}/{len(SetupHooks)}: {hook.value.capitalize()} Components")
-                _run_hook(resources_list, configs, hook.value, parallel=hook.is_parallel)
+                for unit in units:
+                    section(f"Stage {idx}/{len(SetupHooks)}: {hook.value.capitalize()} Components")
+                    _run_hook(unit, resources_list, configs, hook.value, parallel=hook.is_parallel)
 
         section("Cluster Setup Complete!")
-        success("Kubeconfig: $HOME/.kube/config")
+        success("Kubeconfig: /opt/kube-galaxy/kubeconfig")
         gh_output("CLUSTER_NAME", manifest.name)
         gh_output("KUBECONFIG", str(Path.home() / ".kube" / "config"))
 
@@ -141,15 +144,18 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         for config in configs:
             for unit in units:
                 component_class = find_component(config.name)
-                resource = component_class(resources, manifest, config, unit.arch, unit)
+                resource = component_class(resources, manifest, config, unit.arch)
                 resources[config.name] = resource
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
         resources_list = list(resources.values())
         num_hooks = len(TeardownHooks)
         for idx, hook in enumerate(TeardownHooks):
-            section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(resources_list, configs, hook.value, force, parallel=hook.is_parallel)
+            for unit in units:
+                section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
+                _run_hook(
+                    unit, resources_list, configs, hook.value, force, parallel=hook.is_parallel
+                )
 
         # Deprovision all nodes (no-op for non-ephemeral providers)
         _deprovision(provider, force)
@@ -170,8 +176,21 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
             raise ClusterError(f"Cluster teardown failed: {exc}") from exc
 
 
+@contextmanager
+def _attach_unit(components: list[ComponentBase], unit: Unit) -> Generator[None, None, None]:
+    """Attach the given unit to all components that require it."""
+    restored = []
+    for component in components:
+        component.unit, restore = unit, component.unit
+        restored.append(restore)
+    yield
+    for component, restore in zip(components, restored, strict=True):
+        component.unit = restore
+
+
 def _run_hook(
-    resources: list[ComponentBase],
+    unit: Unit,
+    components: list[ComponentBase],
     configs: list[ComponentConfig],
     hook_name: str,
     force: bool = False,
@@ -181,8 +200,8 @@ def _run_hook(
     Run a specific lifecycle hook for all components.
 
     Args:
-        resources: List of component resources
-        configs: List of component configs (must be in same order as resources)
+        components: List of components
+        configs: List of component configs (must be in same order as components)
         hook_name: Name of the hook to run (e.g., "install")
         force: Continue execution even if errors occur
         parallel: Execute hooks concurrently (respects component order for submission)
@@ -193,16 +212,13 @@ def _run_hook(
     hook_name_caps = hook_name.title()
     max_workers = 10 if parallel else 1
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with _attach_unit(components, unit), ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures_list = []
 
         # Submit all tasks in component order
-        for config, resource in zip(configs, resources, strict=True):
-            hook_method = getattr(resource, f"{hook_name}_hook", None)
-            if not hook_method:
-                raise ClusterError(f"{hook_name_caps} hook not implemented for {config.name}")
+        for config, resource in zip(configs, components, strict=True):
             info(f"  {config.name}: {hook_name_caps}...")
-            future = executor.submit(hook_method)
+            future = executor.submit(resource.run_hook, hook_name)
             futures_list.append((config.name, future))
 
         # Collect results in submission order

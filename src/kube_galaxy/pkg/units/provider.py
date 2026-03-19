@@ -92,7 +92,17 @@ class LXDUnitProvider(UnitProvider):
 
         name = f"kube-galaxy-{role.value}-{index}"
         result = subprocess.run(
-            ["lxc", "launch", self._image, name, "--vm"],
+            [
+                "lxc",
+                "launch",
+                self._image,
+                name,
+                "--vm",
+                "-c",
+                "limits.cpu=2",
+                "-c",
+                "limits.memory=4GB",
+            ],
             capture_output=True,
             text=True,
             check=False,

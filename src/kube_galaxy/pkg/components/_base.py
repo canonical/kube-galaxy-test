@@ -65,13 +65,14 @@ class ComponentBase:
     # Component metadata - override in subclass
     LOCAL_REGISTRY: LiteralString = "registry.k8s.io"
 
+    unit: Unit = LocalUnit()
+
     def __init__(
         self,
         components: dict[str, "ComponentBase"],
         manifest: Manifest,
         config: ComponentConfig,
         arch_info: ArchInfo,
-        unit: Unit | None = None,
     ) -> None:
         """
         Initialize component with components, manifest, config, and unit.
@@ -81,15 +82,12 @@ class ComponentBase:
             manifest: The full Manifest object
             config: The ComponentConfig object for this specific component
             arch_info: Architecture information
-            unit: The unit this component runs on (defaults to LocalUnit)
         """
         self.components = components
         self.manifest = manifest
         self.config = config
         # Allow tests and callers to omit arch_info; default to detected arch
         self.arch_info = arch_info
-        # Unit abstraction — defaults to LocalUnit for backward compatibility
-        self.unit: Unit = unit if unit is not None else LocalUnit()
         # for InstallMethod Binary or BinaryArchive
         self.binary_path: Path | None = None  # path to downloaded binary (before installation)
         self.install_path: str | None = None  # path to root installed bin
@@ -146,6 +144,12 @@ class ComponentBase:
 
     # Lifecycle hooks - all have default empty implementations
     # Override in subclass as needed
+    def run_hook(self, hook_name: str) -> None:
+        hook_name_caps = hook_name.title()
+        hook_method = getattr(self, f"{hook_name}_hook", None)
+        if not hook_method:
+            raise ComponentError(f"{hook_name_caps} hook not implemented for {self.name}")
+        hook_method()
 
     def download_hook(self) -> None:
         """

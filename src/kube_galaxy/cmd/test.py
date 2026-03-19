@@ -6,8 +6,10 @@ import typer
 import yaml
 
 from kube_galaxy.pkg.manifest.loader import load_manifest
+from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.manifest.validator import validate_manifest
 from kube_galaxy.pkg.testing.spread import collect_test_results, run_spread_tests
+from kube_galaxy.pkg.units.provider import provider_factory
 from kube_galaxy.pkg.utils.client import get_context, verify_connectivity
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, exception, info, section, success, warning
@@ -22,11 +24,16 @@ def spread(manifest_path: str) -> None:
     validate(manifest_path)
 
     try:
+        # Provision the orchestrator unit via the manifest's provider
+        manifest = load_manifest(manifest_path)
+        provider = provider_factory(manifest)
+        lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
+
         # Check if kubectl can connect
-        verify_connectivity()
+        verify_connectivity(lead_unit)
 
         # Get cluster context
-        cluster_context = get_context()
+        cluster_context = get_context(lead_unit)
         success(f"Connected to cluster: {cluster_context}")
 
         # Run spread tests from manifest

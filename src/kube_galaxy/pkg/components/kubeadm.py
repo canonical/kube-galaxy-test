@@ -150,7 +150,7 @@ class Kubeadm(ClusterComponentBase):
                     self._update_init_config(config)
                 case "ClusterConfiguration":
                     self._update_cluster_config(config)
-        self._cluster_config = self.component_tmp_dir / "kubeadm-config.yaml"
+        self._cluster_config = self.component_dir / "temp/kubeadm-config.yaml"
 
         # Write config to temp file
         config_content = yaml.safe_dump_all(configs)
@@ -162,7 +162,7 @@ class Kubeadm(ClusterComponentBase):
 
     def init_cluster(self) -> None:
         """Bootstrap the initial control-plane on this unit."""
-        if not self._cluster_config or not self._cluster_config.exists():
+        if not self._cluster_config or not self.unit.path_exists(self._cluster_config):
             raise ComponentError("Cluster config not generated. Run configure hook first.")
         self.unit.run(
             ["kubeadm", "init", f"--config={self._cluster_config}"],
@@ -170,20 +170,11 @@ class Kubeadm(ClusterComponentBase):
         )
 
     def pull_kubeconfig(self) -> None:
-        """Pull kubeconfig from this unit to the orchestrator's ~/.kube/config."""
-        home = Path.home()
-        kube_dir = home / ".kube"
-        ensure_dir(kube_dir)
-        self.unit.run(
-            ["cp", "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
-            privileged=True,
-        )
-        owner = home.owner()
-        group = home.group()
-        self.unit.run(
-            ["chown", f"{owner}:{group}", str(kube_dir / "config")],
-            privileged=True,
-        )
+        """Pull kubeconfig from this unit to the orchestrator's /opt/kube-galaxy/.kube/config."""
+        orchestrator_kube_config = SystemPaths.local_kube_config()
+        ensure_dir(orchestrator_kube_config.parent)
+        self.unit.get("/etc/kubernetes/admin.conf", orchestrator_kube_config)
+        self.unit.put(orchestrator_kube_config, str(SystemPaths.kube_config()))
 
     def generate_join_token(self, role: NodeRole) -> str:
         """Generate a single-use join token on the control-plane unit."""
@@ -215,9 +206,9 @@ class Kubeadm(ClusterComponentBase):
 
         Checks cluster connectivity and waits for nodes/pods to be ready.
         """
-        verify_connectivity()
-        wait_for_nodes(timeout=300)
-        get_api_server_status(timeout=300)
+        verify_connectivity(self.unit)
+        wait_for_nodes(self.unit, timeout=300)
+        get_api_server_status(self.unit, timeout=300)
 
     def stop_hook(self) -> None:
         """
@@ -242,7 +233,7 @@ class Kubeadm(ClusterComponentBase):
 
         # Use base method to remove kubeconfig files
         kubeconfig_paths = [
-            Path.home() / ".kube" / "config",
+            SystemPaths.tests_root(),
             Path("/etc/kubernetes/admin.conf"),
             self._cluster_config,
         ]

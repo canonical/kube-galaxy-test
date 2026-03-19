@@ -15,6 +15,7 @@ from pathlib import Path
 
 from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CREDENTIALS_DIR = Path("/opt/kube-galaxy/credentials")

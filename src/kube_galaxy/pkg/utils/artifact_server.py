@@ -72,9 +72,19 @@ class ArtifactServer:
         advertise_host: str | None = None,
     ) -> None:
         self._port = port
-        self._advertise_host = advertise_host or socket.getfqdn()
+        self._advertise_host = advertise_host or self.detect_ip
         self._server: http.server.HTTPServer | None = None
         self._thread: threading.Thread | None = None
+
+    @property
+    def detect_ip(self) -> str:
+        """Detect the machine's primary IP address by connecting a UDP socket."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("1.1.1.1", 80))
+            return str(s.getsockname()[0])
+        finally:
+            s.close()
 
     @property
     def base_url(self) -> str:
