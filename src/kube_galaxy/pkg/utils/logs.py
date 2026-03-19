@@ -14,6 +14,7 @@ from kube_galaxy.pkg.utils.client import (
 )
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import info, section, success, warning
+from kube_galaxy.pkg.utils.paths import ensure_dir
 
 
 def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
@@ -30,7 +31,7 @@ def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
         ClusterError: If log collection fails
     """
     output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    ensure_dir(output_path)
 
     section("Collecting Kubernetes Logs")
 
@@ -93,7 +94,7 @@ def _collect_pod_logs(output_path: Path) -> None:
     info("Collecting pod logs...")
 
     pods_dir = output_path / "pods"
-    pods_dir.mkdir(exist_ok=True)
+    ensure_dir(pods_dir)
 
     try:
         # Get all pods
@@ -108,7 +109,7 @@ def _collect_pod_logs(output_path: Path) -> None:
             log_content = get_pod_logs(namespace, pod_name, tail=100)
 
             log_dir = pods_dir / namespace / pod_name
-            log_dir.mkdir(parents=True, exist_ok=True)
+            ensure_dir(log_dir)
             (log_dir / "logs.txt").write_text(log_content)
 
             pod_count += 1

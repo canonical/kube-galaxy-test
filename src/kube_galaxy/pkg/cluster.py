@@ -12,6 +12,7 @@ from kube_galaxy.pkg.units.provider import UnitProvider, provider_factory
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import run
 
 __all__ = ["setup_cluster", "teardown_cluster"]
@@ -58,9 +59,9 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
         _log_cluster_info("Setup", manifest, arch_info)
 
         # Create working directories
-        work_dir_path.mkdir(parents=True, exist_ok=True)
-        (work_dir_path / "components").mkdir(exist_ok=True)
-        (work_dir_path / "logs").mkdir(exist_ok=True)
+        ensure_dir(work_dir_path)
+        ensure_dir(work_dir_path / "components")
+        ensure_dir(work_dir_path / "logs")
 
         # Get components in dependency order
         configs = manifest.components

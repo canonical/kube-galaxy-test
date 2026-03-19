@@ -23,6 +23,7 @@ from kube_galaxy.pkg.utils.client import (
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.paths import ensure_dir
 
 
 @register_component("kubeadm")
@@ -172,7 +173,7 @@ class Kubeadm(ClusterComponentBase):
         """Pull kubeconfig from this unit to the orchestrator's ~/.kube/config."""
         home = Path.home()
         kube_dir = home / ".kube"
-        kube_dir.mkdir(exist_ok=True)
+        ensure_dir(kube_dir)
         self.unit.run(
             ["cp", "/etc/kubernetes/admin.conf", str(kube_dir / "config")],
             privileged=True,

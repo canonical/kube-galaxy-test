@@ -9,6 +9,7 @@ import shutil
 from typing import TYPE_CHECKING
 
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.paths import ensure_dir
 
 from ._base import _fetch_to_temp, _InstallStrategy
 
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 def _download(comp: ComponentBase) -> None:
     file_path = _fetch_to_temp(comp)
     if extracted_dir := comp.extracted_dir:
-        extracted_dir.mkdir(exist_ok=True)
+        ensure_dir(extracted_dir)
     else:
         raise ComponentError(
             f"{comp.name} does not have an extracted_dir. Ensure the component config specifies "

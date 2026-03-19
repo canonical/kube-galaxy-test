@@ -25,6 +25,7 @@ from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.components import install_binary, remove_binary
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.paths import ensure_dir
 
 
 class ComponentBase:
@@ -333,7 +334,7 @@ class ComponentBase:
             Path to the local staging directory (``component_tmp_dir``).
         """
         staging_dir = self.component_tmp_dir
-        staging_dir.mkdir(parents=True, exist_ok=True)
+        ensure_dir(staging_dir)
         return staging_dir
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:

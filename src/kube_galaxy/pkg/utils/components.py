@@ -15,6 +15,7 @@ from kube_galaxy.pkg.literals import Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.url import http_headers
 
 if TYPE_CHECKING:
@@ -43,7 +44,7 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
         ComponentError: If download fails or checksum mismatch
     """
 
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(dest.parent)
     if url.startswith("gh-artifact://"):
         gh_extract_artifact_file(url, dest)
         return

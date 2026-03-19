@@ -20,6 +20,7 @@ from kube_galaxy.pkg.manifest.validator import (
 from kube_galaxy.pkg.utils.client import create_namespace, delete_namespace, verify_connectivity
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError, run
 
 
@@ -50,7 +51,7 @@ def _setup_shared_kubeconfig() -> Generator[Path, None, None]:
     shared_kubeconfig = SystemPaths.tests_root() / "kubeconfig"
 
     # Ensure test root directory exists
-    SystemPaths.tests_root().mkdir(parents=True, exist_ok=True)
+    ensure_dir(SystemPaths.tests_root())
 
     try:
         info(f"Setting up shared kubeconfig from {source_kubeconfig}")
@@ -218,7 +219,7 @@ def _generate_orchestration_spread_yaml(
 
         # Write spread.yaml
         output_path = SystemPaths.tests_spread_yaml()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(output_path.parent)
         yaml.dump(content, output_path.open("w"), Dumper=SpreadYamlDumper)
         success(f"Generated: {output_path}")
         return list(suites.keys())
@@ -331,7 +332,7 @@ def _run_component_tests(
 
         # Component-specific directories
         log_dir = work_dir / "logs" / component.name
-        log_dir.mkdir(parents=True, exist_ok=True)
+        ensure_dir(log_dir)
         log_file = log_dir / "test-output.log"
 
         namespace = None
