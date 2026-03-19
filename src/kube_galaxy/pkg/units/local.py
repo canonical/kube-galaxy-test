@@ -112,3 +112,6 @@ class LocalUnit(Unit):
     def release(self) -> None:
         if _CREDENTIALS_DIR.exists():
             shutil.rmtree(_CREDENTIALS_DIR)
+
+    def wait_until_ready(self, timeout: float | None = None) -> None:
+        """Local unit is always ready; nothing to wait for."""

@@ -117,3 +117,18 @@ class Unit(ABC):
     @abstractmethod
     def release(self) -> None:
         """Remove credentials directory and clean up transient unit state."""
+
+    @abstractmethod
+    def wait_until_ready(self, timeout: float | None = None) -> None:
+        """Block until the unit agent is responsive.
+
+        Polls the unit with a simple command (``hostname``) until it exits
+        successfully, or until *timeout* seconds have elapsed.
+
+        Args:
+            timeout: Maximum seconds to wait.  ``None`` uses the default
+                ``Timeouts.UNIT_READY_TIMEOUT``.
+
+        Raises:
+            ClusterError: If the unit does not become ready within *timeout*.
+        """

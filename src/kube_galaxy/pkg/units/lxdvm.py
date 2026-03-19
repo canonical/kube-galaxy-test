@@ -6,12 +6,14 @@ LXD VMs run as root so the ``privileged`` flag is ignored.
 
 import subprocess
 import tempfile
+import time
 from functools import cached_property
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
+from kube_galaxy.pkg.literals import Timeouts
 from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
-from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
@@ -159,3 +161,25 @@ class LXDUnit(Unit):
 
     def release(self) -> None:
         self._lxc_exec(["rm", "-rf", _CREDENTIALS_DIR], check=False)
+
+    def wait_until_ready(self, timeout: float | None = None) -> None:
+        """Block until the LXD VM agent responds to ``hostname``.
+
+        LXD VMs start the guest agent asynchronously after the VM boots, so
+        ``lxc exec`` commands fail with exit code 255 ("VM agent isn't
+        currently running") for a short window after provisioning.  This
+        method polls until the agent is up or *timeout* elapses.
+        """
+        effective_timeout = Timeouts.UNIT_READY_TIMEOUT if timeout is None else timeout
+        deadline = time.monotonic() + effective_timeout
+        while True:
+            result = self._lxc_exec(["hostname"], check=False)
+            if result.returncode == 0:
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ClusterError(
+                    f"Timed out waiting for LXD unit '{self._name}' to become ready "
+                    f"after {effective_timeout:.0f}s"
+                )
+            time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))

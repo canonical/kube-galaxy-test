@@ -227,6 +227,10 @@ class Timeouts:
 
     TEST_EXECUTION_TIMEOUT_S = 900  # 15 minutes
 
+    # Unit readiness
+    UNIT_READY_TIMEOUT = 120  # 2 minutes — wait for VM agent to start
+    UNIT_READY_INTERVAL = 5  # seconds between liveness probes
+
 
 class FilePatterns:
     """File name patterns and extensions."""

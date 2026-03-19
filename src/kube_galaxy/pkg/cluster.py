@@ -68,6 +68,9 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
         # Provision the orchestrator unit via the manifest's provider
         provider = provider_factory(manifest)
         orchestrator = provider.provision(NodeRole.CONTROL_PLANE, 0)
+        info("Waiting for orchestrator unit to become ready...")
+        orchestrator.wait_until_ready()
+        info(f"Orchestrator unit '{orchestrator.name}' is ready")
 
         # Create all component resources
         resources: dict[str, ComponentBase] = {}

@@ -69,6 +69,9 @@ class MockUnit(Unit):
     def release(self):  # type: ignore[override]
         pass
 
+    def wait_until_ready(self, timeout: float | None = None) -> None:  # type: ignore[override]
+        pass
+
 
 @pytest.fixture
 def mock_unit() -> MockUnit:

@@ -8,7 +8,7 @@ import pytest
 from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
 from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.units.lxdvm import LXDUnit
-from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
 # ---------------------------------------------------------------------------
 # RunResult and SiteCredential dataclasses
@@ -298,3 +298,90 @@ def test_lxd_unit_implements_unit_abc():
     # If LXDUnit is missing any abstract method, this will raise TypeError
     unit = LXDUnit("abc")
     assert isinstance(unit, Unit)
+
+
+# ---------------------------------------------------------------------------
+# LocalUnit.wait_until_ready — no-op
+# ---------------------------------------------------------------------------
+
+
+def test_local_unit_wait_until_ready_is_noop():
+    """LocalUnit.wait_until_ready() returns immediately without error."""
+    u = LocalUnit()
+    u.wait_until_ready()  # must not raise
+    u.wait_until_ready(timeout=60)  # also no-op with explicit timeout
+
+
+# ---------------------------------------------------------------------------
+# LXDUnit.wait_until_ready — retry / timeout behaviour
+# ---------------------------------------------------------------------------
+
+
+def test_lxd_unit_wait_until_ready_returns_immediately_when_agent_up(monkeypatch):
+    """wait_until_ready() returns immediately if hostname succeeds on first try."""
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return type("R", (), {"returncode": 0, "stdout": "my-host\n", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
+
+    unit = LXDUnit("test-vm")
+    unit.wait_until_ready(timeout=30)
+
+    # Only one lxc exec call was needed
+    assert len(calls) == 1
+    assert "hostname" in calls[0]
+
+
+def test_lxd_unit_wait_until_ready_zero_timeout_succeeds_if_ready(monkeypatch):
+    """wait_until_ready(timeout=0) returns immediately when agent responds."""
+
+    def fake_run(cmd, **kwargs):
+        return type("R", (), {"returncode": 0, "stdout": "my-host\n", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
+
+    unit = LXDUnit("test-vm")
+    unit.wait_until_ready(timeout=0)  # must not raise
+
+
+def test_lxd_unit_wait_until_ready_retries_on_failure(monkeypatch):
+    """wait_until_ready() retries when lxc exec returns non-zero."""
+    attempt = {"count": 0}
+
+    def fake_run(cmd, **kwargs):
+        if "hostname" in cmd:
+            attempt["count"] += 1
+            # Fail the first two times, succeed on the third
+            rc = 0 if attempt["count"] >= 3 else 255
+            stderr = "VM agent isn't running"
+            return type("R", (), {"returncode": rc, "stdout": "", "stderr": stderr})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
+    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.time.sleep", lambda _: None)
+
+    unit = LXDUnit("test-vm")
+    unit.wait_until_ready(timeout=60)
+
+    assert attempt["count"] == 3
+
+
+def test_lxd_unit_wait_until_ready_raises_on_timeout(monkeypatch):
+    """wait_until_ready() raises ClusterError when the timeout elapses."""
+
+    def fake_run(cmd, **kwargs):
+        stderr = "VM agent isn't running"
+        return type("R", (), {"returncode": 255, "stdout": "", "stderr": stderr})()
+
+    # Simulate time passing: first call returns t=0, subsequent return t=deadline+1
+    times = iter([0.0, 0.0, 200.0])
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
+    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.time.sleep", lambda _: None)
+
+    unit = LXDUnit("test-vm")
+    with pytest.raises(ClusterError, match="Timed out waiting for LXD unit"):
+        unit.wait_until_ready(timeout=120)

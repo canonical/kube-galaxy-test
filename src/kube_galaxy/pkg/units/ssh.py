@@ -1,12 +1,14 @@
 """SSHUnit  executes operations on a pre-existing host via SSH/SCP."""
 
 import subprocess
+import time
 from functools import cached_property
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
+from kube_galaxy.pkg.literals import Timeouts
 from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
-from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
@@ -146,3 +148,19 @@ class SSHUnit(Unit):
 
     def release(self) -> None:
         self._ssh_run(["rm", "-rf", _CREDENTIALS_DIR], check=False)
+
+    def wait_until_ready(self, timeout: float | None = None) -> None:
+        """Block until the SSH host responds to ``hostname``."""
+        effective_timeout = Timeouts.UNIT_READY_TIMEOUT if timeout is None else timeout
+        deadline = time.monotonic() + effective_timeout
+        while True:
+            result = self._ssh_run(["hostname"], check=False)
+            if result.returncode == 0:
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ClusterError(
+                    f"Timed out waiting for SSH unit '{self._unit_name}' to become ready "
+                    f"after {effective_timeout:.0f}s"
+                )
+            time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
