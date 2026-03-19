@@ -21,7 +21,23 @@ class UnitProvider(ABC):
 
     @abstractmethod
     def provision(self, role: NodeRole, index: int) -> Unit:
-        """Provision (or locate) a machine for the given role and index."""
+        """Provision a new machine for the given role and index."""
+
+    @abstractmethod
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        """Return a Unit referencing an already-provisioned machine.
+
+        Unlike ``provision``, this must not create or launch any infrastructure.
+        It is used during teardown to reattach to machines that were created
+        during a prior ``provision`` call.
+
+        Args:
+            role: Node role (control-plane or worker).
+            index: Zero-based index within that role.
+
+        Returns:
+            A Unit pointing at the existing machine.
+        """
 
     @abstractmethod
     def deprovision(self, unit: Unit) -> None:
@@ -39,10 +55,16 @@ class LocalUnitProvider(UnitProvider):
     def is_ephemeral(self) -> bool:
         return False
 
-    def provision(self, role: NodeRole, index: int) -> Unit:
+    def _make_local_unit(self) -> Unit:
         from kube_galaxy.pkg.units.local import LocalUnit  # noqa: PLC0415
 
         return LocalUnit()
+
+    def provision(self, role: NodeRole, index: int) -> Unit:
+        return self._make_local_unit()
+
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        return self._make_local_unit()
 
     def deprovision(self, unit: Unit) -> None:
         pass  # local machine is never deprovisioned
@@ -81,6 +103,15 @@ class LXDUnitProvider(UnitProvider):
         self._units.append(unit)
         return unit
 
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        from kube_galaxy.pkg.units.lxdvm import LXDUnit  # noqa: PLC0415
+
+        name = f"kube-galaxy-{role.value}-{index}"
+        unit: Unit = LXDUnit(name)
+        if not any(u.name == name for u in self._units):
+            self._units.append(unit)
+        return unit
+
     def deprovision(self, unit: Unit) -> None:
         import subprocess  # noqa: PLC0415
 
@@ -107,6 +138,12 @@ class SSHUnitProvider(UnitProvider):
         return False
 
     def provision(self, role: NodeRole, index: int) -> Unit:
+        from kube_galaxy.pkg.units.ssh import SSHUnit  # noqa: PLC0415
+
+        host = self._hosts[index]
+        return SSHUnit(host=host, unit_name=f"{role.value}-{index}")
+
+    def locate(self, role: NodeRole, index: int) -> Unit:
         from kube_galaxy.pkg.units.ssh import SSHUnit  # noqa: PLC0415
 
         host = self._hosts[index]
@@ -149,6 +186,15 @@ class MultipassUnitProvider(UnitProvider):
         self._units.append(unit)
         return unit
 
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        from kube_galaxy.pkg.units.multipass import MultipassUnit  # noqa: PLC0415
+
+        name = f"kube-galaxy-{role.value}-{index}"
+        unit: Unit = MultipassUnit(name)
+        if not any(u.name == name for u in self._units):
+            self._units.append(unit)
+        return unit
+
     def deprovision(self, unit: Unit) -> None:
         import subprocess  # noqa: PLC0415
 
@@ -167,8 +213,8 @@ class MultipassUnitProvider(UnitProvider):
 def provider_factory(manifest: Manifest) -> UnitProvider:
     """Create the appropriate ``UnitProvider`` from a manifest's ``provider`` block.
 
-    Defaults to ``LocalUnitProvider`` when no ``provider`` block is present
-    or when ``provider.type`` is ``"local"``.
+    Defaults to ``LXDUnitProvider`` when no ``provider`` block is present
+    (``provider.type`` defaults to ``"lxd"``).
     """
     cfg: ProviderConfig = manifest.provider
     match cfg.type:

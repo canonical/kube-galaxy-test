@@ -7,7 +7,8 @@ from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.components import ComponentBase, find_component
 from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NodeRole
+from kube_galaxy.pkg.units.provider import UnitProvider, provider_factory
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
@@ -64,11 +65,15 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
         # Get components in dependency order
         configs = manifest.components
 
+        # Provision the orchestrator unit via the manifest's provider
+        provider = provider_factory(manifest)
+        orchestrator = provider.provision(NodeRole.CONTROL_PLANE, 0)
+
         # Create all component resources
         resources: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = find_component(config.name)
-            resource = component_class(resources, manifest, config, arch_info)
+            resource = component_class(resources, manifest, config, arch_info, unit=orchestrator)
             resources[config.name] = resource
 
         # Execute 6-stage lifecycle
@@ -117,11 +122,15 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         # Get components in dependency order, then reverse for teardown
         configs = list(reversed(manifest.components))
 
+        # Locate the orchestrator unit via the manifest's provider (no new provisioning)
+        provider = provider_factory(manifest)
+        orchestrator = provider.locate(NodeRole.CONTROL_PLANE, 0)
+
         # Create all component resources
         resources: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = find_component(config.name)
-            resource = component_class(resources, manifest, config, arch_info)
+            resource = component_class(resources, manifest, config, arch_info, unit=orchestrator)
             resources[config.name] = resource
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
@@ -130,6 +139,9 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         for idx, hook in enumerate(TeardownHooks):
             section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
             _run_hook(resources_list, configs, hook.value, force, parallel=hook.is_parallel)
+
+        # Deprovision all nodes (no-op for non-ephemeral providers)
+        _deprovision(provider, force)
 
         # Final cleanup: remove any remaining kube-galaxy alternatives
         _cleanup_kube_galaxy_alternatives(force)
@@ -192,6 +204,29 @@ def _run_hook(
                 exception(f"  ✗ {message}", exc)
                 if not force:
                     raise ClusterError(message) from exc
+
+
+def _deprovision(provider: UnitProvider, force: bool) -> None:
+    """Deprovision all units managed by the provider.
+
+    For ephemeral providers (LXD, Multipass) this destroys the VMs.
+    For non-ephemeral providers (local, SSH) this is a no-op.
+
+    Args:
+        provider: The active UnitProvider.
+        force: Continue even if deprovisioning encounters errors.
+    """
+    if not provider.is_ephemeral:
+        return
+    info("  Deprovisioning cluster nodes...")
+    try:
+        provider.deprovision_all()
+        info("  All nodes deprovisioned")
+    except Exception as exc:
+        if force:
+            exception("  Warning: deprovisioning encountered errors (continuing)", exc)
+        else:
+            raise
 
 
 def _cleanup_kube_galaxy_alternatives(force: bool) -> None:
