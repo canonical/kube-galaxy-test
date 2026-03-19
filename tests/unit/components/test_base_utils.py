@@ -244,8 +244,10 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
 
 
 def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
+    mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
+        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info,
+        unit=mock_unit,
     )
     # redirect component temp dir to test tmp_path to avoid /opt writes
     monkeypatch.setattr(
@@ -255,10 +257,18 @@ def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
     )
 
     p = comp.component_tmp_dir
-    # ensure_temp_dir should create the temp dir under tmp_path
+    # ensure_temp_dir should create the temp dir under tmp_path locally…
     ret = comp.ensure_temp_dir()
     assert str(ret) == str(p)
     assert ret.exists()
+    # …and also run mkdir -p on the unit with privileged=True
+    mkdir_calls = [
+        (cmd, kwargs)
+        for cmd, kwargs in mock_unit.run_calls
+        if "mkdir" in cmd and "-p" in cmd and str(p) in cmd
+    ]
+    assert mkdir_calls, "expected mkdir -p call on unit"
+    assert all(kwargs.get("privileged") for _, kwargs in mkdir_calls)
 
 
 def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, arch_info):

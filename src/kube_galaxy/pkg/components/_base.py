@@ -312,11 +312,16 @@ class ComponentBase:
         """
         Ensure component temp directory exists and return path.
 
+        The directory is created both locally (for staging temporary files
+        before they are pushed to the unit) and on the unit itself (so that
+        operations running directly on the unit can also use it).
+
         Returns:
             Path to component temp directory
         """
         temp_dir = self.component_tmp_dir
         temp_dir.mkdir(parents=True, exist_ok=True)
+        self.unit.run(["mkdir", "-p", str(temp_dir)], privileged=True)
         return temp_dir
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
