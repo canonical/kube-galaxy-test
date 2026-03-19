@@ -116,12 +116,12 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         )
         networking.append(net_config)
 
-    # Parse provider (optional; defaults to local)
+    # Parse provider (optional; defaults to lxd)
     provider_data = data.get("provider", {})
     if not isinstance(provider_data, dict):
         raise ValueError("'provider' must be a dictionary")
     provider = ProviderConfig(
-        type=provider_data.get("type", "local"),
+        type=provider_data.get("type", "lxd"),
         image=provider_data.get("image", "ubuntu:24.04"),
         hosts=provider_data.get("hosts", []),
     )

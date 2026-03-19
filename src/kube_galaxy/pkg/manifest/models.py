@@ -85,11 +85,11 @@ class TestConfig:
 class ProviderConfig:
     """Provider configuration for cluster nodes.
 
-    Defaults to ``type: local`` when the ``provider`` block is absent from a
-    manifest, preserving backward-compatible single-node behaviour.
+    Defaults to ``type: lxd`` when the ``provider`` block is absent from a
+    manifest.
     """
 
-    type: str = "local"  # local | lxd | multipass | ssh
+    type: str = "lxd"  # local | lxd | multipass | ssh
     image: str = "ubuntu:24.04"  # base image for lxd / multipass providers
     hosts: list[str] = field(default_factory=list)  # pre-existing hosts for ssh provider
 
