@@ -10,11 +10,12 @@ from kube_galaxy.pkg.units._base import RunResult, Unit
 
 @dataclass
 class MockUnit(Unit):
-    """Test double for Unit — records run() calls and returns configurable results."""
+    """Test double for Unit — records run() and put() calls and returns configurable results."""
 
     _name: str = "mock"
     _run_results: list[RunResult] = field(default_factory=list)
     run_calls: list[tuple[list[str], dict]] = field(default_factory=list)
+    put_calls: list[tuple[object, str]] = field(default_factory=list)
 
     @property
     def name(self) -> str:
@@ -45,7 +46,7 @@ class MockUnit(Unit):
         self._run_results = list(results)
 
     def put(self, local, remote):  # type: ignore[override]
-        pass
+        self.put_calls.append((local, remote))
 
     def get(self, remote, local):  # type: ignore[override]
         pass

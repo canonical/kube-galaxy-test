@@ -89,9 +89,7 @@ def _image_import_and_retag(cluster_manager: ClusterComponentBase, image: Compon
     for img in new_images:
         if to_tag := cluster_manager.find_image_retag(img):
             info(f"    Retag imported image: {img} -> {to_tag}")
-            image.unit.run(
-                ["ctr", "-n", "k8s.io", "images", "tag", img, to_tag], privileged=True
-            )
+            image.unit.run(["ctr", "-n", "k8s.io", "images", "tag", img, to_tag], privileged=True)
         else:
             info(f"    No retag found for imported image: {img}")
 

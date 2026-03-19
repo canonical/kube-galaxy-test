@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from kube_galaxy.pkg.components.kubelet import Kubelet
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
@@ -40,7 +38,8 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
     config = ComponentConfig(name="kubelet", category="k8s", release="v1", installation=install)
 
     mock_unit = MockUnit()
-    # Queue results for: mkdir, cp, daemon-reload, mkdir, cp, chmod (systemd service writes)
+    # Queue results for: ensure_temp_dir mkdir, mkdir target_dir, daemon-reload (service write)
+    # plus ensure_temp_dir mkdir, mkdir parent, chmod (config file write)
     for _ in range(10):
         mock_unit._run_results.append(RunResult(0, "", ""))
 
@@ -54,17 +53,11 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
         lambda url: ExampleResp(b"ExecStart=/usr/bin/kubelet\n"),
     )
 
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # redirect staging root to test tmp_path to avoid cwd writes
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     # Call configure hook
     comp.configure_hook()
 
-    # Expect cp to be called to copy temp service file to system location
-    temp_service = comp.component_tmp_dir / "kubelet.service"
-    cp_calls = [c for c, _ in mock_unit.run_calls if "cp" in c and str(temp_service) in c]
-    assert len(cp_calls) >= 1
+    # Expect the service file to be pushed to the unit via put()
+    assert mock_unit.put_calls, "expected unit.put() call for service file"

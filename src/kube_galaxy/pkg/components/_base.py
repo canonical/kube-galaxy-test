@@ -6,7 +6,6 @@ override the lifecycle hooks they need.
 """
 
 import shutil
-import tempfile
 from abc import abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
@@ -236,17 +235,17 @@ class ComponentBase:
     @property
     def component_tmp_dir(self) -> Path:
         """
-        Get the component's local staging directory.
+        Get the component's local staging directory on the orchestrator.
 
-        This is a user-writable directory on the orchestrator host used to
-        stage files (downloads, generated configs) before pushing them to the
-        unit.  It lives under :func:`tempfile.gettempdir` so that no root
-        access is required on the orchestrator.
+        Lives at ``cwd()/tmp/opt/kube-galaxy/{name}/temp`` — user-writable and
+        consistent across kube-galaxy invocations.  It mirrors the component's
+        temp directory on the unit (``/opt/kube-galaxy/{name}/temp``); the unit
+        path is derived by stripping the ``cwd()/tmp`` staging-root prefix.
 
         Returns:
-            Path to <tmp>/kube-galaxy/{self.name}/
+            Path to cwd()/tmp/opt/kube-galaxy/{self.name}/temp
         """
-        return Path(tempfile.gettempdir()) / "kube-galaxy" / self.name
+        return SystemPaths.local_component_temp_dir(self.name)
 
     @property
     def extracted_dir(self) -> Path | None:
@@ -263,9 +262,7 @@ class ComponentBase:
         Remove all alternatives for binaries in this component's bin directory.
         """
         component_bin_dir = SystemPaths.component_bin_dir(self.name)
-        result = self.unit.run(
-            ["ls", str(component_bin_dir)], privileged=True, check=False
-        )
+        result = self.unit.run(["ls", str(component_bin_dir)], privileged=True, check=False)
         if result.returncode == 0:
             for binary_name in result.stdout.split():
                 binary_path = component_bin_dir / binary_name
@@ -299,12 +296,11 @@ class ComponentBase:
         # Remove update-alternatives entries for this component
         self.remove_component_alternatives()
 
+        # extracted_dir is a local staging directory — clean it up locally
         if self.extracted_dir and self.extracted_dir.exists():
-            self.unit.run(
-                ["rm", "-rf", str(self.extracted_dir)], privileged=True, check=False
-            )
+            shutil.rmtree(self.extracted_dir, ignore_errors=True)
 
-        # Remove component directory (binaries)
+        # Remove component directory (binaries) on the unit
         self.cleanup_component_dir()
 
     def post_delete_hook(self) -> None:
@@ -324,20 +320,21 @@ class ComponentBase:
 
         Two directories are created:
 
-        1. A **local staging directory** (user-writable, under
-           :func:`tempfile.gettempdir`) for files that the orchestrator needs
-           to prepare before pushing them to the unit.
+        1. A **local staging directory** at
+           ``cwd()/tmp/opt/kube-galaxy/<name>/temp`` on the orchestrator
+           (user-writable, no root required).
         2. A **unit-side temp directory** at
-           ``/opt/kube-galaxy/<name>/temp`` on the unit (created via
-           ``unit.run``, which may use root on the unit).
+           ``/opt/kube-galaxy/<name>/temp`` on the unit, derived by stripping
+           the ``cwd()/tmp`` staging-root prefix from the local path (so the
+           two paths always mirror each other).
 
         Returns:
             Path to the local staging directory (``component_tmp_dir``).
         """
         staging_dir = self.component_tmp_dir
         staging_dir.mkdir(parents=True, exist_ok=True)
-        unit_temp_dir = SystemPaths.component_temp_dir(self.name)
-        self.unit.run(["mkdir", "-p", str(unit_temp_dir)], privileged=True)
+        unit_dir = "/" + str(staging_dir.relative_to(SystemPaths.staging_root()))
+        self.unit.run(["mkdir", "-p", unit_dir], privileged=True)
         return staging_dir
 
     def install_downloaded_binary(self, binary_path: Path, binary_name: str | None = None) -> str:
@@ -465,8 +462,8 @@ class ComponentBase:
         """
         Remove the installed binary if it exists.
         """
-        if self.install_path and Path(self.install_path).exists():
-            Path(self.install_path).unlink()
+        if self.install_path:
+            self.unit.run(["rm", "-f", self.install_path], privileged=True, check=False)
             info(f"Removed {self.name} binary: {self.install_path}")
 
 

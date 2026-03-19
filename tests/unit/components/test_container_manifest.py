@@ -54,12 +54,8 @@ def component(
     tmp_path,
 ):
     """Create a ComponentBase instance with mocked temp directory."""
-    # Redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # Redirect staging root to test tmp_path to avoid cwd writes
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
     return ComponentBase({}, manifest, calico_config, arch_info)
 
 
@@ -289,8 +285,8 @@ metadata:
     mock_unit = MockUnit()
     mock_unit.set_run_results(
         RunResult(0, manifest_content, ""),  # dry-run result
-        RunResult(0, "", ""),                # rollout status for Deployment
-        RunResult(0, "", ""),                # rollout status for DaemonSet
+        RunResult(0, "", ""),  # rollout status for Deployment
+        RunResult(0, "", ""),  # rollout status for DaemonSet
     )
     component.unit = mock_unit  # type: ignore[assignment]
 
@@ -313,14 +309,24 @@ metadata:
     deployment_calls = [c for c in rollout_calls if "deployment" in " ".join(c)]
     assert len(deployment_calls) == 1
     assert deployment_calls[0] == [
-        "kubectl", "rollout", "status", "deployment/calico-kube-controllers", "-n", "kube-system",
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/calico-kube-controllers",
+        "-n",
+        "kube-system",
     ]
 
     # Check daemonset rollout
     daemonset_calls = [c for c in rollout_calls if "daemonset" in " ".join(c)]
     assert len(daemonset_calls) == 1
     assert daemonset_calls[0] == [
-        "kubectl", "rollout", "status", "daemonset/calico-node", "-n", "kube-system",
+        "kubectl",
+        "rollout",
+        "status",
+        "daemonset/calico-node",
+        "-n",
+        "kube-system",
     ]
 
 
@@ -350,7 +356,12 @@ metadata:
     rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c and "status" in c]
     assert len(rollout_calls) == 1
     assert rollout_calls[0] == [
-        "kubectl", "rollout", "status", "deployment/my-deployment", "-n", "default",
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/my-deployment",
+        "-n",
+        "default",
     ]
 
 
@@ -432,5 +443,10 @@ metadata:
     rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c and "status" in c]
     assert len(rollout_calls) == 1
     assert rollout_calls[0] == [
-        "kubectl", "rollout", "status", "statefulset/my-statefulset", "-n", "test-ns",
+        "kubectl",
+        "rollout",
+        "status",
+        "statefulset/my-statefulset",
+        "-n",
+        "test-ns",
     ]

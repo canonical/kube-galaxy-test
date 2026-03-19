@@ -3,7 +3,6 @@ Utilities for component installation and management.
 """
 
 import hashlib
-import shutil
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -111,25 +110,30 @@ def install_binary(
     unit: "Unit",
 ) -> str:
     """
-    Install a binary to component directory and register with update-alternatives.
+    Install a binary to the component directory on the unit and register with
+    update-alternatives.
+
+    The binary is pushed from the local staging path to the unit via
+    ``unit.put()``.  All directory creation, permission setting, and
+    update-alternatives registration are performed on the unit via
+    ``unit.run()``.  No root access is required on the orchestrator.
 
     Args:
-        binary_path: Path to the binary
+        binary_path: Local path to the binary (in orchestrator staging area)
         binary_name: Name of the binary (e.g., 'containerd')
         component_name: Component name for directory structure
-        unit: Unit to run privileged commands on
+        unit: Unit to install onto
 
     Raises:
         ComponentError: If installation fails
     """
-    # Use component-specific directory
     dest_dir = SystemPaths.component_bin_dir(component_name)
+    dest_path = dest_dir / binary_name
     try:
-        # Create directory and install binary (local operations — no privilege needed)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest_path = dest_dir / binary_name
-        shutil.copyfile(binary_path, dest_path)
-        dest_path.chmod(0o755)
+        # Create directory and install binary on the unit
+        unit.run(["mkdir", "-p", str(dest_dir)], privileged=True, check=True)
+        unit.put(binary_path, str(dest_path))
+        unit.run(["chmod", "755", str(dest_path)], privileged=True, check=True)
 
         # Register with update-alternatives (requires elevated privileges)
         alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
@@ -152,22 +156,21 @@ def install_binary(
 
 def remove_binary(binary_path: Path, unit: "Unit") -> None:
     """
-    Remove a binary from a directory.
+    Remove a binary and its update-alternatives entry from the unit.
 
     Args:
-        binary_path: Path to the binary to remove
+        binary_path: Path to the binary on the unit
         unit: Unit to run privileged commands on
     """
-    if binary_path.is_file():
-        try:
-            unit.run(
-                ["update-alternatives", "--remove", binary_path.name, str(binary_path)],
-                privileged=True,
-                check=False,
-            )  # Don't fail if alternative doesn't exist
-            binary_path.unlink()
-        except Exception:
-            pass  # Ignore errors during cleanup
+    try:
+        unit.run(
+            ["update-alternatives", "--remove", binary_path.name, str(binary_path)],
+            privileged=True,
+            check=False,
+        )
+        unit.run(["rm", "-f", str(binary_path)], privileged=True, check=False)
+    except Exception:
+        pass  # Ignore errors during cleanup
 
 
 def format_component_pattern(

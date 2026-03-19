@@ -141,9 +141,7 @@ class Kubeadm(ClusterComponentBase):
         if not self.manifest:
             raise ComponentError("Manifest required for kubeadm bootstrap")
 
-        result = self.unit.run(
-            ["kubeadm", "config", "print", "init-defaults"], check=True
-        )
+        result = self.unit.run(["kubeadm", "config", "print", "init-defaults"], check=True)
         configs = list(yaml.safe_load_all(result.stdout))
         for config in configs:
             match config.get("kind"):

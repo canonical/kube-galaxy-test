@@ -72,18 +72,40 @@ class SystemPaths:
 
     @classmethod
     def component_dir(cls, component_name: str) -> Path:
-        """Get component-specific directory path."""
+        """Get component-specific directory path (on unit)."""
         return Path(cls.KUBE_GALAXY_ROOT) / component_name
 
     @classmethod
     def component_bin_dir(cls, component_name: str) -> Path:
-        """Get component bin directory path."""
+        """Get component bin directory path (on unit)."""
         return cls.component_dir(component_name) / cls.KUBE_GALAXY_BIN_SUFFIX
 
     @classmethod
     def component_temp_dir(cls, component_name: str) -> Path:
-        """Get component temp directory path."""
+        """Get component temp directory path (on unit)."""
         return cls.component_dir(component_name) / cls.KUBE_GALAXY_TEMP_SUFFIX
+
+    @classmethod
+    def staging_root(cls) -> Path:
+        """Local staging root on the orchestrator host.
+
+        Lives at ``cwd()/tmp`` — user-writable, consistent across invocations,
+        and gitignored.  The sub-tree mirrors the unit's path hierarchy:
+
+            cwd()/tmp/opt/kube-galaxy/<comp>/temp
+            ↕  (strip cwd()/tmp prefix to get the unit path)
+            /opt/kube-galaxy/<comp>/temp
+        """
+        return Path.cwd() / "tmp"
+
+    @classmethod
+    def local_component_temp_dir(cls, component_name: str) -> Path:
+        """Get component local staging temp directory on the orchestrator.
+
+        Mirrors :meth:`component_temp_dir` under :meth:`staging_root`.
+        """
+        unit_temp = cls.component_temp_dir(component_name)
+        return cls.staging_root() / unit_temp.relative_to("/")
 
     @classmethod
     def tests_root(cls) -> Path:

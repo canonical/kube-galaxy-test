@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from kube_galaxy.pkg.cluster import teardown_cluster
-from kube_galaxy.pkg.literals import FilePatterns, TestDirectories
+from kube_galaxy.pkg.literals import FilePatterns, SystemPaths, TestDirectories
 from kube_galaxy.pkg.utils.logging import error, info, section, success
 
 
@@ -40,6 +40,15 @@ def cleanup_files() -> None:
             info(f"Removed file: {log_file}")
         except Exception as e:
             error(f"Failed to remove {log_file}: {e}")
+
+    # Remove the local orchestrator staging tree (cwd/tmp)
+    staging = SystemPaths.staging_root()
+    if staging.exists():
+        try:
+            shutil.rmtree(staging)
+            info(f"Removed staging directory: {staging}")
+        except Exception as e:
+            error(f"Failed to remove staging directory {staging}: {e}")
 
     success("File cleanup completed!")
 

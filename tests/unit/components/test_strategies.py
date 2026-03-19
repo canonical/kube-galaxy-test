@@ -61,11 +61,7 @@ def _make_component(
     manifest = _make_manifest()
 
     if monkeypatch is not None and tmp_path is not None:
-        monkeypatch.setattr(
-            SystemPaths,
-            "component_temp_dir",
-            classmethod(lambda cls, n: Path(tmp_path) / n / "temp"),
-        )
+        monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     ai = arch_info if arch_info is not None else get_arch_info()
     return ComponentBase({}, manifest, config, ai)
@@ -712,11 +708,7 @@ def _make_manifest_component(
     config = ComponentConfig(name="calico", category="cni", release="3.30.0", installation=install)
     manifest = _make_manifest()
 
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, n: Path(tmp_path) / n / "temp"),
-    )
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
     return ComponentBase({}, manifest, config, arch_info)
 
 
@@ -839,11 +831,7 @@ def _make_spread_component(
     )
     manifest = _make_manifest()
 
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, n: Path(tmp_path) / n / "temp"),
-    )
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
     monkeypatch.setattr(
         SystemPaths,
         "tests_root",

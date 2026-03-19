@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
@@ -246,28 +245,30 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
 def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info,
+        {},
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        make_config(),
+        arch_info,
         unit=mock_unit,
     )
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # Redirect staging root to tmp_path so no writes outside the test sandbox
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
+    # component_tmp_dir = staging_root / "opt/kube-galaxy/<name>/temp"
     p = comp.component_tmp_dir
-    # ensure_temp_dir should create the temp dir under tmp_path locally…
     ret = comp.ensure_temp_dir()
-    assert str(ret) == str(p)
+    assert ret == p
     assert ret.exists()
-    # …and also run mkdir -p on the unit with privileged=True
+
+    # ensure_temp_dir must run mkdir -p for the corresponding unit path on the unit
+    # unit path = "/" + str(local_path.relative_to(staging_root))
+    expected_unit_dir = "/" + str(p.relative_to(tmp_path))
     mkdir_calls = [
         (cmd, kwargs)
         for cmd, kwargs in mock_unit.run_calls
-        if "mkdir" in cmd and "-p" in cmd and str(p) in cmd
+        if "mkdir" in cmd and "-p" in cmd and expected_unit_dir in cmd
     ]
-    assert mkdir_calls, "expected mkdir -p call on unit"
+    assert mkdir_calls, f"expected mkdir -p {expected_unit_dir!r} on unit"
     assert all(kwargs.get("privileged") for _, kwargs in mkdir_calls)
 
 
@@ -293,36 +294,43 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
 def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info,
+        {},
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        make_config(),
+        arch_info,
         unit=mock_unit,
     )
 
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # Redirect staging root to tmp_path so no writes outside the test sandbox
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     service_name = "svc"
     content = "[Unit]\nDescription=svc"
     comp.create_systemd_service(service_name, content, system_location=False)
-    # Expect cp calls recorded via mock unit
+    # File is pushed via unit.put(), not via unit.run(cp ...)
+    assert any(service_name in str(dest) for _, dest in mock_unit.put_calls), (
+        "expected unit.put() call for the service file"
+    )
     recorded_cmds = [c[0] for c in mock_unit.run_calls]
-    assert any("cp" in cmd for cmd in recorded_cmds)
+    assert not any("cp" in cmd for cmd in recorded_cmds), "expected no cp commands on unit"
+    assert any("systemctl" in cmd for cmd in recorded_cmds)
 
     # test write_config_file
     mock_unit.run_calls.clear()
+    mock_unit.put_calls.clear()
     comp.write_config_file("cfg", str(tmp_path / "cfgfile"))
+    assert mock_unit.put_calls, "expected unit.put() call for the config file"
     recorded_cmds = [c[0] for c in mock_unit.run_calls]
-    assert any("cp" in cmd for cmd in recorded_cmds)
     assert any("chmod" in cmd for cmd in recorded_cmds)
 
 
 def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info,
+        {},
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        make_config(),
+        arch_info,
         unit=mock_unit,
     )
 
@@ -338,9 +346,11 @@ def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp
     recorded_cmds = [c[0] for c in mock_unit.run_calls]
     assert any("rm" in cmd for cmd in recorded_cmds)
 
-    # test remove_installed_binary actually deletes file
-    b = tmp_path / "binfile"
-    b.write_text("x")
-    comp.install_path = str(b)
+    # test remove_installed_binary: should call unit.run(rm -f ...) not local unlink
+    mock_unit.run_calls.clear()
+    comp.install_path = "/usr/local/bin/example"
     comp.remove_installed_binary()
-    assert not b.exists()
+    assert any(
+        "rm" in cmd and "-f" in cmd and "/usr/local/bin/example" in cmd
+        for cmd in [c[0] for c in mock_unit.run_calls]
+    ), "expected unit.run(rm -f ...) for remove_installed_binary"

@@ -89,9 +89,7 @@ class SSHUnit(Unit):
             check=False,
         )
         if result.returncode != 0:
-            raise ComponentError(
-                f"Failed to scp {local} to {self._host}:{remote}: {result.stderr}"
-            )
+            raise ComponentError(f"Failed to scp {local} to {self._host}:{remote}: {result.stderr}")
 
     def get(self, remote: str, local: Path) -> None:
         local.parent.mkdir(parents=True, exist_ok=True)
@@ -102,9 +100,7 @@ class SSHUnit(Unit):
             check=False,
         )
         if result.returncode != 0:
-            raise ComponentError(
-                f"Failed to scp {self._host}:{remote} to {local}: {result.stderr}"
-            )
+            raise ComponentError(f"Failed to scp {self._host}:{remote} to {local}: {result.stderr}")
 
     def download(self, url: str, dest: str) -> None:
         hostname = url.split("/")[2] if "://" in url else ""

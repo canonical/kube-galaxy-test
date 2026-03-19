@@ -139,9 +139,7 @@ def test_local_unit_download_delegates(monkeypatch, tmp_path):
         dest.write_bytes(b"data")
 
     # download_file is imported lazily inside the method; patch in the utils module
-    monkeypatch.setattr(
-        "kube_galaxy.pkg.utils.components.download_file", fake_download_file
-    )
+    monkeypatch.setattr("kube_galaxy.pkg.utils.components.download_file", fake_download_file)
 
     u = LocalUnit()
     dest = str(tmp_path / "file.tar.gz")
@@ -166,9 +164,7 @@ def test_local_unit_extract_delegates(monkeypatch, tmp_path):
         calls.append((archive, dest))
 
     # extract_archive is imported lazily inside the method; patch in the utils module
-    monkeypatch.setattr(
-        "kube_galaxy.pkg.utils.components.extract_archive", fake_extract_archive
-    )
+    monkeypatch.setattr("kube_galaxy.pkg.utils.components.extract_archive", fake_extract_archive)
 
     u = LocalUnit()
     archive = str(tmp_path / "foo.tar.gz")
@@ -234,8 +230,8 @@ def test_local_unit_enlist_writes_curlrc(tmp_path, monkeypatch):
     assert lp_curlrc.exists()
 
     # Verify content
-    assert 'Authorization: Bearer ghp_xxx' in gh_curlrc.read_text()
-    assert 'Authorization: Basic base64yyy' in lp_curlrc.read_text()
+    assert "Authorization: Bearer ghp_xxx" in gh_curlrc.read_text()
+    assert "Authorization: Basic base64yyy" in lp_curlrc.read_text()
 
     # Verify mode 0600 (owner read/write only)
     assert oct(gh_curlrc.stat().st_mode)[-3:] == "600"

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import yaml
 
 from kube_galaxy.pkg.components.kubeadm import Kubeadm
@@ -49,12 +47,12 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
     mock_unit = MockUnit()
     mock_unit.set_run_results(
         RunResult(0, defaults_yaml, ""),  # kubeadm config print init-defaults
-        RunResult(0, "", ""),             # write_config_file: mkdir
-        RunResult(0, "", ""),             # write_config_file: cp (kubelet conf)
-        RunResult(0, "", ""),             # write_config_file: chmod (kubelet conf)
-        RunResult(0, "", ""),             # mkdir for cluster config dir
-        RunResult(0, "", ""),             # cp for cluster config
-        RunResult(0, "", ""),             # chmod for cluster config
+        RunResult(0, "", ""),  # write_config_file: ensure_temp_dir mkdir on unit
+        RunResult(0, "", ""),  # write_config_file: mkdir parent (kubelet conf)
+        RunResult(0, "", ""),  # write_config_file: chmod (kubelet conf)
+        RunResult(0, "", ""),  # write_config_file: ensure_temp_dir mkdir on unit
+        RunResult(0, "", ""),  # write_config_file: mkdir parent (cluster config)
+        RunResult(0, "", ""),  # write_config_file: chmod (cluster config)
     )
 
     comp = Kubeadm({}, manifest, config, arch_info, unit=mock_unit)
@@ -83,17 +81,14 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
         "kube_galaxy.pkg.components.kubeadm.urlopen", lambda url: StubResp(b"/usr/bin/kubelet")
     )
 
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # redirect staging root to test tmp_path to avoid cwd writes
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     comp.configure_hook()
 
     # After configure_hook, cluster config path should be set
     assert comp._cluster_config is not None
-    # Verify cp was called (to copy cluster config to target path)
-    cp_calls = [c for c, _ in mock_unit.run_calls if "cp" in c]
-    assert any(str(comp._cluster_config) in c for c in cp_calls)
+    # Verify the cluster config was pushed to the unit via put()
+    assert any(str(comp._cluster_config) in str(dest) for _, dest in mock_unit.put_calls), (
+        "expected unit.put() call for cluster config"
+    )

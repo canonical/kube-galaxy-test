@@ -95,9 +95,7 @@ class LocalUnit(Unit):
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             dest_path.write_bytes(data)
         except Exception as e:
-            raise ComponentError(
-                f"Failed to extract '{path_in_zip}' from '{zip_file}': {e}"
-            ) from e
+            raise ComponentError(f"Failed to extract '{path_in_zip}' from '{zip_file}': {e}") from e
 
     def sha256(self, path: str) -> str:
         from kube_galaxy.pkg.utils.components import compute_sha256  # noqa: PLC0415
