@@ -1,7 +1,6 @@
 """Shared fixtures for component unit tests."""
 
 import platform
-
 from dataclasses import dataclass, field
 
 import pytest

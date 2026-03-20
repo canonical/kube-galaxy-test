@@ -209,6 +209,7 @@ def test_delete_hook_base_implementation_does_nothing(component, tmp_path):
     component.manifest_path = manifest_path
 
     # Should not raise an exception and should do nothing
+    component.unit = MockUnit()
     component.delete_hook()
 
 
@@ -222,6 +223,7 @@ def test_delete_hook_preserves_manifest_file(component, tmp_path):
     # Verify file exists before
     assert manifest_path.exists()
 
+    component.unit = MockUnit()
     component.delete_hook()
 
     # Verify file still exists after (base class does nothing)
@@ -241,10 +243,11 @@ def test_delete_hook_works_for_all_install_methods(manifest, arch_info):
         name="test-binary", category="test", release="v1", installation=install
     )
 
-    comp = ComponentBase({}, manifest, config, arch_info)
+    component = ComponentBase({}, manifest, config, arch_info)
 
     # Call delete hook - should do nothing for any install method in base class
-    comp.delete_hook()
+    component.unit = MockUnit()
+    component.delete_hook()
     # Base implementation does nothing, so this should just pass
 
 

@@ -52,7 +52,10 @@ class TestVerifyConnectivity:
     def test_verify_connectivity_cluster_error(self):
         """Test error when cluster connection fails."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "version"], 1, "Connection refused")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "version"], 1, "Connection refused"),
+        ):
             with pytest.raises(ClusterError, match="Failed to connect to cluster"):
                 verify_connectivity(unit)
 
@@ -70,7 +73,10 @@ class TestGetContext:
     def test_get_context_error(self):
         """Test error when context cannot be determined."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "config", "current-context"], 1, "Config error")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "config", "current-context"], 1, "Config error"),
+        ):
             with pytest.raises(ClusterError, match="Failed to get current context"):
                 get_context(unit)
 
@@ -98,7 +104,10 @@ class TestWaitForNodes:
     def test_wait_for_nodes_timeout_error(self):
         """Test timeout error when nodes don't reach condition."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "wait"], 124, "Timeout")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "wait"], 124, "Timeout"),
+        ):
             with pytest.raises(ClusterError, match="Nodes failed to reach Ready condition"):
                 wait_for_nodes(unit)
 
@@ -126,7 +135,10 @@ class TestWaitForPods:
     def test_wait_for_pods_error(self):
         """Test error when pods don't reach condition."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "wait"], 1, "Pod failed")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "wait"], 1, "Pod failed"),
+        ):
             with pytest.raises(ClusterError, match="Pods in kube-system failed to reach Ready"):
                 wait_for_pods(unit)
 
@@ -152,7 +164,10 @@ class TestGetApiServerStatus:
     def test_get_api_server_status_error(self):
         """Test error when API server is not ready."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "get"], 1, "Not ready")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "get"], 1, "Not ready"),
+        ):
             with pytest.raises(ClusterError, match="API server not ready"):
                 get_api_server_status(unit)
 
@@ -171,7 +186,10 @@ class TestGetClusterInfo:
     def test_get_cluster_info_error(self):
         """Test error when cluster info cannot be retrieved."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "cluster-info"], 1, "Connection failed")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "cluster-info"], 1, "Connection failed"),
+        ):
             with pytest.raises(ClusterError, match="Failed to retrieve cluster info"):
                 get_cluster_info(unit)
 
@@ -181,7 +199,9 @@ class TestGetNodes:
 
     def test_get_nodes_success(self):
         """Test successful nodes retrieval."""
-        unit = _mock_unit(stdout="NAME       STATUS   ROLES           AGE\nnode1      Ready    control-plane   5d")
+        unit = _mock_unit(
+            stdout="NAME       STATUS   ROLES           AGE\nnode1      Ready    control-plane   5d"
+        )
         nodes = get_nodes(unit)
         assert "node1" in nodes
         cmd, _ = unit.run_calls[0]
@@ -199,7 +219,10 @@ class TestGetNodes:
     def test_get_nodes_error(self):
         """Test error when nodes cannot be retrieved."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "get", "nodes"], 1, "No nodes")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "get", "nodes"], 1, "No nodes"),
+        ):
             with pytest.raises(ClusterError, match="Failed to retrieve nodes"):
                 get_nodes(unit)
 
@@ -242,7 +265,10 @@ class TestGetPods:
     def test_get_pods_error(self):
         """Test error when pods cannot be retrieved."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "get", "pods", "-A"], 1, "No pods")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "get", "pods", "-A"], 1, "No pods"),
+        ):
             with pytest.raises(ClusterError, match="Failed to retrieve pods"):
                 get_pods(unit)
 
@@ -280,7 +306,10 @@ class TestGetPodDataJson:
     def test_get_pod_data_json_shell_error(self):
         """Test error when pod data cannot be retrieved."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "get", "pods"], 1, "Connection failed")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "get", "pods"], 1, "Connection failed"),
+        ):
             with pytest.raises(ClusterError, match="Failed to retrieve pods"):
                 get_pod_data_json(unit)
 
@@ -306,7 +335,10 @@ class TestDescribeNodes:
     def test_describe_nodes_error(self):
         """Test error when node descriptions cannot be retrieved."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "describe", "nodes"], 1, "No nodes")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "describe", "nodes"], 1, "No nodes"),
+        ):
             with pytest.raises(ClusterError, match="Failed to describe nodes"):
                 describe_nodes(unit)
 
@@ -333,7 +365,10 @@ class TestGetEvents:
     def test_get_events_error(self):
         """Test error when events cannot be retrieved."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "get", "events", "-A"], 1, "No events")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "get", "events", "-A"], 1, "No events"),
+        ):
             with pytest.raises(ClusterError, match="Failed to retrieve events"):
                 get_events(unit)
 
@@ -399,7 +434,12 @@ class TestCreateNamespace:
     def test_create_namespace_error(self):
         """Test error when namespace creation fails."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "create", "namespace", "test-ns"], 1, "Already exists")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(
+                ["kubectl", "create", "namespace", "test-ns"], 1, "Already exists"
+            ),
+        ):
             with pytest.raises(ClusterError, match="Failed to create namespace test-ns"):
                 create_namespace(unit, "test-ns")
 
@@ -429,13 +469,21 @@ class TestDeleteNamespace:
     def test_delete_namespace_not_found(self):
         """Test deleting non-existent namespace (should not fail)."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "delete", "namespace", "test-ns"], 1, "not found")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "delete", "namespace", "test-ns"], 1, "not found"),
+        ):
             delete_namespace(unit, "test-ns")
 
     def test_delete_namespace_other_error(self):
         """Test error on namespace deletion failure (not 'not found')."""
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "delete", "namespace", "test-ns"], 1, "Permission denied")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(
+                ["kubectl", "delete", "namespace", "test-ns"], 1, "Permission denied"
+            ),
+        ):
             with pytest.raises(ClusterError, match="Failed to delete namespace test-ns"):
                 delete_namespace(unit, "test-ns")
 
@@ -470,6 +518,9 @@ class TestApplyManifest:
         manifest_file = tmp_path / "test.yaml"
         manifest_file.write_text("apiVersion: v1")
         unit = MockUnit()
-        with patch("kube_galaxy.pkg.utils.client.kubectl", side_effect=ShellError(["kubectl", "apply"], 1, "Invalid manifest")):
+        with patch(
+            "kube_galaxy.pkg.utils.client.kubectl",
+            side_effect=ShellError(["kubectl", "apply"], 1, "Invalid manifest"),
+        ):
             with pytest.raises(ClusterError, match="Failed to apply manifest"):
                 apply_manifest(unit, manifest_file)
