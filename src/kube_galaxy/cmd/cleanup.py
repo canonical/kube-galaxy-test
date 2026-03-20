@@ -41,6 +41,15 @@ def cleanup_files() -> None:
         except Exception as e:
             error(f"Failed to remove {log_file}: {e}")
 
+    # Remove the active-manifest symlink so subsequent commands require an explicit manifest
+    active_link = SystemPaths.active_manifest_link()
+    if active_link.exists() or active_link.is_symlink():
+        try:
+            active_link.unlink()
+            info(f"Removed active manifest link: {active_link}")
+        except Exception as e:
+            error(f"Failed to remove active manifest link {active_link}: {e}")
+
     # Remove the local orchestrator staging tree (cwd/tmp)
     staging = SystemPaths.staging_root()
     if staging.exists():

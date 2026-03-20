@@ -70,6 +70,8 @@ class SystemPaths:
     ETC_CONTAINERD = "/etc/containerd"
     VAR_LIB_CONTAINERD = "/var/lib/containerd"
 
+    ACTIVE_MANIFEST = "active-manifest.yaml"
+
     @classmethod
     def component_dir(cls, component_name: str) -> Path:
         """Get component-specific directory path (on unit)."""
@@ -99,13 +101,18 @@ class SystemPaths:
         return Path.cwd() / "tmp"
 
     @classmethod
+    def _localize(cls, path: Path) -> Path:
+        """Convert a unit path to the corresponding local staging path."""
+        return cls.staging_root() / path.relative_to("/")
+
+    @classmethod
     def local_component_temp_dir(cls, component_name: str) -> Path:
         """Get component local staging temp directory on the orchestrator.
 
         Mirrors :meth:`component_temp_dir` under :meth:`staging_root`.
         """
         unit_temp = cls.component_temp_dir(component_name)
-        return cls.staging_root() / unit_temp.relative_to("/")
+        return cls._localize(unit_temp)
 
     @classmethod
     def tests_root(cls) -> Path:
@@ -115,7 +122,7 @@ class SystemPaths:
     @classmethod
     def local_tests_root(cls) -> Path:
         """Get local staging tests root directory on the orchestrator."""
-        return cls.staging_root() / cls.tests_root().relative_to("/")
+        return cls._localize(cls.tests_root())
 
     @classmethod
     def kube_config(cls) -> Path:
@@ -134,6 +141,11 @@ class SystemPaths:
     def tests_spread_yaml(cls) -> Path:
         """Get orchestration spread.yaml path."""
         return Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML)
+
+    @classmethod
+    def active_manifest_link(cls) -> Path:
+        """Path of the symlink that records the last-used manifest (in cwd)."""
+        return cls._localize(Path(cls.KUBE_GALAXY_ROOT) / cls.ACTIVE_MANIFEST)
 
 
 class ConfigFiles:
