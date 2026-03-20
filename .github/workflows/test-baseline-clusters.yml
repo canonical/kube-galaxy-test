@@ -145,8 +145,8 @@ jobs:
         id: setup-cluster
         shell: bash
         env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: cdkbot
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
         run: |
           # Create sanitized artifact name (replace / with -) before setup
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
