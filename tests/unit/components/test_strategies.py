@@ -7,6 +7,7 @@ Covers: binary, binary_archive, container_image, container_image_archive,
 import bz2
 import gzip
 import lzma
+import platform
 from pathlib import Path
 
 import pytest
@@ -61,13 +62,9 @@ def _make_component(
     manifest = _make_manifest()
 
     if monkeypatch is not None and tmp_path is not None:
-        monkeypatch.setattr(
-            SystemPaths,
-            "component_temp_dir",
-            classmethod(lambda cls, n: Path(tmp_path) / n / "temp"),
-        )
+        monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
-    ai = arch_info if arch_info is not None else get_arch_info()
+    ai = arch_info if arch_info is not None else get_arch_info(platform.machine())
     return ComponentBase({}, manifest, config, ai)
 
 
@@ -208,7 +205,7 @@ class TestBinaryInstall:
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components._base.install_binary",
-            lambda path, name, comp_name: f"/usr/local/bin/{name}",
+            lambda path, name, comp_name, unit: f"/usr/local/bin/{name}",
         )
 
         comp.install_hook()
@@ -369,7 +366,7 @@ class TestBinaryArchiveInstall:
 
         installed: list[str] = []
 
-        def fake_install_binary(path: Path, name: str, comp_name: str) -> str:
+        def fake_install_binary(path: Path, name: str, comp_name: str, unit: object) -> str:
             installed.append(name)
             return f"/usr/local/bin/{name}"
 
@@ -402,7 +399,7 @@ class TestBinaryArchiveInstall:
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components._base.install_binary",
-            lambda path, name, comp_name: f"/usr/local/bin/{name}",
+            lambda path, name, comp_name, unit: f"/usr/local/bin/{name}",
         )
 
         comp.install_hook()
@@ -712,11 +709,7 @@ def _make_manifest_component(
     config = ComponentConfig(name="calico", category="cni", release="3.30.0", installation=install)
     manifest = _make_manifest()
 
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, n: Path(tmp_path) / n / "temp"),
-    )
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
     return ComponentBase({}, manifest, config, arch_info)
 
 
@@ -794,7 +787,7 @@ class TestContainerManifestRemainingBranches:
         manifest_file.write_text("apiVersion: v1\n")
         comp.manifest_path = manifest_file
 
-        def fake_apply(path: Path) -> None:
+        def fake_apply(unit, path: Path) -> None:
             raise ClusterError("kubectl apply failed")
 
         monkeypatch.setattr(
@@ -839,17 +832,13 @@ def _make_spread_component(
     )
     manifest = _make_manifest()
 
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, n: Path(tmp_path) / n / "temp"),
-    )
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
     monkeypatch.setattr(
         SystemPaths,
         "tests_root",
         classmethod(lambda cls: Path(tmp_path) / "tests"),
     )
-    ai = arch_info if arch_info is not None else get_arch_info()
+    ai = arch_info if arch_info is not None else get_arch_info(platform.machine())
     return ComponentBase({}, manifest, config, ai)
 
 
@@ -869,6 +858,7 @@ class TestSpreadRemainingBranches:
         def fake_download(url: str, dest: Path) -> None:
             calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"")  # create placeholder so shutil.copy succeeds
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.spread.download_file", fake_download
@@ -894,6 +884,7 @@ class TestSpreadRemainingBranches:
         def fake_download(url: str, dest: Path) -> None:
             calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"")  # create placeholder so shutil.copy succeeds
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies.spread.download_file", fake_download

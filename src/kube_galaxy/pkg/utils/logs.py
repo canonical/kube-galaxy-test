@@ -3,6 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 
+from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.client import (
     describe_nodes,
     get_cluster_info,
@@ -14,6 +15,9 @@ from kube_galaxy.pkg.utils.client import (
 )
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import info, section, success, warning
+from kube_galaxy.pkg.utils.paths import ensure_dir
+
+_LOCAL = LocalUnit()
 
 
 def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
@@ -30,7 +34,7 @@ def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
         ClusterError: If log collection fails
     """
     output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    ensure_dir(output_path)
 
     section("Collecting Kubernetes Logs")
 
@@ -63,7 +67,7 @@ def _collect_cluster_info(output_path: Path) -> None:
     info("Collecting cluster information...")
 
     try:
-        cluster_info = get_cluster_info()
+        cluster_info = get_cluster_info(_LOCAL)
         (output_path / "cluster-info.txt").write_text(cluster_info)
         success("  Cluster info saved")
     except ClusterError as exc:
@@ -76,11 +80,11 @@ def _collect_node_info(output_path: Path) -> None:
 
     try:
         # Get node descriptions
-        node_descriptions = describe_nodes()
+        node_descriptions = describe_nodes(_LOCAL)
         (output_path / "nodes-describe.txt").write_text(node_descriptions)
 
         # Get node status
-        node_status = get_nodes(wide=True)
+        node_status = get_nodes(_LOCAL, wide=True)
         (output_path / "nodes-status.txt").write_text(node_status)
 
         success("  Node info saved")
@@ -93,11 +97,11 @@ def _collect_pod_logs(output_path: Path) -> None:
     info("Collecting pod logs...")
 
     pods_dir = output_path / "pods"
-    pods_dir.mkdir(exist_ok=True)
+    ensure_dir(pods_dir)
 
     try:
         # Get all pods
-        pods_data = get_pod_data_json()
+        pods_data = get_pod_data_json(_LOCAL)
         pod_count = 0
 
         for pod_item in pods_data:
@@ -105,10 +109,10 @@ def _collect_pod_logs(output_path: Path) -> None:
             pod_name = pod_item["metadata"]["name"]
 
             # Get pod logs
-            log_content = get_pod_logs(namespace, pod_name, tail=100)
+            log_content = get_pod_logs(_LOCAL, namespace, pod_name, tail=100)
 
             log_dir = pods_dir / namespace / pod_name
-            log_dir.mkdir(parents=True, exist_ok=True)
+            ensure_dir(log_dir)
             (log_dir / "logs.txt").write_text(log_content)
 
             pod_count += 1
@@ -124,7 +128,7 @@ def _collect_events(output_path: Path) -> None:
     info("Collecting events...")
 
     try:
-        events = get_events(all_namespaces=True)
+        events = get_events(_LOCAL, all_namespaces=True)
         (output_path / "events.txt").write_text(events)
         success("  Events saved")
     except ClusterError as exc:
@@ -137,7 +141,7 @@ def _collect_system_logs(output_path: Path) -> None:
 
     try:
         # Get kube-system namespace pods
-        pods_str = get_pods(namespace="kube-system", wide=True)
+        pods_str = get_pods(_LOCAL, namespace="kube-system", wide=True)
         (output_path / "kube-system-pods.txt").write_text(pods_str)
 
         # Events are now collected from all namespaces in _collect_events()

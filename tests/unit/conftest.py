@@ -1,5 +1,6 @@
 """Shared pytest fixtures and configuration."""
 
+import platform
 import tempfile
 from pathlib import Path
 
@@ -67,4 +68,4 @@ def sample_manifest_file(tmp_manifest_dir, sample_manifest_yaml):
 @pytest.fixture
 def arch_info():
     """Fixture to provide architecture information."""
-    return get_arch_info()
+    return get_arch_info(platform.machine())

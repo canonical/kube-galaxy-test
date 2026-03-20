@@ -3,20 +3,23 @@ Utilities for component installation and management.
 """
 
 import hashlib
-import shutil
 import tarfile
 import urllib.request
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import chevron
 
 from kube_galaxy.pkg.arch.detector import ArchInfo
-from kube_galaxy.pkg.literals import Commands, Permissions, SystemPaths
+from kube_galaxy.pkg.literals import Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
-from kube_galaxy.pkg.utils.shell import run
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.url import http_headers
+
+if TYPE_CHECKING:
+    from kube_galaxy.pkg.units._base import Unit
 
 
 def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> None:
@@ -41,7 +44,7 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
         ComponentError: If download fails or checksum mismatch
     """
 
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    ensure_dir(dest.parent)
     if url.startswith("gh-artifact://"):
         gh_extract_artifact_file(url, dest)
         return
@@ -105,37 +108,60 @@ def install_binary(
     binary_path: Path,
     binary_name: str,
     component_name: str,
+    unit: "Unit",
 ) -> str:
     """
-    Install a binary to component directory and register with update-alternatives.
+    Install a binary to the component directory on the unit and register with
+    update-alternatives.
+
+    The unit is instructed to download the binary from the orchestrator's
+    staging area via :meth:`~kube_galaxy.pkg.units._base.Unit.staging_url`
+    and :meth:`~kube_galaxy.pkg.units._base.Unit.download`.  For a
+    :class:`~kube_galaxy.pkg.units.local.LocalUnit` this resolves to a
+    ``file://`` URL; for remote units the artifact server must have been
+    started and configured via
+    :meth:`~kube_galaxy.pkg.units._base.Unit.set_artifact_server` before
+    this function is called.
+
+    All directory creation, permission setting, and update-alternatives
+    registration are performed on the unit via ``unit.run()``.  No root
+    access is required on the orchestrator.
 
     Args:
-        binary_path: Path to the binary
+        binary_path: Local path to the binary in the orchestrator staging area.
         binary_name: Name of the binary (e.g., 'containerd')
         component_name: Component name for directory structure
+        unit: Unit to install onto
 
     Raises:
         ComponentError: If installation fails
     """
-    # Use component-specific directory
     dest_dir = SystemPaths.component_bin_dir(component_name)
+    dest_path = dest_dir / binary_name
     try:
-        # Create directory and install binary
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest_path = dest_dir / binary_name
-        shutil.copyfile(binary_path, dest_path)
-        dest_path.chmod(0o755)
+        # Create directory on the unit
+        unit.run(["mkdir", "-p", str(dest_dir)], privileged=True, check=True)
 
-        # Register with update-alternatives
+        # Fetch artifact from the orchestrator's staging area.
+        # For LocalUnit this resolves to a file:// URL; for remote units the
+        # artifact server must be started and configured via
+        # unit.set_artifact_server() before calling install_binary.
+        artifact_url = unit.staging_url(binary_path)
+        unit.download(artifact_url, str(dest_path))
+        unit.run(["chmod", "755", str(dest_path)], privileged=True, check=True)
+
+        # Register with update-alternatives (requires elevated privileges)
         alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
-        run(
+        unit.run(
             [
-                *Commands.UPDATE_ALTERNATIVES_INSTALL,
+                "update-alternatives",
+                "--install",
                 alternative_path,
                 binary_name,
                 str(dest_path),
                 Permissions.ALTERNATIVES_PRIORITY,
             ],
+            privileged=True,
             check=True,
         )
         return alternative_path
@@ -143,22 +169,23 @@ def install_binary(
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
 
 
-def remove_binary(binary_path: Path) -> None:
+def remove_binary(binary_path: Path, unit: "Unit") -> None:
     """
-    Remove a binary from a directory.
+    Remove a binary and its update-alternatives entry from the unit.
 
     Args:
-        binary_path: Path to the binary to remove
+        binary_path: Path to the binary on the unit
+        unit: Unit to run privileged commands on
     """
-    if binary_path.is_file():
-        try:
-            run(
-                [*Commands.UPDATE_ALTERNATIVES_REMOVE, binary_path.name, str(binary_path)],
-                check=False,
-            )  # Don't fail if alternative doesn't exist
-            binary_path.unlink()
-        except Exception:
-            pass  # Ignore errors during cleanup
+    try:
+        unit.run(
+            ["update-alternatives", "--remove", binary_path.name, str(binary_path)],
+            privileged=True,
+            check=False,
+        )
+        unit.run(["rm", "-f", str(binary_path)], privileged=True, check=False)
+    except Exception:
+        pass  # Ignore errors during cleanup
 
 
 def format_component_pattern(

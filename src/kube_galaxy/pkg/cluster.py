@@ -1,24 +1,28 @@
 """Cluster setup and provisioning with 8-stage component lifecycle."""
 
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
 from kube_galaxy.pkg.components import ComponentBase, find_component
 from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
+from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NodeRole
+from kube_galaxy.pkg.units import Unit
+from kube_galaxy.pkg.units._base import UnitProvider
+from kube_galaxy.pkg.units.provider import provider_factory
+from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import run
 
 __all__ = ["setup_cluster", "teardown_cluster"]
 
 
-def _log_cluster_info(
-    task: str, manifest: Manifest, arch_info: ArchInfo, force: None | bool = None
-) -> None:
+def _log_cluster_info(task: str, manifest: Manifest, force: None | bool = None) -> None:
     """Log cluster configuration and detected architecture."""
 
     section(f"Kubernetes Cluster {task}")
@@ -31,13 +35,8 @@ def _log_cluster_info(
     info(f"Cluster Name: {manifest.name}")
     info(f"Kubernetes Version: {manifest.kubernetes_version}")
 
-    # Detect architecture
-    info(f"System Architecture: {arch_info.system}")
-    info(f"Kubernetes Architecture: {arch_info.k8s}")
-    info(f"Image Architecture: {arch_info.image}")
 
-
-def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
+def setup_cluster(manifest_path: str) -> None:
     """
     Set up a Kubernetes cluster using 6-stage component lifecycle.
 
@@ -51,24 +50,30 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
     try:
         # Load and validate manifest
         manifest = load_manifest(manifest_path)
-        arch_info = get_arch_info()
-        work_dir_path = Path(work_dir)
 
-        _log_cluster_info("Setup", manifest, arch_info)
+        _log_cluster_info("Setup", manifest)
 
         # Create working directories
-        work_dir_path.mkdir(parents=True, exist_ok=True)
-        (work_dir_path / "components").mkdir(exist_ok=True)
-        (work_dir_path / "logs").mkdir(exist_ok=True)
+        ensure_dir(Path() / "logs")
 
         # Get components in dependency order
         configs = manifest.components
+
+        # Provision the orchestrator unit via the manifest's provider
+        provider = provider_factory(manifest)
+        lead_unit = provider.provision(NodeRole.CONTROL_PLANE, 0)
+        info("Waiting for Lead Control-Plane unit to become ready...")
+        lead_unit.wait_until_ready()
+        info(f"Lead Control-Plane unit '{lead_unit.name}' is ready")
+
+        # TODO: Support multiple units based on manifest
+        units = [lead_unit]
 
         # Create all component resources
         resources: dict[str, ComponentBase] = {}
         for config in configs:
             component_class = find_component(config.name)
-            resource = component_class(resources, manifest, config, arch_info)
+            resource = component_class(resources, manifest, config, lead_unit.arch)
             resources[config.name] = resource
 
         # Execute 6-stage lifecycle
@@ -79,13 +84,25 @@ def setup_cluster(manifest_path: str, work_dir: str = ".") -> None:
                 f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
             )
 
-        num_hooks = len(SetupHooks)
-        for idx, hook in enumerate(SetupHooks, 1):
-            section(f"Stage {idx}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(resources_list, configs, hook.value, parallel=hook.is_parallel)
+        # DOWNLOAD phase runs before the artifact server so artifacts are
+        # present on disk when the server starts.
+        section(f"Stage 1/{len(SetupHooks)}: Download Components")
+        _run_hook(lead_unit, resources_list, configs, SetupHooks.DOWNLOAD.value, parallel=True)
+
+        # Start the artifact server so nodes can pull binaries without
+        # the orchestrator pushing files directly onto them.
+        with ArtifactServer() as artifact_server:
+            info(f"Artifact server started at {artifact_server.base_url}")
+            lead_unit.set_artifact_server(artifact_server.base_url)
+
+            remaining_hooks = [h for h in SetupHooks if h != SetupHooks.DOWNLOAD]
+            for idx, hook in enumerate(remaining_hooks, 2):
+                for unit in units:
+                    section(f"Stage {idx}/{len(SetupHooks)}: {hook.value.capitalize()} Components")
+                    _run_hook(unit, resources_list, configs, hook.value, parallel=hook.is_parallel)
 
         section("Cluster Setup Complete!")
-        success("Kubeconfig: $HOME/.kube/config")
+        success("Kubeconfig: /opt/kube-galaxy/kubeconfig")
         gh_output("CLUSTER_NAME", manifest.name)
         gh_output("KUBECONFIG", str(Path.home() / ".kube" / "config"))
 
@@ -110,26 +127,39 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
     try:
         # Load and validate manifest
         manifest = load_manifest(manifest_path)
-        arch_info = get_arch_info()
 
-        _log_cluster_info("Teardown", manifest, arch_info, force)
+        _log_cluster_info("Teardown", manifest, force)
 
         # Get components in dependency order, then reverse for teardown
         configs = list(reversed(manifest.components))
 
+        # Locate the orchestrator unit via the manifest's provider (no new provisioning)
+        provider = provider_factory(manifest)
+        lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
+
+        # TODO: Support multiple units based on manifest
+        units = [lead_unit]
+
         # Create all component resources
         resources: dict[str, ComponentBase] = {}
         for config in configs:
-            component_class = find_component(config.name)
-            resource = component_class(resources, manifest, config, arch_info)
-            resources[config.name] = resource
+            for unit in units:
+                component_class = find_component(config.name)
+                resource = component_class(resources, manifest, config, unit.arch)
+                resources[config.name] = resource
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
         resources_list = list(resources.values())
         num_hooks = len(TeardownHooks)
         for idx, hook in enumerate(TeardownHooks):
-            section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
-            _run_hook(resources_list, configs, hook.value, force, parallel=hook.is_parallel)
+            for unit in units:
+                section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
+                _run_hook(
+                    unit, resources_list, configs, hook.value, force, parallel=hook.is_parallel
+                )
+
+        # Deprovision all nodes (no-op for non-ephemeral providers)
+        _deprovision(provider, force)
 
         # Final cleanup: remove any remaining kube-galaxy alternatives
         _cleanup_kube_galaxy_alternatives(force)
@@ -147,8 +177,21 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
             raise ClusterError(f"Cluster teardown failed: {exc}") from exc
 
 
+@contextmanager
+def _attach_unit(components: list[ComponentBase], unit: Unit) -> Generator[None, None, None]:
+    """Attach the given unit to all components that require it."""
+    restored = []
+    for component in components:
+        component.unit, restore = unit, component.unit
+        restored.append(restore)
+    yield
+    for component, restore in zip(components, restored, strict=True):
+        component.unit = restore
+
+
 def _run_hook(
-    resources: list[ComponentBase],
+    unit: Unit,
+    components: list[ComponentBase],
     configs: list[ComponentConfig],
     hook_name: str,
     force: bool = False,
@@ -158,8 +201,8 @@ def _run_hook(
     Run a specific lifecycle hook for all components.
 
     Args:
-        resources: List of component resources
-        configs: List of component configs (must be in same order as resources)
+        components: List of components
+        configs: List of component configs (must be in same order as components)
         hook_name: Name of the hook to run (e.g., "install")
         force: Continue execution even if errors occur
         parallel: Execute hooks concurrently (respects component order for submission)
@@ -170,16 +213,13 @@ def _run_hook(
     hook_name_caps = hook_name.title()
     max_workers = 10 if parallel else 1
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with _attach_unit(components, unit), ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures_list = []
 
         # Submit all tasks in component order
-        for config, resource in zip(configs, resources, strict=True):
-            hook_method = getattr(resource, f"{hook_name}_hook", None)
-            if not hook_method:
-                raise ClusterError(f"{hook_name_caps} hook not implemented for {config.name}")
+        for config, resource in zip(configs, components, strict=True):
             info(f"  {config.name}: {hook_name_caps}...")
-            future = executor.submit(hook_method)
+            future = executor.submit(resource.run_hook, hook_name)
             futures_list.append((config.name, future))
 
         # Collect results in submission order
@@ -192,6 +232,29 @@ def _run_hook(
                 exception(f"  ✗ {message}", exc)
                 if not force:
                     raise ClusterError(message) from exc
+
+
+def _deprovision(provider: UnitProvider, force: bool) -> None:
+    """Deprovision all units managed by the provider.
+
+    For ephemeral providers (LXD, Multipass) this destroys the VMs.
+    For non-ephemeral providers (local, SSH) this is a no-op.
+
+    Args:
+        provider: The active UnitProvider.
+        force: Continue even if deprovisioning encounters errors.
+    """
+    if not provider.is_ephemeral:
+        return
+    info("  Deprovisioning cluster nodes...")
+    try:
+        provider.deprovision_all()
+        info("  All nodes deprovisioned")
+    except Exception as exc:
+        if force:
+            exception("  Warning: deprovisioning encountered errors (continuing)", exc)
+        else:
+            raise
 
 
 def _cleanup_kube_galaxy_alternatives(force: bool) -> None:

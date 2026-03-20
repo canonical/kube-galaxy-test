@@ -1,15 +1,11 @@
 """Spread test execution and management."""
 
 import os
-import shutil
 import subprocess
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
 
-from kube_galaxy.pkg.arch.detector import get_arch_info
 from kube_galaxy.pkg.literals import SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
@@ -17,9 +13,10 @@ from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
     validate_component_test_structure,
 )
-from kube_galaxy.pkg.utils.client import create_namespace, delete_namespace, verify_connectivity
+from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
+from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError, run
 
 
@@ -31,38 +28,6 @@ class SpreadYamlDumper(yaml.SafeDumper):
 
 # Register custom representer for Path objects to dump as strings
 SpreadYamlDumper.add_multi_representer(Path, lambda d, p: d.represent_str(str(p)))
-
-
-@contextmanager
-def _setup_shared_kubeconfig() -> Generator[Path, None, None]:
-    """
-    Context manager to copy kubeconfig to shared directory and clean up after.
-
-    Yields:
-        Path to the shared kubeconfig file accessible by LXD containers
-
-    Note:
-        The kubeconfig is copied to SystemPaths.tests_root() which is mounted
-        in spread's LXD containers, allowing tests to access the cluster.
-    """
-    # Copy kubeconfig to shared test directory for LXD container access
-    source_kubeconfig = os.environ.get("KUBECONFIG", os.path.expanduser("~/.kube/config"))
-    shared_kubeconfig = SystemPaths.tests_root() / "kubeconfig"
-
-    # Ensure test root directory exists
-    SystemPaths.tests_root().mkdir(parents=True, exist_ok=True)
-
-    try:
-        info(f"Setting up shared kubeconfig from {source_kubeconfig}")
-        shutil.copy2(source_kubeconfig, shared_kubeconfig)
-        success(f"Kubeconfig copied to {shared_kubeconfig}")
-        yield shared_kubeconfig
-    finally:
-        # Cleanup: remove the copied kubeconfig
-        if shared_kubeconfig.exists():
-            info(f"Cleaning up shared kubeconfig: {shared_kubeconfig}")
-            shared_kubeconfig.unlink()
-            success("Shared kubeconfig removed")
 
 
 def run_spread_tests(
@@ -96,10 +61,8 @@ def run_spread_tests(
         # Verify test prerequisites (kubectl connectivity, spread availability)
         _verify_test_prerequisites()
 
-        # Setup shared kubeconfig and run tests (cleanup handled by context manager)
-        with _setup_shared_kubeconfig() as kubeconfig:
-            # Run tests from components with spread enabled
-            _run_component_tests(manifest, work_dir_path, test_type, debug, kubeconfig)
+        # Run tests from components with spread enabled
+        _run_component_tests(manifest, work_dir_path, test_type, debug)
 
         section("Test Execution Complete")
         success("Tests completed successfully")
@@ -109,10 +72,8 @@ def run_spread_tests(
 
 
 def _verify_test_prerequisites() -> None:
-    """Verify kubectl and spread are available."""
+    """Verify spread is available."""
     try:
-        verify_connectivity()
-
         # Check for spread
         info("Verifying spread test framework...")
         result = run(["which", "spread"], check=True, capture_output=True)
@@ -129,33 +90,7 @@ def _verify_test_prerequisites() -> None:
         raise ClusterError("Test prerequisites not met") from exc
 
 
-def _create_test_namespace(component_name: str) -> str:
-    """
-    Create Kubernetes namespace for component tests.
-
-    Args:
-        component_name: Name of component being tested
-
-    Returns:
-        Namespace name
-
-    Raises:
-        ClusterError: If namespace creation fails
-    """
-    # Normalize component name for namespace (lowercase, hyphens only)
-    namespace = f"kube-galaxy-test-{component_name.lower().replace('_', '-')}"
-
-    labels = {
-        "app.kubernetes.io/managed-by": "kube-galaxy",
-        "component": component_name,
-    }
-    create_namespace(namespace, labels)
-    return namespace
-
-
-def _generate_orchestration_spread_yaml(
-    components: list[ComponentConfig], kubeconfig: Path
-) -> list[str]:
+def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> list[str]:
     """
     Generate spread.yaml from template for component test orchestration.
 
@@ -172,22 +107,21 @@ def _generate_orchestration_spread_yaml(
     try:
         info("Generating test orchestration spread.yaml...")
         # Get architecture info
-        arch_info = get_arch_info()
+        local_test = SystemPaths.local_tests_root()
 
         # Load template
         suites = {}
         spread_def = {
-            "path": SystemPaths.tests_root(),
+            "path": local_test,
             "environment": {
-                "PROJECT_PATH": SystemPaths.tests_root(),
+                "PROJECT_PATH": str(local_test),
                 "TEST_TIMEOUT_S": str(Timeouts.TEST_EXECUTION_TIMEOUT_S),
                 "TEST_TIMEOUT_M": str(Timeouts.TEST_EXECUTION_TIMEOUT_S // 60),
-                "KUBECONFIG": str(kubeconfig),
-                "SYSTEM_ARCH": arch_info.system,
-                "K8S_ARCH": arch_info.k8s,
-                "IMAGE_ARCH": arch_info.image,
+                "KUBECONFIG": str(SystemPaths.local_kube_config()),
             },
         }
+
+        arch_info = LocalUnit().arch
 
         # Generate component suites section.
         # By the time tests run, all task definitions are installed under tests_root
@@ -195,7 +129,7 @@ def _generate_orchestration_spread_yaml(
             suite_path = SystemPaths.tests_component_root(each.name)
             task = suite_path / "task.yaml"
             suite = yaml.safe_load(task.read_text())  # Load for name and summary
-            rel = suite_path.relative_to(SystemPaths.tests_root()).parent
+            rel = suite_path.relative_to(local_test).parent
             suites[f"{rel}/"] = {
                 "summary": suite.get("summary", "No summary"),
                 # Per-suite environment variables are forwarded to each task's
@@ -204,6 +138,9 @@ def _generate_orchestration_spread_yaml(
                 "environment": {
                     "COMPONENT_NAME": each.name,
                     "COMPONENT_VERSION": each.release,
+                    "SYSTEM_ARCH": arch_info.system,
+                    "K8S_ARCH": arch_info.k8s,
+                    "IMAGE_ARCH": arch_info.image,
                 },
             }
 
@@ -218,7 +155,7 @@ def _generate_orchestration_spread_yaml(
 
         # Write spread.yaml
         output_path = SystemPaths.tests_spread_yaml()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        ensure_dir(output_path.parent)
         yaml.dump(content, output_path.open("w"), Dumper=SpreadYamlDumper)
         success(f"Generated: {output_path}")
         return list(suites.keys())
@@ -229,7 +166,6 @@ def _generate_orchestration_spread_yaml(
 
 def _execute_spread_for_component(
     component: ComponentConfig,
-    namespace: str,
     spread_yaml: Path,
     suite_path: Path,
     log_file: Path,
@@ -253,7 +189,6 @@ def _execute_spread_for_component(
         env = os.environ.copy()
         env.update(
             {
-                "KUBE_GALAXY_NAMESPACE": namespace,
                 "COMPONENT_NAME": component.name,
                 "COMPONENT_VERSION": component.release,
             }
@@ -288,9 +223,7 @@ def _execute_spread_for_component(
         return False
 
 
-def _run_component_tests(
-    manifest: Manifest, work_dir: Path, test_type: str, debug: bool, kubeconfig: Path
-) -> None:
+def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, debug: bool) -> None:
     """Run spread tests from components marked with test: true."""
     section("Looking for components with spread tests")
 
@@ -316,7 +249,7 @@ def _run_component_tests(
         raise ClusterError("Component validation failed")
 
     # Generate orchestration spread.yaml
-    component_suites = _generate_orchestration_spread_yaml(spread_components, kubeconfig)
+    component_suites = _generate_orchestration_spread_yaml(spread_components)
 
     # Track test results
     test_results = []
@@ -331,20 +264,15 @@ def _run_component_tests(
 
         # Component-specific directories
         log_dir = work_dir / "logs" / component.name
-        log_dir.mkdir(parents=True, exist_ok=True)
+        ensure_dir(log_dir)
         log_file = log_dir / "test-output.log"
 
-        namespace = None
         test_passed = False
 
         try:
-            # Step 2: Create test namespace
-            namespace = _create_test_namespace(component.name)
-
-            # Step 3: Execute spread tests
+            # Step 2: Execute spread tests
             test_passed = _execute_spread_for_component(
                 component,
-                namespace,
                 SystemPaths.tests_spread_yaml(),
                 Path(suite),
                 log_file,
@@ -369,14 +297,6 @@ def _run_component_tests(
                     "log": str(log_file) if log_file.exists() else "",
                 }
             )
-
-        finally:
-            # Step 4: Cleanup namespace (always executed)
-            if namespace:
-                try:
-                    delete_namespace(namespace)
-                except Exception as cleanup_exc:
-                    warning(f"  Namespace cleanup failed: {cleanup_exc}")
 
     # Summary
     section("Test Results Summary")
