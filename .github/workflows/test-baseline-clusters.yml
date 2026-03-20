@@ -167,7 +167,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
           path: logs/
@@ -209,7 +209,7 @@ jobs:
 
       - name: Upload Debug Logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || hashFiles(matrix.manifest-file) }}
           path: debug-logs/
@@ -242,7 +242,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          kube-galaxy cleanup all --manifest ${{ matrix.manifest-file }}
+          kube-galaxy cleanup all
 
   # Summary job that reports overall test status
   test-summary:

@@ -7,6 +7,9 @@ import yaml
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, TestMethod
 
+_VALID_PROVIDER_TYPES = {"local", "lxd", "multipass", "ssh"}
+_VALID_PLACEMENT_VALUES = {"all", "control-plane", "workers", "orchestrator"}
+
 
 def validate_manifest(manifest: Manifest) -> None:
     """Validate manifest structure and required fields.
@@ -22,6 +25,24 @@ def validate_manifest(manifest: Manifest) -> None:
 
     if not manifest.kubernetes_version:
         raise ValueError("Manifest must have a 'kubernetes-version' field")
+
+    # Validate provider block
+    provider_type = manifest.provider.type
+    if provider_type not in _VALID_PROVIDER_TYPES:
+        raise ValueError(
+            f"Invalid provider type '{provider_type}'. "
+            f"Must be one of: {', '.join(sorted(_VALID_PROVIDER_TYPES))}"
+        )
+
+    if provider_type == "ssh" and not manifest.provider.hosts:
+        raise ValueError("Provider type 'ssh' requires at least one host in 'provider.hosts'")
+
+    # Validate nodes block
+    if manifest.nodes.control_plane < 1:
+        raise ValueError("'nodes.control-plane' must be at least 1")
+
+    if manifest.nodes.worker < 0:
+        raise ValueError("'nodes.worker' must be non-negative")
 
 
 def validate_component_test_structure(component: ComponentConfig) -> list[str]:

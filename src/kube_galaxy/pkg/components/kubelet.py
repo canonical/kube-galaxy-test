@@ -7,9 +7,8 @@ Kubelet is the primary node agent running on each node.
 from urllib.request import urlopen
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
-from kube_galaxy.pkg.literals import Commands, URLs
+from kube_galaxy.pkg.literals import URLs
 from kube_galaxy.pkg.utils.logging import info
-from kube_galaxy.pkg.utils.shell import run
 
 
 @register_component("kubelet")
@@ -26,7 +25,7 @@ class Kubelet(ComponentBase):
         """
         # Disable swap which is required for kubelet to work properly
         info("    Disabling swap...")
-        run(["sudo", "swapoff", "-a"], check=True)
+        self.unit.run(["swapoff", "-a"], privileged=True)
 
     def configure_hook(self) -> None:
         """
@@ -50,18 +49,18 @@ class Kubelet(ComponentBase):
         """
         Starts kubelet service and enables it to start on boot.
         """
-        run(Commands.SYSTEMCTL_DAEMON_RELOAD, check=True)
-        run([*Commands.SYSTEMCTL_ENABLE, "--now", "kubelet"], check=True)
+        self.unit.run(["systemctl", "daemon-reload"], privileged=True)
+        self.unit.run(["systemctl", "enable", "--now", "kubelet"], privileged=True)
 
     def verify_hook(self) -> None:
         """Verify kubelet is working correctly."""
         # Check kubelet systemctl status
-        run([*Commands.SYSTEMCTL_IS_ACTIVE, "kubelet"], check=True)
+        self.unit.run(["systemctl", "is-active", "kubelet"], privileged=True)
 
     def stop_hook(self) -> None:
         """Stop the kubelet service."""
         try:
-            run([*Commands.SYSTEMCTL_STOP, "kubelet"], check=False)
+            self.unit.run(["systemctl", "stop", "kubelet"], privileged=True, check=False)
             info("Stopped kubelet service")
         except Exception as e:
             info(f"Failed to stop kubelet service: {e}")

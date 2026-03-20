@@ -2,6 +2,16 @@ name: smoke-test
 description: Single-node Kubernetes cluster + calico - core components only
 kubernetes-version: &k8s-version "1.35.2"
 
+# Provider defaults: type: lxd, image: ubuntu:24.04, nodes: {control-plane: 1, worker: 0}
+# These are applied automatically when the provider/nodes blocks are absent.
+# Override example for local execution:
+# provider:
+#   type: local
+#
+# nodes:
+#   control-plane: 1
+#   worker: 0
+
 components:
   # Container runtime
   - name: runc

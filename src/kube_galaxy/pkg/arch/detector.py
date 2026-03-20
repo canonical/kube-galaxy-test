@@ -1,6 +1,5 @@
 """Architecture detection and mapping for kube-galaxy."""
 
-import platform
 from dataclasses import dataclass
 
 
@@ -32,15 +31,6 @@ _IMAGE_ARCH_MAP = {
     "armv7l": "armv7",
     "armv6l": "armv6",
 }
-
-
-def detect_system_arch() -> str:
-    """Detect system architecture using platform.machine().
-
-    Returns:
-        Raw system architecture string (e.g., x86_64, aarch64)
-    """
-    return platform.machine()
 
 
 def map_to_k8s_arch(system_arch: str) -> str:
@@ -77,13 +67,12 @@ def map_to_image_arch(system_arch: str) -> str:
     return _IMAGE_ARCH_MAP[system_arch]
 
 
-def get_arch_info() -> ArchInfo:
+def get_arch_info(system_arch: str) -> ArchInfo:
     """Get complete architecture information.
 
     Returns:
         ArchInfo with system, k8s, and image formats
     """
-    system_arch = detect_system_arch()
     return ArchInfo(
         system=system_arch,
         k8s=map_to_k8s_arch(system_arch),

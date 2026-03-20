@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
@@ -16,6 +14,7 @@ from kube_galaxy.pkg.manifest.models import (
     TestMethod as ComponentTestMethod,
 )
 from kube_galaxy.pkg.utils.components import format_component_pattern
+from tests.unit.components.conftest import MockUnit
 
 
 class ExampleComponent(ComponentBase):
@@ -230,7 +229,7 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
 
     tests_root = tmp_path / "tests_root"
     tests_root.mkdir()
-    monkeypatch.setattr(SystemPaths, "tests_root", classmethod(lambda cls: tests_root))
+    monkeypatch.setattr(SystemPaths, "local_tests_root", classmethod(lambda cls: tests_root))
 
     comp = ExampleComponent(
         {}, Manifest(name="m", description="d", kubernetes_version="1.0"), config, arch_info
@@ -242,22 +241,29 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
     assert (dest / "task.yaml").read_text() == "summary: A fake task"
 
 
-def test_ensure_temp_dir_calls_mkdir(monkeypatch, arch_info, tmp_path):
+def test_ensure_temp_dir_creates_local_dir_only(monkeypatch, arch_info, tmp_path):
+    mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
+        {},
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        make_config(),
+        arch_info,
     )
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    comp.unit = mock_unit
+    # Redirect staging root to tmp_path so no writes outside the test sandbox
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
+    # component_tmp_dir = staging_root / "opt/kube-galaxy/<name>/temp"
     p = comp.component_tmp_dir
-    # ensure_temp_dir should create the temp dir under tmp_path
     ret = comp.ensure_temp_dir()
-    assert str(ret) == str(p)
+    assert ret == p
     assert ret.exists()
+
+    # ensure_temp_dir must NOT call unit.run — the unit may not be ready yet
+    # (e.g. LXD VM agent not started) when this is called during DOWNLOAD hook
+    assert not mock_unit.run_calls, (
+        "ensure_temp_dir must not contact the unit — unit may not be ready at download time"
+    )
 
 
 def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, arch_info):
@@ -270,7 +276,7 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
     bin_path = tmp_path / "tool"
     bin_path.write_text("binary")
 
-    def fake_install(binary_path, name, compname):
+    def fake_install(binary_path, name, compname, unit):
         return f"/usr/local/bin/{name}"
 
     monkeypatch.setattr("kube_galaxy.pkg.components._base.install_binary", fake_install)
@@ -279,42 +285,48 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
     assert install_path == "/usr/local/bin/tool"
 
 
-def test_create_systemd_service_and_write_config(monkeypatch, tmp_path, arch_info):
+def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_path):
+    mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
+        {},
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        make_config(),
+        arch_info,
     )
-    recorded = []
+    comp.unit = mock_unit
 
-    def fake_run(cmd, **kwargs):
-        recorded.append(list(cmd))
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
-
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # Redirect staging root to tmp_path so no writes outside the test sandbox
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     service_name = "svc"
     content = "[Unit]\nDescription=svc"
     comp.create_systemd_service(service_name, content, system_location=False)
-    # Expect copy calls recorded (we use sudo cp now)
-    assert any("cp" in cmd for cmd in recorded)
+    # File is pushed via unit.put(), not via unit.run(cp ...)
+    assert any(service_name in str(dest) for _, dest in mock_unit.put_calls), (
+        "expected unit.put() call for the service file"
+    )
+    recorded_cmds = [c[0] for c in mock_unit.run_calls]
+    assert not any("cp" in cmd for cmd in recorded_cmds), "expected no cp commands on unit"
+    assert any("systemctl" in cmd for cmd in recorded_cmds)
 
     # test write_config_file
-    recorded.clear()
+    mock_unit.run_calls.clear()
+    mock_unit.put_calls.clear()
     comp.write_config_file("cfg", str(tmp_path / "cfgfile"))
-    # Expect copy and chmod recorded for config write
-    assert any("cp" in cmd for cmd in recorded)
-    assert any("chmod" in cmd for cmd in recorded)
+    assert mock_unit.put_calls, "expected unit.put() call for the config file"
+    recorded_cmds = [c[0] for c in mock_unit.run_calls]
+    assert any("chmod" in cmd for cmd in recorded_cmds)
 
 
-def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, tmp_path, arch_info):
+def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp_path):
+    mock_unit = MockUnit()
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), make_config(), arch_info
+        {},
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        make_config(),
+        arch_info,
     )
+    comp.unit = mock_unit
 
     # create dirs and files
     d1 = tmp_path / "d1"
@@ -322,21 +334,17 @@ def test_remove_directories_and_files_and_remove_installed_binary(monkeypatch, t
     f1 = tmp_path / "f1"
     f1.write_text("x")
 
-    recorded = []
-
-    def fake_run(cmd, **kwargs):
-        recorded.append(list(cmd))
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
-
     comp.remove_directories([str(d1)], "T")
     comp.remove_config_files([str(f1)], "T")
 
-    assert any("rm" in cmd for cmd in recorded)
+    recorded_cmds = [c[0] for c in mock_unit.run_calls]
+    assert any("rm" in cmd for cmd in recorded_cmds)
 
-    # test remove_installed_binary actually deletes file
-    b = tmp_path / "binfile"
-    b.write_text("x")
-    comp.install_path = str(b)
+    # test remove_installed_binary: should call unit.run(rm -f ...) not local unlink
+    mock_unit.run_calls.clear()
+    comp.install_path = "/usr/local/bin/example"
     comp.remove_installed_binary()
-    assert not b.exists()
+    assert any(
+        "rm" in cmd and "-f" in cmd and "/usr/local/bin/example" in cmd
+        for cmd in [c[0] for c in mock_unit.run_calls]
+    ), "expected unit.run(rm -f ...) for remove_installed_binary"

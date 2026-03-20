@@ -9,6 +9,7 @@ from kube_galaxy.pkg.utils.components import (
     format_component_pattern,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.paths import ensure_dir
 
 from ._base import _fetch_to_temp, _InstallStrategy
 
@@ -28,7 +29,7 @@ def _bin_path(comp: ComponentBase) -> str:
 def _download(comp: ComponentBase) -> None:
     archive_path = _fetch_to_temp(comp)
     if extracted_dir := comp.extracted_dir:
-        extracted_dir.mkdir(exist_ok=True)
+        ensure_dir(extracted_dir)
     else:
         raise ComponentError(
             f"{comp.name} does not have an extracted_dir. Ensure the component config specifies "

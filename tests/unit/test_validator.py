@@ -72,7 +72,7 @@ execute: |
 """)
 
     # Monkeypatch SystemPaths.tests_root to return our temp directory
-    monkeypatch.setattr(SystemPaths, "tests_root", lambda: tests_root)
+    monkeypatch.setattr(SystemPaths, "local_tests_root", lambda: tests_root)
 
     manifest = load_manifest(sample_manifest_file)
     spread_components = get_components_with_spread(manifest)
@@ -89,7 +89,7 @@ def test_tests_component_root_always_uses_tests_root(monkeypatch):
     definitions must be installed under tests_root.
     """
     fake_root = Path("/fake/tests")
-    monkeypatch.setattr(SystemPaths, "tests_root", lambda: fake_root)
+    monkeypatch.setattr(SystemPaths, "local_tests_root", lambda: fake_root)
 
     install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
     test = ComponentTestConfig(
@@ -137,7 +137,7 @@ def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
     here we simulate that by pre-populating tests_root and patching the path.
     """
     tests_root = tmp_path / "tests"
-    monkeypatch.setattr(SystemPaths, "tests_root", lambda: tests_root)
+    monkeypatch.setattr(SystemPaths, "local_tests_root", lambda: tests_root)
 
     # Simulate the copy that download_file would do
     task_dir = tests_root / "localcomp" / "spread" / "kube-galaxy"

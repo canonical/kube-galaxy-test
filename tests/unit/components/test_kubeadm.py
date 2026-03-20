@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import yaml
 
 from kube_galaxy.pkg.components.kubeadm import Kubeadm
@@ -12,11 +10,8 @@ from kube_galaxy.pkg.manifest.models import (
     NetworkConfig,
     RepoInfo,
 )
-
-
-class FakeCompleted:
-    def __init__(self, stdout: str = ""):
-        self.stdout = stdout
+from kube_galaxy.pkg.units._base import RunResult
+from tests.unit.components.conftest import MockUnit
 
 
 def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_path):
@@ -38,26 +33,34 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
     )
     config = ComponentConfig(name="kubeadm", category="k8s", release="v1", installation=install)
 
+    # Simulate `kubeadm config print init-defaults` returning two YAML docs
+    docs = [
+        {
+            "kind": "InitConfiguration",
+            "localAPIEndpoint": {"advertiseAddress": ""},
+            "nodeRegistration": {"taints": []},
+        },
+        {"kind": "ClusterConfiguration", "networking": {}, "clusterName": ""},
+    ]
+    defaults_yaml = "".join(yaml.safe_dump(d) for d in docs)
+
+    mock_unit = MockUnit()
+    mock_unit.set_run_results(
+        RunResult(0, defaults_yaml, ""),  # kubeadm config print init-defaults
+        RunResult(0, "", ""),  # write_config_file: mkdir parent (kubelet conf)
+        RunResult(0, "", ""),  # write_config_file: chmod (kubelet conf)
+        RunResult(0, "", ""),  # write_config_file: mkdir parent (cluster config)
+        RunResult(0, "", ""),  # write_config_file: chmod (cluster config)
+    )
+
     comp = Kubeadm({}, manifest, config, arch_info)
+    comp.unit = mock_unit
 
     # Provide a kubelet instance with an install_path so _which() succeeds
     class StubKubelet:
         install_path = "/usr/local/bin/kubelet"
 
     comp.components["kubelet"] = StubKubelet()
-
-    calls = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        # Simulate `kubeadm config print init-defaults` returning two YAML docs
-        if cmd and isinstance(cmd, list) and "kubeadm" in cmd[0] and "print" in cmd:
-            docs = [
-                {"kind": "InitConfiguration", "localAPIEndpoint": {"advertiseAddress": ""}},
-                {"kind": "ClusterConfiguration", "networking": {}, "clusterName": ""},
-            ]
-            return FakeCompleted("".join(yaml.safe_dump(d) for d in docs))
-        return FakeCompleted()
 
     # Fake urlopen used in configure_hook to fetch kubelet config
     class StubResp:
@@ -76,24 +79,15 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
     monkeypatch.setattr(
         "kube_galaxy.pkg.components.kubeadm.urlopen", lambda url: StubResp(b"/usr/bin/kubelet")
     )
-    # Patch both the module-local run and the base module run used by utility methods
-    monkeypatch.setattr("kube_galaxy.pkg.components.kubeadm.run", fake_run)
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
 
-    # redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # redirect staging root to test tmp_path to avoid cwd writes
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     comp.configure_hook()
 
     # After configure_hook, cluster config path should be set
     assert comp._cluster_config is not None
-    # The implementation may write the config via tee or copy; accept either
-    assert any(
-        (cmd[:2] == ["sudo", "tee"] or cmd[:2] == ["sudo", "cp"])
-        and str(comp._cluster_config) in cmd
-        for cmd in calls
+    # Verify the cluster config was pushed to the unit via put()
+    assert any(str(comp._cluster_config) in str(dest) for _, dest in mock_unit.put_calls), (
+        "expected unit.put() call for cluster config"
     )

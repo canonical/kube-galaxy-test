@@ -70,20 +70,49 @@ class SystemPaths:
     ETC_CONTAINERD = "/etc/containerd"
     VAR_LIB_CONTAINERD = "/var/lib/containerd"
 
+    ACTIVE_MANIFEST = "active-manifest.yaml"
+
     @classmethod
     def component_dir(cls, component_name: str) -> Path:
-        """Get component-specific directory path."""
+        """Get component-specific directory path (on unit)."""
         return Path(cls.KUBE_GALAXY_ROOT) / component_name
 
     @classmethod
     def component_bin_dir(cls, component_name: str) -> Path:
-        """Get component bin directory path."""
+        """Get component bin directory path (on unit)."""
         return cls.component_dir(component_name) / cls.KUBE_GALAXY_BIN_SUFFIX
 
     @classmethod
     def component_temp_dir(cls, component_name: str) -> Path:
-        """Get component temp directory path."""
+        """Get component temp directory path (on unit)."""
         return cls.component_dir(component_name) / cls.KUBE_GALAXY_TEMP_SUFFIX
+
+    @classmethod
+    def staging_root(cls) -> Path:
+        """Local staging root on the orchestrator host.
+
+        Lives at ``cwd()/tmp`` — user-writable, consistent across invocations,
+        and gitignored.  The sub-tree mirrors the unit's path hierarchy:
+
+            cwd()/tmp/opt/kube-galaxy/<comp>/temp
+            ↕  (strip cwd()/tmp prefix to get the unit path)
+            /opt/kube-galaxy/<comp>/temp
+        """
+        return Path.cwd() / "tmp"
+
+    @classmethod
+    def _localize(cls, path: Path) -> Path:
+        """Convert a unit path to the corresponding local staging path."""
+        return cls.staging_root() / path.relative_to("/")
+
+    @classmethod
+    def local_component_temp_dir(cls, component_name: str) -> Path:
+        """Get component local staging temp directory on the orchestrator.
+
+        Mirrors :meth:`component_temp_dir` under :meth:`staging_root`.
+        """
+        unit_temp = cls.component_temp_dir(component_name)
+        return cls._localize(unit_temp)
 
     @classmethod
     def tests_root(cls) -> Path:
@@ -91,14 +120,32 @@ class SystemPaths:
         return Path(cls.KUBE_GALAXY_TESTS_ROOT)
 
     @classmethod
+    def local_tests_root(cls) -> Path:
+        """Get local staging tests root directory on the orchestrator."""
+        return cls._localize(cls.tests_root())
+
+    @classmethod
+    def kube_config(cls) -> Path:
+        return cls.tests_root() / "kubeconfig"
+
+    @classmethod
+    def local_kube_config(cls) -> Path:
+        return cls.local_tests_root() / "kubeconfig"
+
+    @classmethod
     def tests_component_root(cls, name: str) -> Path:
-        path = cls.tests_root() / name / cls.KUBE_GALAXY_TESTS_COMP_TASK
+        path = cls.local_tests_root() / name / cls.KUBE_GALAXY_TESTS_COMP_TASK
         return path.parent
 
     @classmethod
     def tests_spread_yaml(cls) -> Path:
         """Get orchestration spread.yaml path."""
-        return Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML)
+        return cls._localize(Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML))
+
+    @classmethod
+    def active_manifest_link(cls) -> Path:
+        """Path of the symlink that records the last-used manifest (in cwd)."""
+        return cls._localize(Path(cls.KUBE_GALAXY_ROOT) / cls.ACTIVE_MANIFEST)
 
 
 class ConfigFiles:
@@ -152,10 +199,6 @@ class Commands:
         "--remove-all",
     ]
 
-    # kubectl commands
-    K_CREATE_DRY_RUN: ClassVar[list[str]] = ["kubectl", "create", "--dry-run=client", "-o", "yaml"]
-    K_ROLLOUT_STATUS: ClassVar[list[str]] = ["kubectl", "rollout", "status"]
-
 
 class Permissions:
     """File permissions and system priorities."""
@@ -204,6 +247,10 @@ class Timeouts:
     SERVICE_STOP_TIMEOUT = 30  # 30 seconds
 
     TEST_EXECUTION_TIMEOUT_S = 900  # 15 minutes
+
+    # Unit readiness
+    UNIT_READY_TIMEOUT = 120  # 2 minutes — wait for VM agent to start
+    UNIT_READY_INTERVAL = 5  # seconds between liveness probes
 
 
 class FilePatterns:

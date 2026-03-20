@@ -1,34 +1,40 @@
 """Kubernetes client operations wrapper."""
 
 import json
-import shutil
 from pathlib import Path
 from typing import Any
 
+import yaml
+
+from kube_galaxy.pkg.literals import SystemPaths
+from kube_galaxy.pkg.units import RunResult, Unit
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import info, success, warning
-from kube_galaxy.pkg.utils.shell import ShellError, run
+from kube_galaxy.pkg.utils.shell import ShellError
 
 
-def verify_connectivity() -> None:
+def kubectl(unit: Unit, *cmd: str, **kwargs: Any) -> RunResult:
+    """Run a kubectl command on the kubelet unit."""
+    env = {"KUBECONFIG": str(SystemPaths.kube_config())}
+    return unit.run(["kubectl", *cmd], env=env, **kwargs)
+
+
+def verify_connectivity(unit: Unit) -> None:
     """
     Verify kubectl connectivity to Kubernetes cluster.
 
     Raises:
         ClusterError: If kubectl is not available or cannot connect to cluster
     """
-    if not shutil.which("kubectl"):
-        raise ClusterError("kubectl not found in PATH")
-
     try:
         info("Verifying cluster connectivity...")
-        run(["kubectl", "cluster-info"], check=True, capture_output=True)
+        kubectl(unit, "version", check=True)
         success("Connected to Kubernetes cluster")
     except ShellError as exc:
         raise ClusterError(f"Failed to connect to cluster: {exc}") from exc
 
 
-def get_context() -> str:
+def get_context(unit: Unit) -> str:
     """
     Get the current Kubernetes context.
 
@@ -39,15 +45,13 @@ def get_context() -> str:
         ClusterError: If context cannot be determined
     """
     try:
-        result = run(
-            ["kubectl", "config", "current-context"], check=True, capture_output=True, text=True
-        )
+        result = kubectl(unit, "config", "current-context", check=True)
         return result.stdout.strip()
     except ShellError as exc:
         raise ClusterError(f"Failed to get current context: {exc}") from exc
 
 
-def wait_for_nodes(timeout: int = 300, condition: str = "Ready") -> None:
+def wait_for_nodes(unit: Unit, timeout: int = 300, condition: str = "Ready") -> None:
     """
     Wait for all nodes to reach a specified condition.
 
@@ -60,17 +64,14 @@ def wait_for_nodes(timeout: int = 300, condition: str = "Ready") -> None:
     """
     try:
         info(f"Waiting for nodes to be {condition}...")
-        run(
-            [
-                "kubectl",
-                "wait",
-                f"--for=condition={condition}",
-                "nodes",
-                "--all",
-                f"--timeout={timeout}s",
-            ],
+        kubectl(
+            unit,
+            "wait",
+            f"--for=condition={condition}",
+            "nodes",
+            "--all",
+            f"--timeout={timeout}s",
             check=True,
-            capture_output=True,
         )
         success(f"All nodes are {condition}")
     except ShellError as exc:
@@ -78,7 +79,7 @@ def wait_for_nodes(timeout: int = 300, condition: str = "Ready") -> None:
 
 
 def wait_for_pods(
-    namespace: str = "kube-system", timeout: int = 300, condition: str = "Ready"
+    unit: Unit, namespace: str = "kube-system", timeout: int = 300, condition: str = "Ready"
 ) -> None:
     """
     Wait for pods in a namespace to reach a specified condition.
@@ -93,26 +94,23 @@ def wait_for_pods(
     """
     try:
         info(f"Waiting for pods in {namespace} to be {condition}...")
-        run(
-            [
-                "kubectl",
-                "wait",
-                f"--for=condition={condition}",
-                "pod",
-                "--all",
-                "-n",
-                namespace,
-                f"--timeout={timeout}s",
-            ],
+        kubectl(
+            unit,
+            "wait",
+            f"--for=condition={condition}",
+            "pod",
+            "--all",
+            "-n",
+            namespace,
+            f"--timeout={timeout}s",
             check=True,
-            capture_output=True,
         )
         success(f"Pods in {namespace} are {condition}")
     except ShellError as exc:
         raise ClusterError(f"Pods in {namespace} failed to reach {condition}: {exc}") from exc
 
 
-def get_api_server_status(timeout: int = 300) -> None:
+def get_api_server_status(unit: Unit, timeout: int = 300) -> None:
     """
     Check API server readiness via /readyz endpoint.
 
@@ -124,22 +122,19 @@ def get_api_server_status(timeout: int = 300) -> None:
     """
     try:
         info("Checking API server readiness...")
-        run(
-            [
-                "kubectl",
-                "get",
-                "--raw=/readyz",
-                f"--request-timeout={timeout}s",
-            ],
+        kubectl(
+            unit,
+            "get",
+            "--raw=/readyz",
+            f"--request-timeout={timeout}s",
             check=True,
-            capture_output=True,
         )
         success("API server is ready")
     except ShellError as exc:
         raise ClusterError(f"API server not ready: {exc}") from exc
 
 
-def get_cluster_info() -> str:
+def get_cluster_info(unit: Unit) -> str:
     """
     Get cluster information.
 
@@ -150,13 +145,17 @@ def get_cluster_info() -> str:
         ClusterError: If cluster info cannot be retrieved
     """
     try:
-        result = run(["kubectl", "cluster-info"], check=True, capture_output=True, text=True)
+        result = kubectl(
+            unit,
+            "cluster-info",
+            check=True,
+        )
         return result.stdout
     except ShellError as exc:
         raise ClusterError(f"Failed to retrieve cluster info: {exc}") from exc
 
 
-def get_nodes(wide: bool = False) -> str:
+def get_nodes(unit: Unit, wide: bool = False) -> str:
     """
     Get nodes information.
 
@@ -170,17 +169,21 @@ def get_nodes(wide: bool = False) -> str:
         ClusterError: If node info cannot be retrieved
     """
     try:
-        cmd = ["kubectl", "get", "nodes"]
+        cmd = ["get", "nodes"]
         if wide:
             cmd.append("-o")
             cmd.append("wide")
-        result = run(cmd, check=True, capture_output=True, text=True)
+        result = kubectl(
+            unit,
+            *cmd,
+            check=True,
+        )
         return result.stdout
     except ShellError as exc:
         raise ClusterError(f"Failed to retrieve nodes: {exc}") from exc
 
 
-def get_pods(namespace: str = "", wide: bool = False, output_format: str = "") -> str:
+def get_pods(unit: Unit, namespace: str = "", wide: bool = False, output_format: str = "") -> str:
     """
     Get pods information.
 
@@ -196,7 +199,7 @@ def get_pods(namespace: str = "", wide: bool = False, output_format: str = "") -
         ClusterError: If pod info cannot be retrieved
     """
     try:
-        cmd = ["kubectl", "get", "pods"]
+        cmd = ["get", "pods"]
 
         if not namespace:
             cmd.append("-A")
@@ -208,13 +211,17 @@ def get_pods(namespace: str = "", wide: bool = False, output_format: str = "") -
         elif output_format:
             cmd.extend(["-o", output_format])
 
-        result = run(cmd, check=True, capture_output=True, text=True)
+        result = kubectl(
+            unit,
+            *cmd,
+            check=True,
+        )
         return result.stdout
     except ShellError as exc:
         raise ClusterError(f"Failed to retrieve pods: {exc}") from exc
 
 
-def get_pod_data_json(namespace: str = "") -> list[dict[str, Any]]:
+def get_pod_data_json(unit: Unit, namespace: str = "") -> list[dict[str, Any]]:
     """
     Get pods information as JSON for structured parsing.
 
@@ -228,22 +235,15 @@ def get_pod_data_json(namespace: str = "") -> list[dict[str, Any]]:
         ClusterError: If pod data cannot be retrieved
     """
     try:
-        cmd = ["kubectl", "get", "pods"]
-        if not namespace:
-            cmd.append("-A")
-        else:
-            cmd.extend(["-n", namespace])
-        cmd.extend(["-o", "json"])
-
-        result = run(cmd, check=True, capture_output=True, text=True)
-        data = json.loads(result.stdout)
+        result = get_pods(unit, namespace=namespace, output_format="json")
+        data = json.loads(result)
         items: list[dict[str, Any]] = data.get("items", [])
         return items
-    except (ShellError, json.JSONDecodeError) as exc:
+    except json.JSONDecodeError as exc:
         raise ClusterError(f"Failed to retrieve pods data: {exc}") from exc
 
 
-def describe_nodes() -> str:
+def describe_nodes(unit: Unit) -> str:
     """
     Get detailed node descriptions.
 
@@ -254,13 +254,18 @@ def describe_nodes() -> str:
         ClusterError: If descriptions cannot be retrieved
     """
     try:
-        result = run(["kubectl", "describe", "nodes"], check=True, capture_output=True, text=True)
+        result = kubectl(
+            unit,
+            "describe",
+            "nodes",
+            check=True,
+        )
         return result.stdout
     except ShellError as exc:
         raise ClusterError(f"Failed to describe nodes: {exc}") from exc
 
 
-def get_events(namespace: str = "", all_namespaces: bool = True) -> str:
+def get_events(unit: Unit, namespace: str = "", all_namespaces: bool = True) -> str:
     """
     Get Kubernetes events.
 
@@ -275,19 +280,23 @@ def get_events(namespace: str = "", all_namespaces: bool = True) -> str:
         ClusterError: If events cannot be retrieved
     """
     try:
-        cmd = ["kubectl", "get", "events"]
+        cmd = ["get", "events"]
         if all_namespaces:
             cmd.append("-A")
         elif namespace:
             cmd.extend(["-n", namespace])
 
-        result = run(cmd, check=True, capture_output=True, text=True)
+        result = kubectl(
+            unit,
+            *cmd,
+            check=True,
+        )
         return result.stdout
     except ShellError as exc:
         raise ClusterError(f"Failed to retrieve events: {exc}") from exc
 
 
-def get_pod_logs(namespace: str, pod_name: str, tail: int = 100) -> str:
+def get_pod_logs(unit: Unit, namespace: str, pod_name: str, tail: int = 100) -> str:
     """
     Get logs from a specific pod.
 
@@ -299,17 +308,59 @@ def get_pod_logs(namespace: str, pod_name: str, tail: int = 100) -> str:
     Returns:
         Pod logs as string. Returns empty string if pod has no logs.
     """
-    result = run(
-        ["kubectl", "logs", "-n", namespace, pod_name, f"--tail={tail}"],
+    result = kubectl(
+        unit,
+        "logs",
+        "-n",
+        namespace,
+        pod_name,
+        f"--tail={tail}",
         check=False,
-        capture_output=True,
-        text=True,
     )
     # Non-zero exit is OK if pod has no logs; return empty
     return result.stdout if result.returncode == 0 else ""
 
 
-def create_namespace(name: str, labels: dict[str, str] | None = None) -> None:
+def create(
+    unit: Unit,
+    *args: str,
+    dry_run: bool = False,
+    output_format: str = "yaml",
+    file: None | str | Path = None,
+) -> Any:
+    """
+    Create a Kubernetes resource using kubectl.
+
+    Args:
+        unit: Unit on which to run kubectl
+        *args: kubectl arguments for the resource to create (e.g. "deployment")
+        dry_run: If True, perform a dry-run creation (default: False)
+        output_format: Output format for dry-run (json, yaml, etc.)
+        file: Optional path to a file containing the resource definition
+
+    Returns:
+        Parsed output if output_format is specified, otherwise raw stdout
+
+    Raises:
+        ClusterError: If resource creation fails
+    """
+    cmd = ["create", *args]
+    if dry_run:
+        cmd.extend(["--dry-run=client"])
+    if output_format:
+        cmd.extend(["-o", output_format])
+    if file:
+        unit.put(Path(file), "/tmp/create_input.yaml")
+        cmd.extend(["-f", "/tmp/create_input.yaml"])
+    result = kubectl(unit, *cmd, check=True)
+    if output_format == "json":
+        return json.loads(result.stdout)
+    elif output_format in ("yaml", "yml"):
+        return yaml.safe_load_all(result.stdout)
+    return result.stdout
+
+
+def create_namespace(unit: Unit, name: str, labels: dict[str, str] | None = None) -> None:
     """
     Create a Kubernetes namespace with optional labels.
 
@@ -322,14 +373,17 @@ def create_namespace(name: str, labels: dict[str, str] | None = None) -> None:
     """
     try:
         info(f"Creating namespace: {name}")
-        run(["kubectl", "create", "namespace", name], check=True, capture_output=True)
+        create(unit, "namespace", name)
 
         if labels:
             label_strs = [f"{k}={v}" for k, v in labels.items()]
-            run(
-                ["kubectl", "label", "namespace", name, *label_strs],
+            kubectl(
+                unit,
+                "label",
+                "namespace",
+                name,
+                *label_strs,
                 check=True,
-                capture_output=True,
             )
             success(f"Namespace created with labels: {name}")
         else:
@@ -339,7 +393,7 @@ def create_namespace(name: str, labels: dict[str, str] | None = None) -> None:
         raise ClusterError(f"Failed to create namespace {name}: {exc}") from exc
 
 
-def delete_namespace(name: str, timeout: int = 60) -> None:
+def delete_namespace(unit: Unit, name: str, timeout: int = 60) -> None:
     """
     Delete a Kubernetes namespace with timeout.
 
@@ -352,10 +406,14 @@ def delete_namespace(name: str, timeout: int = 60) -> None:
     """
     try:
         info(f"Deleting namespace: {name}")
-        run(
-            ["kubectl", "delete", "namespace", name, "--timeout", f"{timeout}s"],
+        kubectl(
+            unit,
+            "delete",
+            "namespace",
+            name,
+            "--timeout",
+            f"{timeout}s",
             check=True,
-            capture_output=True,
         )
         success(f"Namespace deleted: {name}")
     except ShellError as exc:
@@ -366,7 +424,7 @@ def delete_namespace(name: str, timeout: int = 60) -> None:
             raise ClusterError(f"Failed to delete namespace {name}: {exc}") from exc
 
 
-def apply_manifest(manifest_path: Path | str) -> None:
+def apply_manifest(unit: Unit, manifest_path: Path | str) -> None:
     """
     Apply a Kubernetes manifest file.
 
@@ -382,7 +440,8 @@ def apply_manifest(manifest_path: Path | str) -> None:
 
     try:
         info(f"Applying manifest: {manifest_path.name}")
-        run(["kubectl", "apply", "-f", str(manifest_path)], check=True, capture_output=True)
+        unit.put(manifest_path, "/tmp/apply_now")
+        kubectl(unit, "apply", "-f", "/tmp/apply_now", check=True)
         success(f"Manifest applied: {manifest_path.name}")
     except ShellError as exc:
         raise ClusterError(f"Failed to apply manifest {manifest_path}: {exc}") from exc

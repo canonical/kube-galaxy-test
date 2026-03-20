@@ -42,6 +42,7 @@ debug-logs/
 cleanup-logs/
 issue-data/
 test-cluster-config.yaml
+tmp/
 
 *.log
 dns-test.log

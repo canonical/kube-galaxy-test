@@ -13,7 +13,9 @@ from kube_galaxy.pkg.manifest.models import (
     Manifest,
     RepoInfo,
 )
+from kube_galaxy.pkg.units._base import RunResult
 from kube_galaxy.pkg.utils.errors import ComponentError
+from tests.unit.components.conftest import MockUnit
 
 
 @pytest.fixture
@@ -52,12 +54,8 @@ def component(
     tmp_path,
 ):
     """Create a ComponentBase instance with mocked temp directory."""
-    # Redirect component temp dir to test tmp_path to avoid /opt writes
-    monkeypatch.setattr(
-        SystemPaths,
-        "component_temp_dir",
-        classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
-    )
+    # Redirect staging root to test tmp_path to avoid cwd writes
+    monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
     return ComponentBase({}, manifest, calico_config, arch_info)
 
 
@@ -144,7 +142,7 @@ def test_bootstrap_hook_applies_manifest(component, monkeypatch, tmp_path):
 
     apply_manifest_calls = []
 
-    def fake_apply_manifest(path):
+    def fake_apply_manifest(unit, path):
         apply_manifest_calls.append(path)
 
     _target = "kube_galaxy.pkg.components.strategies.container_manifest.apply_manifest"
@@ -174,30 +172,30 @@ def test_bootstrap_hook_fails_if_manifest_file_missing(component, tmp_path):
         component.bootstrap_hook()
 
 
-def test_delete_hook_does_nothing_in_base_class(component, monkeypatch, tmp_path):
-    """Test that delete_hook base implementation does nothing for CONTAINER_MANIFEST method."""
+def test_delete_hook_does_nothing_in_base_class(component, tmp_path):
+    """Test that delete_hook base implementation does not call kubectl for CONTAINER_MANIFEST."""
+
+    # Inject mock unit to capture commands (no kubectl should be called)
+    mock_unit = MockUnit()
+    component.unit = mock_unit  # type: ignore[assignment]
+
     # Setup: Create a manifest file
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text("apiVersion: v1\nkind: ConfigMap\n")
     component.manifest_path = manifest_path
 
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        run_calls.append((list(cmd), kwargs))
-
-    monkeypatch.setattr("kube_galaxy.pkg.components._base.run", fake_run)
-
-    # Call delete hook - base class should do nothing
+    # Call delete hook - base class should not call kubectl
     component.delete_hook()
 
     # No kubectl commands should be called in base class
-    assert len(run_calls) == 0
+    kubectl_calls = [c for c, _ in mock_unit.run_calls if "kubectl" in c]
+    assert len(kubectl_calls) == 0
 
 
 def test_delete_hook_handles_missing_manifest_gracefully(component):
     """Test that delete_hook handles missing manifest file gracefully."""
+    component.unit = MockUnit()
     # manifest_path is None, should not crash
     component.delete_hook()
     # Base implementation does nothing, so this should just pass
@@ -211,6 +209,7 @@ def test_delete_hook_base_implementation_does_nothing(component, tmp_path):
     component.manifest_path = manifest_path
 
     # Should not raise an exception and should do nothing
+    component.unit = MockUnit()
     component.delete_hook()
 
 
@@ -224,6 +223,7 @@ def test_delete_hook_preserves_manifest_file(component, tmp_path):
     # Verify file exists before
     assert manifest_path.exists()
 
+    component.unit = MockUnit()
     component.delete_hook()
 
     # Verify file still exists after (base class does nothing)
@@ -243,10 +243,11 @@ def test_delete_hook_works_for_all_install_methods(manifest, arch_info):
         name="test-binary", category="test", release="v1", installation=install
     )
 
-    comp = ComponentBase({}, manifest, config, arch_info)
+    component = ComponentBase({}, manifest, config, arch_info)
 
     # Call delete hook - should do nothing for any install method in base class
-    comp.delete_hook()
+    component.unit = MockUnit()
+    component.delete_hook()
     # Base implementation does nothing, so this should just pass
 
 
@@ -259,6 +260,7 @@ def test_install_hook_does_nothing_for_manifest(component):
 
 def test_verify_hook_parses_manifest_and_waits_for_workloads(component, monkeypatch, tmp_path):
     """Test that verify_hook parses manifest and waits for workload rollout status."""
+
     # Setup: Create a manifest file
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -283,48 +285,35 @@ metadata:
     manifest_path.write_text(manifest_content)
     component.manifest_path = manifest_path
 
-    run_calls = []
-
-    # Mock kubectl create --dry-run to return parsed YAML
-    def fake_run(cmd, **kwargs):
-        if "create" in cmd and "--dry-run=client" in cmd:
-            # Return the manifest content as stdout
-            class FakeResult:
-                stdout = manifest_content
-
-            run_calls.append(("create-dry-run", list(cmd), kwargs))
-            return FakeResult()
-        elif "rollout" in cmd and "status" in cmd:
-            run_calls.append(("rollout-status", list(cmd), kwargs))
-            return None
-        return None
-
-    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
-    monkeypatch.setattr(_target, fake_run)
+    # Mock unit: first run() call (dry-run) returns manifest_content
+    mock_unit = MockUnit()
+    mock_unit.set_run_results(
+        RunResult(0, manifest_content, ""),  # dry-run result
+        RunResult(0, "", ""),  # rollout status for Deployment
+        RunResult(0, "", ""),  # rollout status for DaemonSet
+    )
+    component.unit = mock_unit  # type: ignore[assignment]
 
     # Call verify hook
     component.verify_hook()
 
     # Verify kubectl create --dry-run was called
-    create_calls = [c for c in run_calls if c[0] == "create-dry-run"]
-    assert len(create_calls) == 1
-    _, cmd, kwargs = create_calls[0]
+    dry_run_calls = [c for c, _ in mock_unit.run_calls if "--dry-run=client" in c]
+    assert len(dry_run_calls) == 1
+    cmd = dry_run_calls[0]
     assert "kubectl" in cmd
-    assert "--dry-run=client" in cmd
     assert "-f" in cmd
-    assert str(manifest_path) in cmd
-    assert kwargs.get("check") is True
-    assert kwargs.get("capture_output") is True
+    # source puts the file via unit.put() then references the remote temp path
+    assert any(str(manifest_path) in str(local) for local, _ in mock_unit.put_calls)
 
     # Verify kubectl rollout status was called for each workload
-    rollout_calls = [c for c in run_calls if c[0] == "rollout-status"]
-    assert len(rollout_calls) == 2  # Deployment and DaemonSet
+    rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c and "status" in c]
+    assert len(rollout_calls) == 2
 
     # Check deployment rollout
-    deployment_calls = [c for c in rollout_calls if "deployment" in " ".join(c[1])]
+    deployment_calls = [c for c in rollout_calls if "deployment" in " ".join(c)]
     assert len(deployment_calls) == 1
-    _, cmd, kwargs = deployment_calls[0]
-    assert cmd == [
+    assert deployment_calls[0] == [
         "kubectl",
         "rollout",
         "status",
@@ -332,20 +321,23 @@ metadata:
         "-n",
         "kube-system",
     ]
-    assert kwargs.get("check") is True
-    assert "timeout" in kwargs
 
     # Check daemonset rollout
-    daemonset_calls = [c for c in rollout_calls if "daemonset" in " ".join(c[1])]
+    daemonset_calls = [c for c in rollout_calls if "daemonset" in " ".join(c)]
     assert len(daemonset_calls) == 1
-    _, cmd, kwargs = daemonset_calls[0]
-    assert cmd == ["kubectl", "rollout", "status", "daemonset/calico-node", "-n", "kube-system"]
-    assert kwargs.get("check") is True
-    assert "timeout" in kwargs
+    assert daemonset_calls[0] == [
+        "kubectl",
+        "rollout",
+        "status",
+        "daemonset/calico-node",
+        "-n",
+        "kube-system",
+    ]
 
 
 def test_verify_hook_handles_default_namespace(component, monkeypatch, tmp_path):
     """Test that verify_hook uses 'default' namespace when not specified in manifest."""
+
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_content = """
@@ -357,26 +349,18 @@ metadata:
     manifest_path.write_text(manifest_content)
     component.manifest_path = manifest_path
 
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        if "create" in cmd and "--dry-run=client" in cmd:
-
-            class FakeResult:
-                stdout = manifest_content
-
-            return FakeResult()
-        elif "rollout" in cmd:
-            run_calls.append(list(cmd))
-
-    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
-    monkeypatch.setattr(_target, fake_run)
+    mock_unit = MockUnit()
+    mock_unit.set_run_results(
+        RunResult(0, manifest_content, ""),
+        RunResult(0, "", ""),
+    )
+    component.unit = mock_unit  # type: ignore[assignment]
 
     component.verify_hook()
 
-    # Verify default namespace was used
-    assert len(run_calls) == 1
-    assert run_calls[0] == [
+    rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c and "status" in c]
+    assert len(rollout_calls) == 1
+    assert rollout_calls[0] == [
         "kubectl",
         "rollout",
         "status",
@@ -388,6 +372,7 @@ metadata:
 
 def test_verify_hook_skips_non_workload_resources(component, monkeypatch, tmp_path):
     """Test that verify_hook only waits for Deployment, DaemonSet, and StatefulSet."""
+
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_content = """
@@ -409,25 +394,15 @@ metadata:
     manifest_path.write_text(manifest_content)
     component.manifest_path = manifest_path
 
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        if "create" in cmd and "--dry-run=client" in cmd:
-
-            class FakeResult:
-                stdout = manifest_content
-
-            return FakeResult()
-        elif "rollout" in cmd:
-            run_calls.append(list(cmd))
-
-    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
-    monkeypatch.setattr(_target, fake_run)
+    mock_unit = MockUnit()
+    mock_unit.set_run_results(RunResult(0, manifest_content, ""))
+    component.unit = mock_unit  # type: ignore[assignment]
 
     component.verify_hook()
 
     # No rollout status calls should be made for non-workload resources
-    assert len(run_calls) == 0
+    rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c]
+    assert len(rollout_calls) == 0
 
 
 def test_verify_hook_fails_if_manifest_not_downloaded(component):
@@ -447,6 +422,7 @@ def test_verify_hook_fails_if_manifest_file_missing(component, tmp_path):
 
 def test_verify_hook_handles_statefulset(component, monkeypatch, tmp_path):
     """Test that verify_hook properly handles StatefulSet workloads."""
+
     manifest_path = Path(tmp_path) / "calico" / "temp" / "calico-manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_content = """
@@ -459,26 +435,19 @@ metadata:
     manifest_path.write_text(manifest_content)
     component.manifest_path = manifest_path
 
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        if "create" in cmd and "--dry-run=client" in cmd:
-
-            class FakeResult:
-                stdout = manifest_content
-
-            return FakeResult()
-        elif "rollout" in cmd:
-            run_calls.append(list(cmd))
-
-    _target = "kube_galaxy.pkg.components.strategies.container_manifest.run"
-    monkeypatch.setattr(_target, fake_run)
+    mock_unit = MockUnit()
+    mock_unit.set_run_results(
+        RunResult(0, manifest_content, ""),
+        RunResult(0, "", ""),
+    )
+    component.unit = mock_unit  # type: ignore[assignment]
 
     component.verify_hook()
 
     # Verify statefulset rollout was called
-    assert len(run_calls) == 1
-    assert run_calls[0] == [
+    rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c and "status" in c]
+    assert len(rollout_calls) == 1
+    assert rollout_calls[0] == [
         "kubectl",
         "rollout",
         "status",
