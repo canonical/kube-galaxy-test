@@ -43,7 +43,7 @@ def test_status_wait_runs_readiness_checks(monkeypatch):
     )
     monkeypatch.setattr(status_cmd, "provider_factory", lambda _manifest: fake_provider)
 
-    status_cmd.status("dummy.yaml", wait=True, timeout=123)
+    status_cmd.status("sample.yaml", wait=True, timeout=123)
 
     assert len(wait_for_nodes_called) == 1
     assert wait_for_nodes_called[0]["timeout"] == 123
@@ -80,7 +80,7 @@ def test_status_wait_exits_non_zero_on_readiness_failure(monkeypatch):
     monkeypatch.setattr(status_cmd, "provider_factory", lambda _manifest: fake_provider)
 
     with pytest.raises(typer.Exit) as exc:
-        status_cmd.status("dummy.yaml", wait=True, timeout=60)
+        status_cmd.status("sample.yaml", wait=True, timeout=60)
 
     assert exc.value.exit_code == 1
 
