@@ -13,12 +13,12 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
+from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError
-
-_CREDENTIALS_DIR = Path("/opt/kube-galaxy/credentials")
 
 
 class LocalUnit(Unit):
@@ -97,16 +97,26 @@ class LocalUnit(Unit):
 
         return compute_sha256(Path(path))
 
-    def enlist(self, credentials: list[SiteCredential]) -> None:
-        ensure_dir(_CREDENTIALS_DIR)
-        for cred in credentials:
-            curlrc = _CREDENTIALS_DIR / f"{cred.hostname}.curlrc"
-            curlrc.write_text(f'header = "Authorization: {cred.auth_header}"\n')
-            curlrc.chmod(0o600)
-
-    def release(self) -> None:
-        if _CREDENTIALS_DIR.exists():
-            shutil.rmtree(_CREDENTIALS_DIR)
-
     def wait_until_ready(self, timeout: float | None = None) -> None:
         """Local unit is always ready; nothing to wait for."""
+
+
+class LocalUnitProvider(UnitProvider):
+    """Returns a single LocalUnit; no machines are provisioned or destroyed."""
+
+    @property
+    def is_ephemeral(self) -> bool:
+        return False
+
+    def _make_local_unit(self) -> Unit:
+        return LocalUnit()
+
+    def provision(self, role: NodeRole, index: int) -> Unit:
+        info(f"Using local machine as '{role.value}-{index}'.")
+        return self._make_local_unit()
+
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        return self._make_local_unit()
+
+    def deprovision(self, unit: Unit) -> None:
+        info(f"Local machine '{unit.name}' is never deprovisioned; skipping.")

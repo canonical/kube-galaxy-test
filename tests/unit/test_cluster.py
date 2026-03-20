@@ -16,18 +16,14 @@ from kube_galaxy.pkg.manifest.models import (
     NodeRole,
     ProviderConfig,
 )
-from kube_galaxy.pkg.units._base import Unit
-from kube_galaxy.pkg.units.local import LocalUnit
-from kube_galaxy.pkg.units.lxdvm import LXDUnit
-from kube_galaxy.pkg.units.multipass import MultipassUnit
+from kube_galaxy.pkg.units._base import Unit, UnitProvider
+from kube_galaxy.pkg.units.local import LocalUnit, LocalUnitProvider
+from kube_galaxy.pkg.units.lxdvm import LXDUnit, LXDUnitProvider
+from kube_galaxy.pkg.units.multipass import MultipassUnit, MultipassUnitProvider
 from kube_galaxy.pkg.units.provider import (
-    LocalUnitProvider,
-    LXDUnitProvider,
-    MultipassUnitProvider,
-    SSHUnitProvider,
-    UnitProvider,
     provider_factory,
 )
+from kube_galaxy.pkg.units.ssh import SSHUnitProvider
 from tests.unit.components.conftest import MockUnit
 
 # ---------------------------------------------------------------------------

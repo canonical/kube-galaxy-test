@@ -65,12 +65,6 @@ class MockUnit(Unit):
     def sha256(self, path):  # type: ignore[override]
         return "abc123"
 
-    def enlist(self, credentials):  # type: ignore[override]
-        pass
-
-    def release(self):  # type: ignore[override]
-        pass
-
     def wait_until_ready(self, timeout: float | None = None) -> None:  # type: ignore[override]
         pass
 

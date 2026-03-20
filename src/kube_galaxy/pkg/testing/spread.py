@@ -13,6 +13,7 @@ from kube_galaxy.pkg.manifest.validator import (
     get_components_with_spread,
     validate_component_test_structure,
 )
+from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
 from kube_galaxy.pkg.utils.paths import ensure_dir
@@ -60,10 +61,8 @@ def run_spread_tests(
         # Verify test prerequisites (kubectl connectivity, spread availability)
         _verify_test_prerequisites()
 
-        # Setup shared kubeconfig and run tests (cleanup handled by context manager)
-        kubeconfig = SystemPaths.local_kube_config()
         # Run tests from components with spread enabled
-        _run_component_tests(manifest, work_dir_path, test_type, debug, kubeconfig)
+        _run_component_tests(manifest, work_dir_path, test_type, debug)
 
         section("Test Execution Complete")
         success("Tests completed successfully")
@@ -91,9 +90,7 @@ def _verify_test_prerequisites() -> None:
         raise ClusterError("Test prerequisites not met") from exc
 
 
-def _generate_orchestration_spread_yaml(
-    components: list[ComponentConfig], kubeconfig: Path
-) -> list[str]:
+def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> list[str]:
     """
     Generate spread.yaml from template for component test orchestration.
 
@@ -110,18 +107,21 @@ def _generate_orchestration_spread_yaml(
     try:
         info("Generating test orchestration spread.yaml...")
         # Get architecture info
+        local_test = SystemPaths.local_tests_root()
 
         # Load template
         suites = {}
         spread_def = {
-            "path": SystemPaths.tests_root(),
+            "path": local_test,
             "environment": {
-                "PROJECT_PATH": SystemPaths.tests_root(),
+                "PROJECT_PATH": str(local_test),
                 "TEST_TIMEOUT_S": str(Timeouts.TEST_EXECUTION_TIMEOUT_S),
                 "TEST_TIMEOUT_M": str(Timeouts.TEST_EXECUTION_TIMEOUT_S // 60),
-                "KUBECONFIG": str(kubeconfig),
+                "KUBECONFIG": str(SystemPaths.local_kube_config()),
             },
         }
+
+        arch_info = LocalUnit().arch
 
         # Generate component suites section.
         # By the time tests run, all task definitions are installed under tests_root
@@ -129,7 +129,7 @@ def _generate_orchestration_spread_yaml(
             suite_path = SystemPaths.tests_component_root(each.name)
             task = suite_path / "task.yaml"
             suite = yaml.safe_load(task.read_text())  # Load for name and summary
-            rel = suite_path.relative_to(SystemPaths.tests_root()).parent
+            rel = suite_path.relative_to(local_test).parent
             suites[f"{rel}/"] = {
                 "summary": suite.get("summary", "No summary"),
                 # Per-suite environment variables are forwarded to each task's
@@ -138,6 +138,9 @@ def _generate_orchestration_spread_yaml(
                 "environment": {
                     "COMPONENT_NAME": each.name,
                     "COMPONENT_VERSION": each.release,
+                    "SYSTEM_ARCH": arch_info.system,
+                    "K8S_ARCH": arch_info.k8s,
+                    "IMAGE_ARCH": arch_info.image,
                 },
             }
 
@@ -220,9 +223,7 @@ def _execute_spread_for_component(
         return False
 
 
-def _run_component_tests(
-    manifest: Manifest, work_dir: Path, test_type: str, debug: bool, kubeconfig: Path
-) -> None:
+def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, debug: bool) -> None:
     """Run spread tests from components marked with test: true."""
     section("Looking for components with spread tests")
 
@@ -248,7 +249,7 @@ def _run_component_tests(
         raise ClusterError("Component validation failed")
 
     # Generate orchestration spread.yaml
-    component_suites = _generate_orchestration_spread_yaml(spread_components, kubeconfig)
+    component_suites = _generate_orchestration_spread_yaml(spread_components)
 
     # Track test results
     test_results = []

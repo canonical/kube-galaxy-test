@@ -1,17 +1,17 @@
-"""Unit tests for the units package: Unit ABC, LocalUnit, SiteCredential."""
+"""Unit tests for the units package: Unit ABC, LocalUnit."""
 
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
+from kube_galaxy.pkg.units._base import RunResult, Unit
 from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.units.lxdvm import LXDUnit
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
 # ---------------------------------------------------------------------------
-# RunResult and SiteCredential dataclasses
+# RunResult dataclass
 # ---------------------------------------------------------------------------
 
 
@@ -20,19 +20,6 @@ def test_run_result_fields():
     assert r.returncode == 0
     assert r.stdout == "hello"
     assert r.stderr == ""
-
-
-def test_site_credential_hostname_scoping():
-    """SiteCredential stores hostname separately from auth_header."""
-    gh = SiteCredential(hostname="github.com", auth_header="Bearer ghp_xxx")
-    lp = SiteCredential(hostname="launchpad.net", auth_header="Basic base64yyy")
-
-    # Credentials are distinct and hostname-scoped
-    assert gh.hostname != lp.hostname
-    assert gh.auth_header != lp.auth_header
-    # A github.com credential is not for launchpad.net
-    assert gh.hostname == "github.com"
-    assert lp.hostname == "launchpad.net"
 
 
 # ---------------------------------------------------------------------------
@@ -206,83 +193,6 @@ def test_local_unit_extract_zip_missing_entry_raises(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# LocalUnit.enlist — writes curlrc files
-# ---------------------------------------------------------------------------
-
-
-def test_local_unit_enlist_writes_curlrc(tmp_path, monkeypatch):
-    """LocalUnit.enlist() writes one curlrc file per credential at mode 0600."""
-    creds_dir = tmp_path / "credentials"
-    monkeypatch.setattr("kube_galaxy.pkg.units.local._CREDENTIALS_DIR", creds_dir)
-
-    credentials = [
-        SiteCredential(hostname="github.com", auth_header="Bearer ghp_xxx"),
-        SiteCredential(hostname="launchpad.net", auth_header="Basic base64yyy"),
-    ]
-
-    u = LocalUnit()
-    u.enlist(credentials)
-
-    gh_curlrc = creds_dir / "github.com.curlrc"
-    lp_curlrc = creds_dir / "launchpad.net.curlrc"
-
-    assert gh_curlrc.exists()
-    assert lp_curlrc.exists()
-
-    # Verify content
-    assert "Authorization: Bearer ghp_xxx" in gh_curlrc.read_text()
-    assert "Authorization: Basic base64yyy" in lp_curlrc.read_text()
-
-    # Verify mode 0600 (owner read/write only)
-    assert oct(gh_curlrc.stat().st_mode)[-3:] == "600"
-    assert oct(lp_curlrc.stat().st_mode)[-3:] == "600"
-
-
-def test_local_unit_enlist_hostname_scoped(tmp_path, monkeypatch):
-    """Each credential file is scoped to its hostname — no cross-host leakage."""
-    creds_dir = tmp_path / "credentials"
-    monkeypatch.setattr("kube_galaxy.pkg.units.local._CREDENTIALS_DIR", creds_dir)
-
-    credentials = [
-        SiteCredential(hostname="github.com", auth_header="Bearer ghp_xxx"),
-    ]
-    u = LocalUnit()
-    u.enlist(credentials)
-
-    # launchpad.net curlrc must NOT exist
-    assert not (creds_dir / "launchpad.net.curlrc").exists()
-    # github.com curlrc MUST exist
-    assert (creds_dir / "github.com.curlrc").exists()
-
-
-# ---------------------------------------------------------------------------
-# LocalUnit.release — removes credentials directory
-# ---------------------------------------------------------------------------
-
-
-def test_local_unit_release_removes_credentials(tmp_path, monkeypatch):
-    """LocalUnit.release() removes the credentials directory if it exists."""
-    creds_dir = tmp_path / "credentials"
-    creds_dir.mkdir()
-    (creds_dir / "github.com.curlrc").write_text("header = ...\n")
-    monkeypatch.setattr("kube_galaxy.pkg.units.local._CREDENTIALS_DIR", creds_dir)
-
-    u = LocalUnit()
-    u.release()
-
-    assert not creds_dir.exists()
-
-
-def test_local_unit_release_noop_if_no_credentials(tmp_path, monkeypatch):
-    """LocalUnit.release() is a no-op if credentials directory doesn't exist."""
-    creds_dir = tmp_path / "credentials"
-    monkeypatch.setattr("kube_galaxy.pkg.units.local._CREDENTIALS_DIR", creds_dir)
-
-    u = LocalUnit()
-    u.release()  # Should not raise
-
-
-# ---------------------------------------------------------------------------
 # LXDUnit — importability and ABC compliance
 # ---------------------------------------------------------------------------
 
@@ -361,7 +271,7 @@ def test_lxd_unit_wait_until_ready_retries_on_failure(monkeypatch):
         return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
-    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.time.sleep", lambda _: None)
+    monkeypatch.setattr("kube_galaxy.pkg.units._base.time.sleep", lambda _: None)
 
     unit = LXDUnit("test-vm")
     unit.wait_until_ready(timeout=60)
@@ -380,9 +290,9 @@ def test_lxd_unit_wait_until_ready_raises_on_timeout(monkeypatch):
     times = iter([0.0, 0.0, 200.0])
 
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
-    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.time.monotonic", lambda: next(times))
-    monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.time.sleep", lambda _: None)
+    monkeypatch.setattr("kube_galaxy.pkg.units._base.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("kube_galaxy.pkg.units._base.time.sleep", lambda _: None)
 
     unit = LXDUnit("test-vm")
-    with pytest.raises(ClusterError, match="Timed out waiting for LXD unit"):
+    with pytest.raises(ClusterError, match="Timed out waiting for unit 'test-vm'"):
         unit.wait_until_ready(timeout=120)

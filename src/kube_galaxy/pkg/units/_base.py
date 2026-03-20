@@ -5,13 +5,18 @@ uniform interface for running commands, transferring files, and managing
 per-hostname credentials.
 """
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
-from kube_galaxy.pkg.literals import SystemPaths
+from kube_galaxy.pkg.literals import SystemPaths, Timeouts
+from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.utils.errors import ClusterError
+
+_CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
 
 
 @dataclass
@@ -95,15 +100,16 @@ class Unit(ABC):
     def get(self, remote: str, local: Path) -> None:
         """Pull a file at ``remote`` path from the unit to ``local``."""
 
-    @abstractmethod
     def download(self, url: str, dest: str) -> None:
         """Have the unit fetch ``url`` and save it to ``dest`` on the unit."""
+        self.run(["mkdir", "-p", str(Path(dest).parent)])
+        self.run(["curl", "-fsSL", url, "-o", dest])
 
-    @abstractmethod
     def extract(self, archive: str, dest: str) -> None:
         """Extract a tar archive at ``archive`` into directory ``dest`` on the unit."""
+        self.run(["mkdir", "-p", dest])
+        self.run(["tar", "-xf", archive, "-C", dest])
 
-    @abstractmethod
     def extract_zip(self, zip_file: str, path_in_zip: str, dest: str) -> None:
         """Extract a single file from a zip archive on the unit.
 
@@ -112,25 +118,13 @@ class Unit(ABC):
             path_in_zip: Path of the entry to extract within the zip.
             dest: Destination path on the unit for the extracted file.
         """
+        self.run(["mkdir", "-p", str(Path(dest).parent)])
+        self.run(["sh", "-c", f"unzip -p {zip_file} {path_in_zip} > {dest}"])
 
-    @abstractmethod
     def sha256(self, path: str) -> str:
         """Return the hex SHA-256 digest of a file at ``path`` on the unit."""
+        return self.run(["sha256sum", path]).stdout.split()[0]
 
-    @abstractmethod
-    def enlist(self, credentials: list[SiteCredential]) -> None:
-        """Write per-hostname curl config files on the unit.
-
-        Creates ``/opt/kube-galaxy/credentials/{hostname}.curlrc`` (mode 0600)
-        for each credential so that ``unit.download()`` can authenticate without
-        embedding tokens in process arguments.
-        """
-
-    @abstractmethod
-    def release(self) -> None:
-        """Remove credentials directory and clean up transient unit state."""
-
-    @abstractmethod
     def wait_until_ready(self, timeout: float | None = None) -> None:
         """Block until the unit agent is responsive.
 
@@ -144,6 +138,18 @@ class Unit(ABC):
         Raises:
             ClusterError: If the unit does not become ready within *timeout*.
         """
+        effective_timeout = Timeouts.UNIT_READY_TIMEOUT if timeout is None else timeout
+        deadline = time.monotonic() + effective_timeout
+        while True:
+            if self.run(["hostname"], check=False).returncode == 0:
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ClusterError(
+                    f"Timed out waiting for unit '{self.name}' to become ready "
+                    f"after {effective_timeout:.0f}s"
+                )
+            time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
 
     # ------------------------------------------------------------------
     # Artifact server integration
@@ -189,3 +195,58 @@ class Unit(ABC):
             relative = local_path.relative_to(SystemPaths.staging_root())
             return f"{self._artifact_base_url.rstrip('/')}/{relative}"
         return local_path.as_uri()
+
+
+class UnitProvider(ABC):
+    """Owns the machine lifecycle  provisioning and deprovisioning."""
+
+    def __init__(self) -> None:
+        self._units: list[Unit] = []
+
+    def _track(self, unit: Unit) -> None:
+        """Add *unit* to the tracked set if not already present."""
+        if not any(u.name == unit.name for u in self._units):
+            self._units.append(unit)
+
+    def _untrack(self, unit: Unit) -> None:
+        """Remove *unit* from the tracked set."""
+        self._units = [u for u in self._units if u.name != unit.name]
+
+    @property
+    @abstractmethod
+    def is_ephemeral(self) -> bool:
+        """True if this provider creates and destroys machines (LXD, Multipass).
+
+        Ephemeral providers skip component-level teardown hooks and call
+        ``deprovision_all()`` directly for near-instant cleanup.
+        Non-ephemeral providers (SSH, local) run full teardown per-unit.
+        """
+
+    @abstractmethod
+    def provision(self, role: NodeRole, index: int) -> Unit:
+        """Provision a new machine for the given role and index."""
+
+    @abstractmethod
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        """Return a Unit referencing an already-provisioned machine.
+
+        Unlike ``provision``, this must not create or launch any infrastructure.
+        It is used during teardown to reattach to machines that were created
+        during a prior ``provision`` call.
+
+        Args:
+            role: Node role (control-plane or worker).
+            index: Zero-based index within that role.
+
+        Returns:
+            A Unit pointing at the existing machine.
+        """
+
+    @abstractmethod
+    def deprovision(self, unit: Unit) -> None:
+        """Deprovision a single unit (destroy VM or no-op for pre-existing hosts)."""
+
+    def deprovision_all(self) -> None:
+        """Deprovision all tracked units."""
+        for unit in list(self._units):
+            self.deprovision(unit)

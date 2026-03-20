@@ -134,13 +134,13 @@ class SystemPaths:
 
     @classmethod
     def tests_component_root(cls, name: str) -> Path:
-        path = cls.tests_root() / name / cls.KUBE_GALAXY_TESTS_COMP_TASK
+        path = cls.local_tests_root() / name / cls.KUBE_GALAXY_TESTS_COMP_TASK
         return path.parent
 
     @classmethod
     def tests_spread_yaml(cls) -> Path:
         """Get orchestration spread.yaml path."""
-        return Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML)
+        return cls._localize(Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML))
 
     @classmethod
     def active_manifest_link(cls) -> Path:

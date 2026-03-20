@@ -1,16 +1,14 @@
 """SSHUnit  executes operations on a pre-existing host via SSH/SCP."""
 
 import subprocess
-import time
 from pathlib import Path
 
-from kube_galaxy.pkg.literals import Timeouts
-from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
-from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
+from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
+from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError
-
-_CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
 
 
 class SSHUnit(Unit):
@@ -93,63 +91,26 @@ class SSHUnit(Unit):
         if result.returncode != 0:
             raise ComponentError(f"Failed to scp {self._host}:{remote} to {local}: {result.stderr}")
 
-    def download(self, url: str, dest: str) -> None:
-        hostname = url.split("/")[2] if "://" in url else ""
-        curlrc = f"{_CREDENTIALS_DIR}/{hostname}.curlrc"
-        check_result = self._ssh_run(["test", "-f", curlrc], check=False)
-        if check_result.returncode == 0:
-            cmd = ["curl", "--config", curlrc, "-fsSL", url, "-o", dest]
-        else:
-            cmd = ["curl", "-fsSL", url, "-o", dest]
-        self._ssh_run(["mkdir", "-p", str(Path(dest).parent)])
-        self._ssh_run(cmd, check=True)
 
-    def extract(self, archive: str, dest: str) -> None:
-        self._ssh_run(["mkdir", "-p", dest])
-        self._ssh_run(["tar", "-xf", archive, "-C", dest])
+class SSHUnitProvider(UnitProvider):
+    """Returns SSHUnit instances for pre-existing hosts; no-op deprovision."""
 
-    def extract_zip(self, zip_file: str, path_in_zip: str, dest: str) -> None:
-        self._ssh_run(["mkdir", "-p", str(Path(dest).parent)])
-        self._ssh_run(
-            ["sh", "-c", f"unzip -p {zip_file} {path_in_zip} > {dest}"],
-            check=True,
-        )
+    def __init__(self, hosts: list[str]) -> None:
+        super().__init__()
+        self._hosts = hosts
 
-    def sha256(self, path: str) -> str:
-        result = self._ssh_run(["sha256sum", path], check=True)
-        return result.stdout.split()[0]
+    @property
+    def is_ephemeral(self) -> bool:
+        return False
 
-    def enlist(self, credentials: list[SiteCredential]) -> None:
-        import tempfile  # noqa: PLC0415
+    def provision(self, role: NodeRole, index: int) -> Unit:
+        host = self._hosts[index]
+        info(f"Provisioning SSH unit '{role.value}-{index}' at host '{host}'...")
+        return SSHUnit(host=host, unit_name=f"{role.value}-{index}")
 
-        self._ssh_run(["mkdir", "-p", _CREDENTIALS_DIR])
-        for cred in credentials:
-            content = f'header = "Authorization: {cred.auth_header}"\n'
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".curlrc", delete=False) as tf:
-                tf.write(content)
-                tmp_path = tf.name
-            try:
-                remote_path = f"{_CREDENTIALS_DIR}/{cred.hostname}.curlrc"
-                self.put(Path(tmp_path), remote_path)
-                self._ssh_run(["chmod", "0600", remote_path])
-            finally:
-                Path(tmp_path).unlink(missing_ok=True)
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        host = self._hosts[index]
+        return SSHUnit(host=host, unit_name=f"{role.value}-{index}")
 
-    def release(self) -> None:
-        self._ssh_run(["rm", "-rf", _CREDENTIALS_DIR], check=False)
-
-    def wait_until_ready(self, timeout: float | None = None) -> None:
-        """Block until the SSH host responds to ``hostname``."""
-        effective_timeout = Timeouts.UNIT_READY_TIMEOUT if timeout is None else timeout
-        deadline = time.monotonic() + effective_timeout
-        while True:
-            result = self._ssh_run(["hostname"], check=False)
-            if result.returncode == 0:
-                return
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ClusterError(
-                    f"Timed out waiting for SSH unit '{self._unit_name}' to become ready "
-                    f"after {effective_timeout:.0f}s"
-                )
-            time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
+    def deprovision(self, unit: Unit) -> None:
+        info(f"SSH host '{unit.name}' is pre-existing; skipping deprovision.")

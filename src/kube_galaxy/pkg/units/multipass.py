@@ -1,17 +1,14 @@
 """MultipassUnit  executes operations inside a Multipass VM."""
 
 import subprocess
-import tempfile
-import time
 from pathlib import Path
 
-from kube_galaxy.pkg.literals import Timeouts
-from kube_galaxy.pkg.units._base import RunResult, SiteCredential, Unit
-from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
+from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
+from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError
-
-_CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
 
 
 class MultipassUnit(Unit):
@@ -91,61 +88,44 @@ class MultipassUnit(Unit):
                 f"Failed to transfer '{self._name}:{remote}' to '{local}': {result.stderr}"
             )
 
-    def download(self, url: str, dest: str) -> None:
-        hostname = url.split("/")[2] if "://" in url else ""
-        curlrc = f"{_CREDENTIALS_DIR}/{hostname}.curlrc"
-        check_result = self._mp_exec(["test", "-f", curlrc], check=False)
-        if check_result.returncode == 0:
-            cmd = ["curl", "--config", curlrc, "-fsSL", url, "-o", dest]
-        else:
-            cmd = ["curl", "-fsSL", url, "-o", dest]
-        self._mp_exec(["mkdir", "-p", str(Path(dest).parent)])
-        self._mp_exec(cmd, check=True)
 
-    def extract(self, archive: str, dest: str) -> None:
-        self._mp_exec(["mkdir", "-p", dest])
-        self._mp_exec(["tar", "-xf", archive, "-C", dest])
+class MultipassUnitProvider(UnitProvider):
+    """Provisions and destroys Multipass VMs."""
 
-    def extract_zip(self, zip_file: str, path_in_zip: str, dest: str) -> None:
-        self._mp_exec(["mkdir", "-p", str(Path(dest).parent)])
-        self._mp_exec(
-            ["sh", "-c", f"unzip -p {zip_file} {path_in_zip} > {dest}"],
-            check=True,
+    def __init__(self, image: str = "ubuntu:24.04") -> None:
+        super().__init__()
+        self._image = image
+
+    @property
+    def is_ephemeral(self) -> bool:
+        return True
+
+    def provision(self, role: NodeRole, index: int) -> Unit:
+        name = f"kube-galaxy-{role.value}-{index}"
+        info(f"Provisioning Multipass VM '{name}' with image '{self._image}'...")
+        result = subprocess.run(
+            ["multipass", "launch", self._image, "--name", name],
+            capture_output=True,
+            text=True,
+            check=False,
         )
+        if result.returncode != 0:
+            raise ComponentError(f"Failed to launch Multipass VM '{name}': {result.stderr}")
+        unit: Unit = MultipassUnit(name)
+        self._track(unit)
+        return unit
 
-    def sha256(self, path: str) -> str:
-        result = self._mp_exec(["sha256sum", path], check=True)
-        return result.stdout.split()[0]
+    def locate(self, role: NodeRole, index: int) -> Unit:
+        name = f"kube-galaxy-{role.value}-{index}"
+        unit: Unit = MultipassUnit(name)
+        self._track(unit)
+        return unit
 
-    def enlist(self, credentials: list[SiteCredential]) -> None:
-        self._mp_exec(["mkdir", "-p", _CREDENTIALS_DIR])
-        for cred in credentials:
-            content = f'header = "Authorization: {cred.auth_header}"\n'
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".curlrc", delete=False) as tf:
-                tf.write(content)
-                tmp_path = tf.name
-            try:
-                remote_path = f"{_CREDENTIALS_DIR}/{cred.hostname}.curlrc"
-                self.put(Path(tmp_path), remote_path)
-                self._mp_exec(["chmod", "0600", remote_path])
-            finally:
-                Path(tmp_path).unlink(missing_ok=True)
-
-    def release(self) -> None:
-        self._mp_exec(["rm", "-rf", _CREDENTIALS_DIR], check=False)
-
-    def wait_until_ready(self, timeout: float | None = None) -> None:
-        """Block until the Multipass VM responds to ``hostname``."""
-        effective_timeout = Timeouts.UNIT_READY_TIMEOUT if timeout is None else timeout
-        deadline = time.monotonic() + effective_timeout
-        while True:
-            result = self._mp_exec(["hostname"], check=False)
-            if result.returncode == 0:
-                return
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise ClusterError(
-                    f"Timed out waiting for Multipass unit '{self._name}' to become ready "
-                    f"after {effective_timeout:.0f}s"
-                )
-            time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
+    def deprovision(self, unit: Unit) -> None:
+        info(f"Deprovisioning Multipass VM '{unit.name}'...")
+        subprocess.run(
+            ["multipass", "delete", "--purge", unit.name],
+            capture_output=True,
+            check=False,
+        )
+        self._untrack(unit)

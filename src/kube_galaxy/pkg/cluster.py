@@ -10,7 +10,8 @@ from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NodeRole
 from kube_galaxy.pkg.units import Unit
-from kube_galaxy.pkg.units.provider import UnitProvider, provider_factory
+from kube_galaxy.pkg.units._base import UnitProvider
+from kube_galaxy.pkg.units.provider import provider_factory
 from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output

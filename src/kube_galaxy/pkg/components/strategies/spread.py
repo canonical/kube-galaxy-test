@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from kube_galaxy.pkg.literals import SystemPaths
+from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 
 from ._base import _TestStrategy
@@ -31,8 +32,9 @@ def _download(comp: ComponentBase) -> None:
     filename = Path(parsed.path).name or "download"
     dest = comp.ensure_temp_dir() / filename
     download_file(url, dest)
-    remote = SystemPaths.tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
-    comp.unit.put(dest, str(remote))
+    remote = SystemPaths.local_tests_root() / comp.name / SystemPaths.KUBE_GALAXY_TESTS_COMP_TASK
+    unit = LocalUnit()
+    unit.put(dest, str(remote))
 
 
 _SpreadTestStrategy = _TestStrategy(download=_download)

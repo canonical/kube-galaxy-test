@@ -229,7 +229,7 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
 
     tests_root = tmp_path / "tests_root"
     tests_root.mkdir()
-    monkeypatch.setattr(SystemPaths, "tests_root", classmethod(lambda cls: tests_root))
+    monkeypatch.setattr(SystemPaths, "local_tests_root", classmethod(lambda cls: tests_root))
 
     comp = ExampleComponent(
         {}, Manifest(name="m", description="d", kubernetes_version="1.0"), config, arch_info

@@ -233,7 +233,6 @@ class Kubeadm(ClusterComponentBase):
 
         # Use base method to remove kubeconfig files
         kubeconfig_paths = [
-            SystemPaths.tests_root(),
             Path("/etc/kubernetes/admin.conf"),
             self._cluster_config,
         ]
