@@ -195,6 +195,7 @@ def test_delete_hook_does_nothing_in_base_class(component, tmp_path):
 
 def test_delete_hook_handles_missing_manifest_gracefully(component):
     """Test that delete_hook handles missing manifest file gracefully."""
+    component.unit = MockUnit()
     # manifest_path is None, should not crash
     component.delete_hook()
     # Base implementation does nothing, so this should just pass
