@@ -182,3 +182,203 @@ def test_load_manifest_remote_install_repo_not_local(sample_manifest_file):
     for comp in manifest.components:
         assert not comp.installation.repo.base_url.startswith("local://")
         assert comp.installation.repo.base_url != ""
+
+
+# --- test.environment tests ---
+
+
+def test_load_manifest_test_environment_loads_correctly(tmp_manifest_dir):
+    """Test that test.environment key-value pairs are loaded correctly."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: env-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/org/repo"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+      environment:
+        SONOBUOY_MODE: quick
+        KUBERNETES_VERSION: "1.35.0"
+"""
+    )
+
+    manifest = load_manifest(manifest_file)
+
+    comp = manifest.components[0]
+    assert comp.test.environment == {
+        "SONOBUOY_MODE": "quick",
+        "KUBERNETES_VERSION": "1.35.0",
+    }
+
+
+def test_load_manifest_test_environment_defaults_to_empty_dict(tmp_manifest_dir):
+    """Test that test.environment defaults to {} when absent from the manifest."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: env-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/org/repo"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+"""
+    )
+
+    manifest = load_manifest(manifest_file)
+
+    comp = manifest.components[0]
+    assert comp.test.environment == {}
+
+
+def test_load_manifest_test_environment_null_defaults_to_empty_dict(tmp_manifest_dir):
+    """Test that test.environment: null is treated as an empty dict."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: env-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/org/repo"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+      environment: null
+"""
+    )
+
+    manifest = load_manifest(manifest_file)
+
+    comp = manifest.components[0]
+    assert comp.test.environment == {}
+
+
+def test_load_manifest_test_environment_rejects_list(tmp_manifest_dir):
+    """Test that test.environment rejects a list value with a clear ValueError."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: env-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/org/repo"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+      environment:
+        - INVALID_LIST_ITEM
+"""
+    )
+
+    with pytest.raises(ValueError, match=r"'test\.environment' must be a mapping"):
+        load_manifest(manifest_file)
+
+
+def test_load_manifest_test_environment_rejects_non_string_value(tmp_manifest_dir):
+    """Test that test.environment rejects non-string values with a clear ValueError."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: env-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/org/repo"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+      environment:
+        TIMEOUT: 30
+"""
+    )
+
+    with pytest.raises(
+        ValueError, match=r"'test\.environment' value for key 'TIMEOUT' must be a string"
+    ):
+        load_manifest(manifest_file)
+
+
+def test_load_manifest_test_environment_rejects_non_string_key(tmp_manifest_dir):
+    """Test that test.environment rejects non-string keys with a clear ValueError."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: env-test
+kubernetes-version: "1.35.0"
+components:
+  - name: mycomp
+    category: test
+    release: "1.0.0"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/org/repo"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+      environment:
+        123: "numeric-key"
+"""
+    )
+
+    with pytest.raises(ValueError, match=r"'test\.environment' key must be a string"):
+        load_manifest(manifest_file)
+
+
+def test_load_manifest_test_environment_component_name_in_error(tmp_manifest_dir):
+    """Test that ValueError messages include the component name for context."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """
+name: env-test
+kubernetes-version: "1.35.0"
+components:
+  - name: cncf-quick
+    category: conformance
+    release: "1.0.0"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: "https://github.com/org/repo"
+      source-format: "{{ repo.base-url }}/spread/kube-galaxy"
+      environment: [bad, list]
+"""
+    )
+
+    with pytest.raises(ValueError, match="Component cncf-quick"):
+        load_manifest(manifest_file)

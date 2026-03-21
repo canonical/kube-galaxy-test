@@ -101,7 +101,7 @@ jobs:
   test-matrix:
     needs: discover-manifests
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -145,8 +145,8 @@ jobs:
         id: setup-cluster
         shell: bash
         env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: cdkbot
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
         run: |
           # Create sanitized artifact name (replace / with -) before setup
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')

@@ -79,6 +79,8 @@ class TestConfig:
     method: TestMethod  # Test execution method
     source_format: str  # Mustache template resolving to the test suite root
     repo: RepoInfo = field(default_factory=RepoInfo)  # Repository hosting the test suite
+    # Environment variables for test execution
+    environment: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

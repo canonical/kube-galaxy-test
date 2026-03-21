@@ -20,6 +20,25 @@ from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError, run
 
 
+def _TeeRun(cmd: list[str], cwd: Path, env: dict[str, str], log_file: Path) -> int:
+    """Write to a file and stdout simultaneously."""
+    with log_file.open("w") as log:
+        result = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if result.stdout:
+            for line in result.stdout:
+                print(line, end="")  # Print to stdout
+                log.write(line)  # Write to log file
+                log.flush()
+    return result.wait()
+
+
 class SpreadYamlDumper(yaml.SafeDumper):
     """Custom YAML dumper to handle Path objects as strings."""
 
@@ -90,6 +109,27 @@ def _verify_test_prerequisites() -> None:
         raise ClusterError("Test prerequisites not met") from exc
 
 
+def _component_kill_timeout(component: ComponentConfig) -> str | None:
+    """Determine if a custom kill timeout is needed for the component."""
+    timeout_s = component.test.environment.get("TEST_TIMEOUT_S")
+    timeout_m = component.test.environment.get("TEST_TIMEOUT_M")
+    buffer = 30
+
+    if timeout_s and not timeout_m:
+        return f"{int(timeout_s) + buffer}s"
+    elif timeout_m and not timeout_s:
+        return f"{int(timeout_m) * 60 + buffer}s"
+    elif timeout_s and timeout_m and int(timeout_s) == int(timeout_m) * 60:
+        return f"{int(timeout_s) + buffer}s"
+    elif timeout_s and timeout_m:
+        raise ClusterError(
+            f"Component '{component.name}' has inconsistent test timeouts: "
+            f"TEST_TIMEOUT_S={timeout_s}, TEST_TIMEOUT_M={timeout_m}"
+        )
+
+    return None
+
+
 def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> list[str]:
     """
     Generate spread.yaml from template for component test orchestration.
@@ -113,6 +153,7 @@ def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> li
         suites = {}
         spread_def = {
             "path": local_test,
+            "kill-timeout": f"{Timeouts.TEST_EXECUTION_TIMEOUT_S + 30}s",
             "environment": {
                 "PROJECT_PATH": str(local_test),
                 "TEST_TIMEOUT_S": str(Timeouts.TEST_EXECUTION_TIMEOUT_S),
@@ -141,8 +182,12 @@ def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> li
                     "SYSTEM_ARCH": arch_info.system,
                     "K8S_ARCH": arch_info.k8s,
                     "IMAGE_ARCH": arch_info.image,
+                    **each.test.environment,
                 },
             }
+            if kill_timeout := _component_kill_timeout(each):
+                info(f"Setting kill timeout for component '{each.name}' to {kill_timeout}")
+                suites[f"{rel}/"]["kill-timeout"] = kill_timeout
 
         spread_def["suites"] = suites
 
@@ -200,23 +245,14 @@ def _execute_spread_for_component(
         info(f"  Command: {' '.join(cmd)}")
         info(f"  Working directory: {spread_yaml.parent}")
 
-        # Run spread and capture output
-        with open(log_file, "w") as log:
-            result = subprocess.run(
-                cmd,
-                cwd=spread_yaml.parent,
-                env=env,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-
-        if result.returncode == 0:
+        # Run spread, tee output to stdout and log file
+        return_code = _TeeRun(cmd, spread_yaml.parent, env, log_file)
+        if return_code == 0:
             success(f"  Tests passed for {component.name}")
         else:
-            error(f"  Tests failed for {component.name} (exit code: {result.returncode})")
+            error(f"  Tests failed for {component.name} (exit code: {return_code})")
             error(f"  Log file: {log_file}")
-        return result.returncode == 0
+        return return_code == 0
 
     except Exception as exc:
         error(f"  Test execution error: {exc}")
