@@ -167,7 +167,7 @@ components:
         base-url: https://github.com/kubernetes/node-problem-detector
       source-format: "registry.k8s.io/node-problem-detector/node-problem-detector:v{{ release }}"
 
-  - name: cncf-full
+  - name: cncf-conformance
     category: Conformance
     release: "0.57.3"
     installation:
@@ -176,7 +176,7 @@ components:
       method: spread
       repo:
         base-url: https://github.com/canonical/mx-kubernetes
-        subdir: spread/cncf-full
+        subdir: spread/cncf-conformance
         ref: test/kube-galaxy/cncf/test-definitions
       source-format: "https://api.github.com/repos/canonical/mx-kubernetes/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
       environment:
