@@ -184,55 +184,18 @@ jobs:
         run: |
           kube-galaxy test ${{ matrix.manifest-file }}
 
+      - name: Collect Logs
+        run: |
+          kube-galaxy logs ${{ matrix.manifest-file }}
+
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
-          path: logs/
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Collect Kubernetes Logs
-        if: failure()
-        shell: bash
-        run: |
-          mkdir -p debug-logs
-
-          echo "Collecting debug information..."
-
-          # Pods and their logs
-          kubectl get pods -A -o wide > debug-logs/pods.txt 2>&1 || true
-          for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
-            for pod in $(kubectl get pods -n $ns -o jsonpath='{.items[*].metadata.name}'); do
-              mkdir -p "debug-logs/$ns/$pod"
-              kubectl logs -n $ns $pod --all-containers=true > "debug-logs/$ns/$pod/logs.txt" 2>&1 || true
-              kubectl describe pod -n $ns $pod > "debug-logs/$ns/$pod/describe.txt" 2>&1 || true
-            done
-          done
-
-          # Node information
-          kubectl get nodes -o wide > debug-logs/nodes.txt 2>&1 || true
-          kubectl describe nodes > debug-logs/nodes-describe.txt 2>&1 || true
-
-          # Cluster events
-          kubectl get events -A --sort-by='.lastTimestamp' > debug-logs/events.txt 2>&1 || true
-
-          # System pod status
-          kubectl get pods -n kube-system -o wide > debug-logs/system-pods.txt 2>&1 || true
-
-          # API server logs
-          kubectl logs -n kube-system -l component=kube-apiserver --tail=500 > debug-logs/apiserver.txt 2>&1 || true
-
-          echo "✅ Debug logs collected"
-
-      - name: Upload Debug Logs
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || hashFiles(matrix.manifest-file) }}
+          name: ${{ steps.setup-cluster.outputs.artifact-name }}-debug-logs
           path: debug-logs/
           retention-days: 30
+          if-no-files-found: warn
 
       - name: Setup upterm session for debugging
         if: failure() && github.event_name == 'pull_request'

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from kube_galaxy.pkg.literals import SystemPaths, Timeouts
+from kube_galaxy.pkg.literals import SystemPaths, TestDirectories, Timeouts
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.manifest.validator import (
@@ -240,7 +240,8 @@ def _execute_spread_for_component(
         )
 
         # Only run spread for the kube-galaxy-task within the component suite
-        cmd = ["spread", "-v", f"{suite_path}/kube-galaxy"]
+        artifacts = log_file.parent.absolute() / "artifacts"
+        cmd = ["spread", "-v", f"-artifacts={artifacts}", f"{suite_path}/kube-galaxy"]
 
         info(f"  Command: {' '.join(cmd)}")
         info(f"  Working directory: {spread_yaml.parent}")
@@ -299,7 +300,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
         info(f"  Repo: {component.test.repo.base_url}")
 
         # Component-specific directories
-        log_dir = work_dir / "logs" / component.name
+        log_dir = work_dir / TestDirectories.DEBUG_LOGS / component.name
         ensure_dir(log_dir)
         log_file = log_dir / "test-output.log"
 
@@ -372,14 +373,14 @@ def collect_test_results(work_dir: str = ".") -> str | None:
         Path to consolidated test results file or None if no results
     """
     work_dir_path = Path(work_dir)
-    logs_dir = work_dir_path / "logs"
+    logs_dir = work_dir_path / TestDirectories.DEBUG_LOGS
 
     if not logs_dir.exists():
         warning(f"No test logs found in {logs_dir}")
         return None
 
     # Collect results from all components
-    results_summary = work_dir_path / "logs" / "summary.txt"
+    results_summary = logs_dir / "spread-summary.txt"
 
     try:
         with open(results_summary, "w") as f:
