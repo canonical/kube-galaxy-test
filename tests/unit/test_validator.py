@@ -7,10 +7,12 @@ import pytest
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import (
+    ArtifactConfig,
     ComponentConfig,
     InstallConfig,
     InstallMethod,
     Manifest,
+    RegistryConfig,
     RepoInfo,
 )
 from kube_galaxy.pkg.manifest.models import (
@@ -167,3 +169,41 @@ def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
     spread_components = get_components_with_spread(manifest)
     assert len(spread_components) == 1
     assert spread_components[0].name == "localcomp"
+
+
+def _minimal_manifest(**kwargs) -> Manifest:
+    return Manifest(name="m", description="", kubernetes_version="1.35.0", **kwargs)
+
+
+def test_validate_registry_port_zero_rejected():
+    """Port 0 should be rejected when registry is enabled."""
+    manifest = _minimal_manifest(
+        artifact=ArtifactConfig(registry=RegistryConfig(enabled=True, port=0))
+    )
+    with pytest.raises(ValueError, match=r"artifact\.registry\.port"):
+        validate_manifest(manifest)
+
+
+def test_validate_registry_port_too_large_rejected():
+    """Port 65536 should be rejected when registry is enabled."""
+    manifest = _minimal_manifest(
+        artifact=ArtifactConfig(registry=RegistryConfig(enabled=True, port=65536))
+    )
+    with pytest.raises(ValueError, match=r"artifact\.registry\.port"):
+        validate_manifest(manifest)
+
+
+def test_validate_registry_port_valid():
+    """A valid port in range [1, 65535] should pass validation."""
+    manifest = _minimal_manifest(
+        artifact=ArtifactConfig(registry=RegistryConfig(enabled=True, port=5000))
+    )
+    validate_manifest(manifest)  # should not raise
+
+
+def test_validate_registry_disabled_skips_port_check():
+    """Port validation is skipped when registry.enabled is False."""
+    manifest = _minimal_manifest(
+        artifact=ArtifactConfig(registry=RegistryConfig(enabled=False, port=0))
+    )
+    validate_manifest(manifest)  # should not raise

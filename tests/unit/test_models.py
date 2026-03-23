@@ -2,12 +2,15 @@
 
 from pathlib import Path
 
+from kube_galaxy.pkg.literals import URLs
 from kube_galaxy.pkg.manifest.models import (
+    ArtifactConfig,
     ComponentConfig,
     InstallConfig,
     InstallMethod,
     Manifest,
     NetworkConfig,
+    RegistryConfig,
     RepoInfo,
 )
 from kube_galaxy.pkg.manifest.models import (
@@ -156,6 +159,36 @@ def test_manifest_get_networking():
 
     assert manifest.get_networking("default") == net
     assert manifest.get_networking() == net  # First by default
+
+
+def test_registry_config_defaults():
+    """Test RegistryConfig default values."""
+    registry = RegistryConfig()
+    assert registry.enabled is True
+    assert registry.remote_registry == URLs.REGISTRY_K8S_IO
+    assert registry.port == 5000
+
+
+def test_registry_config_custom():
+    """Test RegistryConfig with custom values."""
+    registry = RegistryConfig(enabled=True, remote_registry="docker.io", port=6000)
+    assert registry.enabled is True
+    assert registry.remote_registry == "docker.io"
+    assert registry.port == 6000
+
+
+def test_artifact_config_defaults():
+    """Test ArtifactConfig default values."""
+    artifact = ArtifactConfig()
+    assert isinstance(artifact.registry, RegistryConfig)
+    assert artifact.registry.enabled is True
+
+
+def test_manifest_has_artifact_field():
+    """Test that Manifest includes an artifact field with defaults."""
+    manifest = Manifest(name="m", description="", kubernetes_version="1.35.0")
+    assert isinstance(manifest.artifact, ArtifactConfig)
+    assert manifest.artifact.registry.enabled is True
 
 
 def test_repo_info_remote():

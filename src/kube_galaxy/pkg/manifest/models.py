@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from kube_galaxy.pkg.literals import URLs
+
 
 class NodeRole(StrEnum):
     """Role of a node in the cluster."""
@@ -133,6 +135,33 @@ class NetworkConfig:
 
 
 @dataclass
+class RegistryConfig:
+    """Pull-through container registry configuration.
+
+    When ``enabled`` is ``True``, a Docker-based registry cache is started on
+    the orchestrator host and Kubernetes nodes are configured to pull
+    ``remote_registry`` images through it.  The registry data directory is
+    always ``SystemPaths.staging_root() / "registry" / "data"`` — it is not
+    user-configurable.
+    """
+
+    enabled: bool = True
+    remote_registry: str = URLs.REGISTRY_K8S_IO
+    port: int = 5000
+
+
+@dataclass
+class ArtifactConfig:
+    """Artifact-server configuration for the orchestrator.
+
+    Groups settings for orchestrator-hosted servers that distribute artifacts
+    to cluster nodes (HTTP artifact server, pull-through registry cache, …).
+    """
+
+    registry: RegistryConfig = field(default_factory=RegistryConfig)
+
+
+@dataclass
 class Manifest:
     """Cluster manifest configuration."""
 
@@ -144,6 +173,7 @@ class Manifest:
     networking: list[NetworkConfig] = field(default_factory=list)
     provider: ProviderConfig = field(default_factory=ProviderConfig)
     nodes: NodesConfig = field(default_factory=NodesConfig)
+    artifact: ArtifactConfig = field(default_factory=ArtifactConfig)
 
     def get_component(self, name: str) -> ComponentConfig | None:
         """Get component config by name."""

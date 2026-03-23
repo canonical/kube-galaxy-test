@@ -24,7 +24,7 @@ def _download(comp: ComponentBase) -> None:
     if "://" in full:
         raise ComponentError(
             f"Container image installation does not support URL schemes for '{comp.name}'. "
-            "Use a plain Docker image reference (e.g. 'registry.k8s.io/image')."
+            f"Use a plain Docker image reference (e.g. 'registry.k8s.io/image:tag')."
         )
     split = full.rsplit(":", 1)
     if len(split) != 2:

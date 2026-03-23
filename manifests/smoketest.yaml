@@ -12,6 +12,12 @@ kubernetes-version: &k8s-version "1.35.2"
 #   control-plane: 1
 #   worker: 0
 
+# artifact:
+#   registry:
+#     enabled: true                      # default
+#     remote-registry:  registry.k8s.io  # default
+#     port:    5000                      # default
+
 components:
   # Container runtime
   - name: runc

@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from kube_galaxy.pkg.components import ClusterComponentBase, ComponentBase, register_component
-from kube_galaxy.pkg.literals import Permissions
+from kube_galaxy.pkg.literals import Permissions, URLs
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
@@ -118,7 +118,7 @@ class Containerd(ComponentBase):
             Pause image URL to use in containerd config
         """
         # Fallback to default if no pause component
-        image_format = "registry.k8s.io/pause:3.9"
+        image_format = f"{URLs.REGISTRY_K8S_IO}/pause:3.9"
         if pause := self.components.get("pause"):
             # Use source_format if it's a container image
             install = pause.config.installation
@@ -130,7 +130,7 @@ class Containerd(ComponentBase):
                 image_format = pause.config.installation.source_format
             # Otherwise construct from release version
             elif pause.config.release:
-                image_format = f"registry.k8s.io/pause:{pause.config.release}"
+                image_format = f"{URLs.REGISTRY_K8S_IO}/pause:{pause.config.release}"
 
             return format_component_pattern(image_format, pause.config, self.arch_info)
         return image_format

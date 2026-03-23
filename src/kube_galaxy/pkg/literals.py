@@ -264,17 +264,6 @@ class FilePatterns:
     SPREAD_YAML = "spread.yaml"
 
 
-class ContainerdConfig:
-    """Containerd-specific configuration values."""
-
-    # Configuration directives
-    SYSTEMD_CGROUP_FALSE = "SystemdCgroup = false"
-    SYSTEMD_CGROUP_TRUE = "SystemdCgroup = true"
-
-    # Default sandbox image
-    SANDBOX_IMAGE = 'sandbox_image = "registry.k8s.io/pause:3.8"'
-
-
 class NetworkDefaults:
     """Default network configuration values."""
 

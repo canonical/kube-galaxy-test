@@ -3,6 +3,7 @@
 import pytest
 import yaml
 
+from kube_galaxy.pkg.literals import URLs
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import TestMethod as ComponentTestMethod
 
@@ -77,6 +78,76 @@ kubernetes-version: "1.35.0"
     assert manifest.description == ""
     assert len(manifest.components) == 0
     assert len(manifest.networking) == 0
+
+
+def test_load_manifest_artifact_absent_gives_defaults(tmp_manifest_dir):
+    """Test that a manifest without an artifact block gets default ArtifactConfig."""
+    manifest_file = tmp_manifest_dir / "no-artifact.yaml"
+    manifest_file.write_text(
+        """
+name: minimal-cluster
+kubernetes-version: "1.35.0"
+"""
+    )
+    manifest = load_manifest(manifest_file)
+    assert manifest.artifact.registry.enabled is True
+    assert manifest.artifact.registry.remote_registry == URLs.REGISTRY_K8S_IO
+    assert manifest.artifact.registry.port == 5000
+
+
+def test_load_manifest_artifact_disabled_parses(tmp_manifest_dir):
+    """Test that artifact.registry.enabled: false is parsed correctly."""
+    manifest_file = tmp_manifest_dir / "artifact-disabled.yaml"
+    manifest_file.write_text(
+        """
+name: minimal-cluster
+kubernetes-version: "1.35.0"
+artifact:
+  registry:
+    enabled: false
+"""
+    )
+    manifest = load_manifest(manifest_file)
+    assert manifest.artifact.registry.enabled is False
+
+
+def test_load_manifest_artifact_fully_specified(tmp_manifest_dir):
+    """Test loading artifact.registry with all fields explicitly set."""
+    manifest_file = tmp_manifest_dir / "artifact-full.yaml"
+    manifest_file.write_text(
+        """
+name: minimal-cluster
+kubernetes-version: "1.35.0"
+artifact:
+  registry:
+    enabled: true
+    remote-registry: docker.io
+    port: 6000
+"""
+    )
+    manifest = load_manifest(manifest_file)
+    assert manifest.artifact.registry.enabled is True
+    assert manifest.artifact.registry.remote_registry == "docker.io"
+    assert manifest.artifact.registry.port == 6000
+
+
+def test_load_manifest_artifact_partial_override(tmp_manifest_dir):
+    """Test that unset artifact fields fall back to defaults."""
+    manifest_file = tmp_manifest_dir / "artifact-partial.yaml"
+    manifest_file.write_text(
+        """
+name: minimal-cluster
+kubernetes-version: "1.35.0"
+artifact:
+  registry:
+    enabled: true
+"""
+    )
+    manifest = load_manifest(manifest_file)
+    assert manifest.artifact.registry.enabled is True
+    assert manifest.artifact.registry.remote_registry == URLs.REGISTRY_K8S_IO
+    assert manifest.artifact.registry.port == 5000
+
 
 
 def test_load_manifest_test_local_repo(tmp_manifest_dir):
