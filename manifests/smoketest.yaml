@@ -289,7 +289,7 @@ components:
       repo:
         base-url: https://github.com/canonical/mx-kubernetes
         subdir: spread/cncf-quick
-        ref: test/kube-galaxy/cncf/test-definitions
+        ref: canonical/test/kube-galaxy/cncf/test-definitions
       source-format: "https://api.github.com/repos/canonical/mx-kubernetes/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
 
 networking:
