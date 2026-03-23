@@ -158,7 +158,6 @@ jobs:
           echo "## Test Configuration"
           echo "- **Manifest**: ${{ matrix.manifest-file }}"
           echo "- **Runner**: ubuntu-latest"
-          echo "- **Timeout**: 90 minutes"
 
       - name: Setup Cluster
         id: setup-cluster
@@ -187,6 +186,19 @@ jobs:
       - name: Collect Logs
         run: |
           kube-galaxy logs ${{ matrix.manifest-file }}
+
+      - name: Sanitize Log Filenames
+        shell: bash
+        run: |
+          # Sanitize log filenames to ensure they are valid for artifact upload
+          # Invalid characters include:  " : < > | * ? \r and \n
+          find debug-logs/ -type f | while read -r file; do
+            sanitized_file=$(echo "$file" | tr '":<>|*?\\' '_')
+            if [ "$file" != "$sanitized_file" ]; then
+              echo "Renaming $file to $sanitized_file"
+              rsync -a --mkpath --remove-source-files "$file" "$sanitized_file"
+            fi
+          done
 
       - name: Upload Test Results
         if: always()
