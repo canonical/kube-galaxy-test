@@ -1,0 +1,222 @@
+name: Reusable Cluster Test
+
+on:
+  workflow_call:
+    inputs:
+      manifests-json:
+        description: >
+          JSON array of manifest objects, e.g.
+          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml"}]
+        type: string
+        required: true
+      manifests-repo:
+        description: >
+          Repository containing manifests (owner/repo). Leave empty when the
+          caller repository already contains the manifests.
+        type: string
+        default: ""
+      manifests-ref:
+        description: "Git ref to check out from manifests-repo"
+        type: string
+        default: "main"
+      kube-galaxy-ref:
+        description: "Git ref for kube-galaxy-test checkout"
+        type: string
+        default: "main"
+      timeout-minutes:
+        description: "Per-matrix-job timeout"
+        type: number
+        default: 90
+      create-issues-on-failure:
+        description: "Open a GitHub issue when a test job fails"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: read
+  issues: write
+
+jobs:
+  # ------------------------------------------------------------------
+  # Matrix job: one runner per manifest
+  # ------------------------------------------------------------------
+  test-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(inputs.manifests-json) }}
+
+    steps:
+      # ---- Checkout kube-galaxy-test (the CLI + components + spread tests)
+      - name: Checkout kube-galaxy-test
+        uses: actions/checkout@v6
+        with:
+          repository: canonical/kube-galaxy-test
+          ref: ${{ inputs.kube-galaxy-ref }}
+
+      # ---- Conditionally checkout external manifests repo ----
+      - name: Checkout manifests repo
+        if: inputs.manifests-repo != ''
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.manifests-repo }}
+          ref: ${{ inputs.manifests-ref }}
+          path: _manifests
+
+      # ---- Resolve the effective manifest path ----
+      - name: Resolve manifest path
+        id: manifest
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.manifests-repo }}" ]; then
+            echo "path=_manifests/${{ matrix.manifest-file }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=${{ matrix.manifest-file }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Astral UV
+        uses: astral-sh/setup-uv@v7.2.1
+        with:
+          python-version: "3.12"
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ">=1.22"
+
+      - name: Install Spread
+        run: go install github.com/canonical/spread/cmd/spread@latest
+
+      - name: Setup LXD
+        uses: canonical/setup-lxd@main
+
+      - name: Install kube-galaxy
+        shell: bash
+        run: |
+          uv tool install -e .
+          kube-galaxy --version
+
+      - name: Display Cluster Configuration
+        shell: bash
+        run: |
+          echo "## Test Configuration"
+          echo "- **Manifest**: ${{ steps.manifest.outputs.path }}"
+          echo "- **Runner**: ubuntu-latest"
+          echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes"
+
+      - name: Setup Cluster
+        id: setup-cluster
+        shell: bash
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Sanitized name for artifact uploads
+          ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
+          echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+
+          kube-galaxy setup ${{ steps.manifest.outputs.path }}
+
+      - name: Verify Cluster Health
+        shell: bash
+        run: |
+          kube-galaxy status --wait --timeout 300
+
+      - name: Run Spread Tests
+        id: run-tests
+        shell: bash
+        run: |
+          kube-galaxy test ${{ steps.manifest.outputs.path }}
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
+          path: logs/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Collect Kubernetes Logs
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p debug-logs
+
+          echo "Collecting debug information..."
+
+          kubectl get pods -A -o wide > debug-logs/pods.txt 2>&1 || true
+          for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
+            for pod in $(kubectl get pods -n "$ns" -o jsonpath='{.items[*].metadata.name}'); do
+              mkdir -p "debug-logs/$ns/$pod"
+              kubectl logs -n "$ns" "$pod" --all-containers=true > "debug-logs/$ns/$pod/logs.txt" 2>&1 || true
+              kubectl describe pod -n "$ns" "$pod" > "debug-logs/$ns/$pod/describe.txt" 2>&1 || true
+            done
+          done
+
+          kubectl get nodes -o wide > debug-logs/nodes.txt 2>&1 || true
+          kubectl describe nodes > debug-logs/nodes-describe.txt 2>&1 || true
+          kubectl get events -A --sort-by='.lastTimestamp' > debug-logs/events.txt 2>&1 || true
+          kubectl get pods -n kube-system -o wide > debug-logs/system-pods.txt 2>&1 || true
+          kubectl logs -n kube-system -l component=kube-apiserver --tail=500 > debug-logs/apiserver.txt 2>&1 || true
+
+      - name: Upload Debug Logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || hashFiles(matrix.manifest-file) }}
+          path: debug-logs/
+          retention-days: 30
+
+      - name: Setup upterm session for debugging
+        if: failure() && github.event_name == 'pull_request'
+        uses: owenthereal/action-upterm@v1
+        timeout-minutes: 5
+        with:
+          limit-access-to-actor: true
+
+      - name: Create Issue on Failure
+        if: failure() && inputs.create-issues-on-failure
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "[TEST FAILURE] Manifest ${{ matrix.manifest-file }} - Run #${{ github.run_number }}" \
+            --body "Cluster test failed for manifest: \`${{ matrix.manifest-file }}\`
+
+          Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Check test results and debug logs in the action artifacts." || echo "Failed to create issue, continuing..."
+
+      - name: Cleanup Cluster
+        if: always()
+        shell: bash
+        run: |
+          kube-galaxy cleanup all
+
+  # ------------------------------------------------------------------
+  # Summary: single pass/fail gate
+  # ------------------------------------------------------------------
+  test-summary:
+    needs: test-matrix
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check Test Results
+        shell: bash
+        run: |
+          echo "## Test Summary"
+          echo "- **Result**: ${{ needs.test-matrix.result }}"
+
+          if [ "${{ needs.test-matrix.result }}" == "failure" ]; then
+            echo ""
+            echo "Some tests failed -- check individual job results above for details"
+            exit 1
+          else
+            echo ""
+            echo "All tests passed"
+          fi
