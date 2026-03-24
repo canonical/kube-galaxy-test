@@ -184,10 +184,12 @@ jobs:
           kube-galaxy test ${{ matrix.manifest-file }}
 
       - name: Collect Logs
+        if: always()
         run: |
           kube-galaxy logs ${{ matrix.manifest-file }}
 
       - name: Sanitize Log Filenames
+        if: always()
         shell: bash
         run: |
           # Sanitize log filenames to ensure they are valid for artifact upload
