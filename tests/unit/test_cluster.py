@@ -210,6 +210,7 @@ def test_setup_cluster_calls_provision(monkeypatch, tmp_path):
         patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
         patch("kube_galaxy.pkg.cluster.find_component", return_value=capturing_component),
         patch("kube_galaxy.pkg.cluster.ArtifactServer"),
+        patch("kube_galaxy.pkg.cluster.RegistryMirror"),
         patch("kube_galaxy.pkg.cluster.gh_output"),
     ):
         setup_cluster(str(manifest_path))
@@ -239,6 +240,7 @@ def test_teardown_cluster_calls_locate_and_deprovision(monkeypatch, tmp_path):
         patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
         patch("kube_galaxy.pkg.cluster.find_component", return_value=capturing_component),
         patch("kube_galaxy.pkg.cluster.ArtifactServer"),
+        patch("kube_galaxy.pkg.cluster.RegistryMirror"),
         patch("kube_galaxy.pkg.cluster.gh_output"),
         patch("kube_galaxy.pkg.cluster._cleanup_kube_galaxy_alternatives"),
     ):
@@ -268,9 +270,138 @@ def test_teardown_cluster_deprovisions_ephemeral(tmp_path):
         patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
         patch("kube_galaxy.pkg.cluster.find_component", return_value=capturing_component),
         patch("kube_galaxy.pkg.cluster.ArtifactServer"),
+        patch("kube_galaxy.pkg.cluster.RegistryMirror"),
         patch("kube_galaxy.pkg.cluster.gh_output"),
         patch("kube_galaxy.pkg.cluster._cleanup_kube_galaxy_alternatives"),
     ):
         teardown_cluster(str(manifest_path))
 
     mock_provider.deprovision_all.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# RegistryMirror lifecycle integration
+# ---------------------------------------------------------------------------
+
+
+def _capturing_component_for_setup():  # type: ignore[misc]
+    """Return a capturing component factory suitable for full setup_cluster mocking."""
+
+    def factory(resources, manifest, config, arch_info, unit=None):  # type: ignore[misc]
+        obj = MagicMock()
+        obj.is_cluster_manager = True
+        for hook in [
+            "download_hook",
+            "pre_install_hook",
+            "install_hook",
+            "configure_hook",
+            "bootstrap_hook",
+            "verify_hook",
+        ]:
+            setattr(obj, hook, MagicMock())
+        return obj
+
+    return factory
+
+
+def test_setup_cluster_starts_registry_mirror_when_enabled(tmp_path):
+    """setup_cluster calls mirror.start() when registry.enabled=True (default)."""
+    manifest_path = _minimal_manifest(tmp_path)
+
+    mock_provider = MagicMock(spec=UnitProvider)
+    mock_provider.provision.return_value = MockUnit(_name="prov-unit")
+
+    mock_mirror_instance = MagicMock()
+    MockRegistryMirror = MagicMock(return_value=mock_mirror_instance)
+
+    with (
+        patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
+        patch(
+            "kube_galaxy.pkg.cluster.find_component",
+            return_value=_capturing_component_for_setup(),
+        ),
+        patch("kube_galaxy.pkg.cluster.ArtifactServer"),
+        patch("kube_galaxy.pkg.cluster.RegistryMirror", MockRegistryMirror),
+        patch("kube_galaxy.pkg.cluster.gh_output"),
+    ):
+        setup_cluster(str(manifest_path))
+
+    MockRegistryMirror.assert_called_once()
+    mock_mirror_instance.start.assert_called_once()
+    mock_mirror_instance.stop.assert_not_called()
+
+
+def test_setup_cluster_skips_registry_mirror_when_disabled(tmp_path):
+    """setup_cluster uses nullcontext (not RegistryMirror) when registry.enabled=False."""
+    content = """\
+name: test-cluster
+description: Mirror-disabled test
+kubernetes-version: "1.35.0"
+provider:
+  type: local
+artifact:
+  registry:
+    enabled: false
+components:
+  - name: kubeadm
+    category: kubernetes
+    release: "1.35.0"
+    installation:
+      method: binary
+      source-format: "https://dl.k8s.io/v{{ release }}/bin/linux/amd64/kubeadm"
+      bin-path: ./kubeadm
+"""
+    manifest_path = tmp_path / "manifest.yaml"
+    manifest_path.write_text(content)
+
+    mock_provider = MagicMock(spec=UnitProvider)
+    mock_provider.provision.return_value = MockUnit(_name="prov-unit")
+
+    MockRegistryMirror = MagicMock()
+
+    with (
+        patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
+        patch(
+            "kube_galaxy.pkg.cluster.find_component",
+            return_value=_capturing_component_for_setup(),
+        ),
+        patch("kube_galaxy.pkg.cluster.ArtifactServer"),
+        patch("kube_galaxy.pkg.cluster.RegistryMirror", MockRegistryMirror),
+        patch("kube_galaxy.pkg.cluster.gh_output"),
+    ):
+        setup_cluster(str(manifest_path))
+
+    MockRegistryMirror.assert_not_called()
+
+
+def test_teardown_cluster_stops_registry_mirror_when_enabled(tmp_path):
+    """teardown_cluster calls mirror.stop() after hooks when registry.enabled=True."""
+    manifest_path = _minimal_manifest(tmp_path)
+
+    located_unit = MockUnit(_name="loc-unit")
+    mock_provider = MagicMock(spec=UnitProvider)
+    mock_provider.locate.return_value = located_unit
+    mock_provider.is_ephemeral = False
+
+    def capturing_component(resources, manifest, config, arch_info, unit=None):  # type: ignore[misc]
+        obj = MagicMock()
+        for hook in ["stop_hook", "delete_hook", "post_delete_hook"]:
+            setattr(obj, hook, MagicMock())
+        return obj
+
+    mock_mirror_instance = MagicMock()
+    MockRegistryMirror = MagicMock(return_value=mock_mirror_instance)
+
+    with (
+        patch("kube_galaxy.pkg.cluster.provider_factory", return_value=mock_provider),
+        patch("kube_galaxy.pkg.cluster.find_component", return_value=capturing_component),
+        patch("kube_galaxy.pkg.cluster.ArtifactServer"),
+        patch("kube_galaxy.pkg.cluster.RegistryMirror", MockRegistryMirror),
+        patch("kube_galaxy.pkg.cluster.gh_output"),
+        patch("kube_galaxy.pkg.cluster._cleanup_kube_galaxy_alternatives"),
+    ):
+        teardown_cluster(str(manifest_path))
+
+    MockRegistryMirror.assert_called_once()
+    mock_mirror_instance.stop.assert_called_once()
+    mock_mirror_instance.start.assert_not_called()

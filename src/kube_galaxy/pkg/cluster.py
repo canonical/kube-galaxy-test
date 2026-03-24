@@ -17,6 +17,7 @@ from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.gh import gh_output
 from kube_galaxy.pkg.utils.logging import exception, info, section, success
 from kube_galaxy.pkg.utils.paths import ensure_dir
+from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror
 from kube_galaxy.pkg.utils.shell import run
 
 __all__ = ["setup_cluster", "teardown_cluster"]
@@ -83,6 +84,12 @@ def setup_cluster(manifest_path: str) -> None:
             raise ClusterError(
                 f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
             )
+
+        # Start the registry mirror (if enabled) — it remains running until
+        # teardown_cluster stops it, so cluster nodes can pull images at any time.
+        reg_cfg = manifest.artifact.registry
+        if reg_cfg.enabled:
+            RegistryMirror(reg_cfg).start()
 
         # DOWNLOAD phase runs before the artifact server so artifacts are
         # present on disk when the server starts.
@@ -157,6 +164,11 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
                 _run_hook(
                     unit, resources_list, configs, hook.value, force, parallel=hook.is_parallel
                 )
+
+        # Stop the registry mirror now that all component hooks are done.
+        reg_cfg = manifest.artifact.registry
+        if reg_cfg.enabled:
+            RegistryMirror(reg_cfg).stop()
 
         # Deprovision all nodes (no-op for non-ephemeral providers)
         _deprovision(provider, force)

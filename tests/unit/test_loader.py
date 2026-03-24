@@ -149,7 +149,6 @@ artifact:
     assert manifest.artifact.registry.port == 5000
 
 
-
 def test_load_manifest_test_local_repo(tmp_manifest_dir):
     """Test that test.repo with local:// base-url is loaded correctly."""
     manifest_file = tmp_manifest_dir / "test.yaml"

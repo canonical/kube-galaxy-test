@@ -34,6 +34,21 @@ from typing import Any
 from kube_galaxy.pkg.literals import SystemPaths
 
 
+def detect_orchestrator_ip() -> str:
+    """Detect the primary IP address of the orchestrator host.
+
+    Uses a UDP socket trick — connecting to an external address without
+    sending any data forces the OS to select the correct source interface,
+    which reveals the local IP.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("1.1.1.1", 80))
+        return str(s.getsockname()[0])
+    finally:
+        s.close()
+
+
 class _StagingHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """Request handler that silently serves files from ``staging_root()``.
 
@@ -79,12 +94,7 @@ class ArtifactServer:
     @property
     def detect_ip(self) -> str:
         """Detect the machine's primary IP address by connecting a UDP socket."""
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("1.1.1.1", 80))
-            return str(s.getsockname()[0])
-        finally:
-            s.close()
+        return detect_orchestrator_ip()
 
     @property
     def base_url(self) -> str:
