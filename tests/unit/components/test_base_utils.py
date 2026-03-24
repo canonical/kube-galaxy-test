@@ -1,3 +1,4 @@
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
@@ -232,7 +233,10 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
     monkeypatch.setattr(SystemPaths, "local_tests_root", classmethod(lambda cls: tests_root))
 
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), config, arch_info
+        ClusterContext(),
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        config,
+        arch_info,
     )
     comp.download_hook()
 
@@ -244,7 +248,7 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
 def test_ensure_temp_dir_creates_local_dir_only(monkeypatch, arch_info, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {},
+        ClusterContext(),
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
@@ -269,7 +273,10 @@ def test_ensure_temp_dir_creates_local_dir_only(monkeypatch, arch_info, tmp_path
 def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, arch_info):
     cfg = make_config("tool")
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info
+        ClusterContext(),
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        cfg,
+        arch_info,
     )
 
     # create a fake binary file
@@ -288,7 +295,7 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
 def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {},
+        ClusterContext(),
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
@@ -321,7 +328,7 @@ def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_pat
 def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {},
+        ClusterContext(),
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,

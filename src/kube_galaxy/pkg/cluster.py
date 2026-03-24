@@ -5,10 +5,11 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components import ComponentBase, find_component
-from kube_galaxy.pkg.literals import Commands, SetupHooks, TeardownHooks
+from kube_galaxy.pkg.literals import Commands, Hooks, SetupHooks, TeardownHooks
 from kube_galaxy.pkg.manifest.loader import load_manifest
-from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, NodeRole
+from kube_galaxy.pkg.manifest.models import Manifest, NodeRole
 from kube_galaxy.pkg.units import Unit
 from kube_galaxy.pkg.units._base import UnitProvider
 from kube_galaxy.pkg.units.provider import provider_factory
@@ -71,15 +72,14 @@ def setup_cluster(manifest_path: str) -> None:
         units = [lead_unit]
 
         # Create all component resources
-        resources: dict[str, ComponentBase] = {}
+        ctx = ClusterContext(components={})
         for config in configs:
             component_class = find_component(config.name)
-            resource = component_class(resources, manifest, config, lead_unit.arch)
-            resources[config.name] = resource
+            resource = component_class(ctx, manifest, config, lead_unit.arch)
+            ctx.components[config.name] = resource
 
         # Execute 6-stage lifecycle
-        resources_list = list(resources.values())
-        cluster_managers = sum(1 for res in resources_list if res.is_cluster_manager)
+        cluster_managers = sum(1 for res in ctx.components.values() if res.is_cluster_manager)
         if cluster_managers != 1:
             raise ClusterError(
                 f"Manifest must have exactly 1 cluster manager component, found {cluster_managers}"
@@ -89,24 +89,27 @@ def setup_cluster(manifest_path: str) -> None:
         # teardown_cluster stops it, so cluster nodes can pull images at any time.
         reg_cfg = manifest.artifact.registry
         if reg_cfg.enabled:
-            RegistryMirror(reg_cfg).start()
+            mirror = RegistryMirror(reg_cfg)
+            mirror.start()
+            ctx.registry_mirror = mirror
 
         # DOWNLOAD phase runs before the artifact server so artifacts are
         # present on disk when the server starts.
         section(f"Stage 1/{len(SetupHooks)}: Download Components")
-        _run_hook(lead_unit, resources_list, configs, SetupHooks.DOWNLOAD.value, parallel=True)
+        _run_hook(lead_unit, ctx, SetupHooks.DOWNLOAD)
 
         # Start the artifact server so nodes can pull binaries without
         # the orchestrator pushing files directly onto them.
         with ArtifactServer() as artifact_server:
             info(f"Artifact server started at {artifact_server.base_url}")
-            lead_unit.set_artifact_server(artifact_server.base_url)
+            ctx.artifact_server = artifact_server
 
             remaining_hooks = [h for h in SetupHooks if h != SetupHooks.DOWNLOAD]
             for idx, hook in enumerate(remaining_hooks, 2):
                 for unit in units:
                     section(f"Stage {idx}/{len(SetupHooks)}: {hook.value.capitalize()} Components")
-                    _run_hook(unit, resources_list, configs, hook.value, parallel=hook.is_parallel)
+                    _run_hook(unit, ctx, hook)
+        ctx.artifact_server = None
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: /opt/kube-galaxy/kubeconfig")
@@ -148,27 +151,24 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         units = [lead_unit]
 
         # Create all component resources
-        resources: dict[str, ComponentBase] = {}
+        ctx = ClusterContext(components={})
         for config in configs:
             for unit in units:
                 component_class = find_component(config.name)
-                resource = component_class(resources, manifest, config, unit.arch)
-                resources[config.name] = resource
+                resource = component_class(ctx, manifest, config, unit.arch)
+                ctx.components[config.name] = resource
 
         # Execute 3-stage teardown lifecycle in reverse dependency order
-        resources_list = list(resources.values())
         num_hooks = len(TeardownHooks)
         for idx, hook in enumerate(TeardownHooks):
             for unit in units:
                 section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
-                _run_hook(
-                    unit, resources_list, configs, hook.value, force, parallel=hook.is_parallel
-                )
+                _run_hook(unit, ctx, hook, force)
 
         # Stop the registry mirror now that all component hooks are done.
         reg_cfg = manifest.artifact.registry
         if reg_cfg.enabled:
-            RegistryMirror(reg_cfg).stop()
+            RegistryMirror(reg_cfg).stop(force)
 
         # Deprovision all nodes (no-op for non-ephemeral providers)
         _deprovision(provider, force)
@@ -201,38 +201,30 @@ def _attach_unit(components: list[ComponentBase], unit: Unit) -> Generator[None,
         component.unit = restore
 
 
-def _run_hook(
-    unit: Unit,
-    components: list[ComponentBase],
-    configs: list[ComponentConfig],
-    hook_name: str,
-    force: bool = False,
-    parallel: bool = False,
-) -> None:
+def _run_hook(unit: Unit, ctx: ClusterContext, hook: Hooks, force: bool = False) -> None:
     """
     Run a specific lifecycle hook for all components.
 
     Args:
-        components: List of components
-        configs: List of component configs (must be in same order as components)
-        hook_name: Name of the hook to run (e.g., "install")
+        ctx: Shared cluster context; components iterated in insertion order
+        hook: The hook to run (e.g., SetupHooks.INSTALL)
         force: Continue execution even if errors occur
-        parallel: Execute hooks concurrently (respects component order for submission)
 
     Raises:
         ClusterError: If any component hook fails
     """
-    hook_name_caps = hook_name.title()
-    max_workers = 10 if parallel else 1
-
+    hook_name_caps = hook.value.title()
+    max_workers = 10 if hook.is_parallel else 1
+    components = list(ctx.components.values())
+    unit.set_cluster_context(ctx)
     with _attach_unit(components, unit), ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures_list = []
 
         # Submit all tasks in component order
-        for config, resource in zip(configs, components, strict=True):
-            info(f"  {config.name}: {hook_name_caps}...")
-            future = executor.submit(resource.run_hook, hook_name)
-            futures_list.append((config.name, future))
+        for name, resource in ctx.components.items():
+            info(f"  {name}: {hook_name_caps}...")
+            future = executor.submit(resource.run_hook, hook.value)
+            futures_list.append((name, future))
 
         # Collect results in submission order
         for component_name, future in futures_list:

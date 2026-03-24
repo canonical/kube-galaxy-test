@@ -1,3 +1,4 @@
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components.kubelet import Kubelet
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
@@ -43,7 +44,7 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
     for _ in range(10):
         mock_unit._run_results.append(RunResult(0, "", ""))
 
-    comp = Kubelet({}, manifest, config, arch_info)
+    comp = Kubelet(ClusterContext(), manifest, config, arch_info)
     comp.unit = mock_unit
     # set an install path so replace works
     comp.install_path = "/usr/local/bin/kubelet"

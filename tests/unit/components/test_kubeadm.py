@@ -1,5 +1,6 @@
 import yaml
 
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components.kubeadm import Kubeadm
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
@@ -53,7 +54,7 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
         RunResult(0, "", ""),  # write_config_file: chmod (cluster config)
     )
 
-    comp = Kubeadm({}, manifest, config, arch_info)
+    comp = Kubeadm(ClusterContext(), manifest, config, arch_info)
     comp.unit = mock_unit
 
     # Provide a kubelet instance with an install_path so _which() succeeds

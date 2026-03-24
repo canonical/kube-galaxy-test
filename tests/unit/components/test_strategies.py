@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from kube_galaxy.pkg.arch.detector import get_arch_info
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.components.strategies.binary_archive import _bin_path
 from kube_galaxy.pkg.literals import SystemPaths
@@ -65,7 +66,7 @@ def _make_component(
         monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     ai = arch_info if arch_info is not None else get_arch_info(platform.machine())
-    return ComponentBase({}, manifest, config, ai)
+    return ComponentBase(ClusterContext(), manifest, config, ai)
 
 
 # ===========================================================================
@@ -710,7 +711,7 @@ def _make_manifest_component(
     manifest = _make_manifest()
 
     monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
-    return ComponentBase({}, manifest, config, arch_info)
+    return ComponentBase(ClusterContext(), manifest, config, arch_info)
 
 
 class TestContainerManifestRemainingBranches:
@@ -839,7 +840,7 @@ def _make_spread_component(
         classmethod(lambda cls: Path(tmp_path) / "tests"),
     )
     ai = arch_info if arch_info is not None else get_arch_info(platform.machine())
-    return ComponentBase({}, manifest, config, ai)
+    return ComponentBase(ClusterContext(), manifest, config, ai)
 
 
 class TestSpreadRemainingBranches:

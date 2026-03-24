@@ -12,6 +12,7 @@ from functools import cached_property
 from pathlib import Path
 
 from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.literals import SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.utils.errors import ClusterError
@@ -152,14 +153,14 @@ class Unit(ABC):
             time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
 
     # ------------------------------------------------------------------
-    # Artifact server integration
+    # Cluster context integration
     # ------------------------------------------------------------------
 
-    #: Base URL of the orchestrator's artifact HTTP server.
-    #: ``None`` until :meth:`set_artifact_server` is called.
-    _artifact_base_url: str | None = None
+    #: Cluster context for this unit, set by the cluster orchestration logic.
+    #: ``None`` until :meth:`set_cluster_context` is called.
+    _ctx: ClusterContext | None = None
 
-    def set_artifact_server(self, base_url: str) -> None:
+    def set_cluster_context(self, cxt: ClusterContext) -> None:
         """Configure the artifact server URL for this unit.
 
         After this call, :meth:`staging_url` returns an HTTP URL pointing to
@@ -169,16 +170,16 @@ class Unit(ABC):
         their normal :meth:`download` method.
 
         Args:
-            base_url: HTTP base URL of the artifact server,
+            ctx: Cluster context containing the HTTP base URL of the artifact server,
                 e.g. ``"http://192.168.1.1:8765"``.
         """
-        self._artifact_base_url = base_url
+        self._ctx = cxt
 
     def staging_url(self, local_path: Path) -> str:
         """Return a URL suitable for this unit to download a staged file.
 
-        When an artifact server has been configured via
-        :meth:`set_artifact_server`, the URL uses the HTTP scheme so that
+        When a cluster context has been configured via
+        :meth:`set_cluster_context`, the URL uses the HTTP scheme so that
         remote units can pull the file from the orchestrator.  Otherwise
         a ``file://`` URL is returned, which works for
         :class:`~kube_galaxy.pkg.units.local.LocalUnit` whose
@@ -191,9 +192,9 @@ class Unit(ABC):
         Returns:
             A URL string that this unit can pass to :meth:`download`.
         """
-        if self._artifact_base_url is not None:
+        if self._ctx is not None and self._ctx.artifact_server is not None:
             relative = local_path.relative_to(SystemPaths.staging_root())
-            return f"{self._artifact_base_url.rstrip('/')}/{relative}"
+            return f"{self._ctx.artifact_server.base_url.rstrip('/')}/{relative}"
         return local_path.as_uri()
 
 

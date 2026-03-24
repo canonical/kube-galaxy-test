@@ -107,13 +107,14 @@ class RegistryMirror:
             ]
         )
 
-    def stop(self) -> None:
+    def stop(self, force: bool = False) -> None:
         """Stop and remove the registry container.
 
-        Uses ``check=False`` so that a missing or already-stopped container
-        does not raise an error during cleanup.
+        Args:
+            force: If ``True``, does not raise an error if the container is not
+                   found or fails to stop; otherwise, any such error is raised.
         """
-        shell.run(["docker", "rm", "-f", _CONTAINER_NAME], check=False)
+        shell.run(["docker", "rm", "-f", _CONTAINER_NAME], check=not force)
 
     def preload(self, image_refs: list[str | tuple[str, str]]) -> None:
         """Copy *image_refs* into the local cache.

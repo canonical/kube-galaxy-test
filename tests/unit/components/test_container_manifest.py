@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
@@ -56,7 +57,7 @@ def component(
     """Create a ComponentBase instance with mocked temp directory."""
     # Redirect staging root to test tmp_path to avoid cwd writes
     monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
-    return ComponentBase({}, manifest, calico_config, arch_info)
+    return ComponentBase(ClusterContext(), manifest, calico_config, arch_info)
 
 
 def test_download_hook_downloads_manifest(component, monkeypatch, tmp_path):
@@ -109,7 +110,7 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
         "component_temp_dir",
         classmethod(lambda cls, name: Path(tmp_path) / name / "temp"),
     )
-    comp = ComponentBase({}, manifest, config, arch_info)
+    comp = ComponentBase(ClusterContext(), manifest, config, arch_info)
 
     download_calls = []
 
@@ -243,7 +244,7 @@ def test_delete_hook_works_for_all_install_methods(manifest, arch_info):
         name="test-binary", category="test", release="v1", installation=install
     )
 
-    component = ComponentBase({}, manifest, config, arch_info)
+    component = ComponentBase(ClusterContext(), manifest, config, arch_info)
 
     # Call delete hook - should do nothing for any install method in base class
     component.unit = MockUnit()
