@@ -35,6 +35,7 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
         source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/kubelet",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(name="kubelet", category="k8s", release="v1", installation=install)
 

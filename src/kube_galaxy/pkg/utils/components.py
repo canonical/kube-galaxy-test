@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING
 
 import chevron
 
-from kube_galaxy.pkg.arch.detector import ArchInfo
-from kube_galaxy.pkg.literals import Permissions, SystemPaths
+from kube_galaxy.pkg.literals import Permissions, SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
+from kube_galaxy.pkg.utils.detector import ArchInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
 from kube_galaxy.pkg.utils.paths import ensure_dir
@@ -244,5 +244,6 @@ def format_component_pattern(
             "subdir": subdir,
             "ref": effective_repo.ref or "",
         },
+        "mirror": {"base-url": URLs.ORCHESTRATOR_HOST},
     }
     return str(chevron.render(filename_pattern, data))

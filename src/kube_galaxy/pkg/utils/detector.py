@@ -1,5 +1,6 @@
 """Architecture detection and mapping for kube-galaxy."""
 
+import socket
 from dataclasses import dataclass
 
 
@@ -78,3 +79,18 @@ def get_arch_info(system_arch: str) -> ArchInfo:
         k8s=map_to_k8s_arch(system_arch),
         image=map_to_image_arch(system_arch),
     )
+
+
+def detect_ip() -> str:
+    """Detect the primary IP address of the orchestrator host.
+
+    Uses a UDP socket trick — connecting to an external address without
+    sending any data forces the OS to select the correct source interface,
+    which reveals the local IP.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("1.1.1.1", 80))
+        return str(s.getsockname()[0])
+    finally:
+        s.close()

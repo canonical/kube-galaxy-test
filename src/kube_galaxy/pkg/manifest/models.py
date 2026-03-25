@@ -63,6 +63,7 @@ class InstallConfig:
 
     method: InstallMethod  # Installation method
     source_format: str  # e.g., format string URL or path to binary, chart, or manifest
+    retag_format: str  # e.g. format string for retagging container images to pull through registry
     bin_path: str  # Default path inside archive where binaries
     repo: RepoInfo = field(default_factory=RepoInfo)  # Repository for this install artefact
 

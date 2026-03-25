@@ -11,10 +11,10 @@ from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
 from kube_galaxy.pkg.cluster_context import ClusterContext
-from kube_galaxy.pkg.literals import SystemPaths, Timeouts
+from kube_galaxy.pkg.literals import SystemPaths, Timeouts, URLs
 from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.utils.detector import ArchInfo, detect_ip, map_to_image_arch, map_to_k8s_arch
 from kube_galaxy.pkg.utils.errors import ClusterError
 
 _CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
@@ -126,7 +126,35 @@ class Unit(ABC):
         """Return the hex SHA-256 digest of a file at ``path`` on the unit."""
         return self.run(["sha256sum", path]).stdout.split()[0]
 
-    def wait_until_ready(self, timeout: float | None = None) -> None:
+    def update_etc_hosts(self) -> None:
+        """Ensure the unit's /etc/hosts contains entries for the orchestrator.
+
+        Each unit's /etc/hosts is updated with entries for the orchestrator's
+        hostname and IP address, both pointing to the orchestrator's IP.
+        """
+        if self.path_exists("/etc/hosts"):
+            hosts_path = "/etc/hosts"
+        else:
+            # Some minimal images (e.g. Ubuntu cloud images) may not have /etc/hosts
+            hosts_path = "/etc/hosts.new"
+        orchestrator_ip = detect_ip()
+        self.run(
+            [
+                "sh",
+                "-c",
+                f"echo '{orchestrator_ip} {URLs.ORCHESTRATOR_HOST}' >> {hosts_path}",
+            ],
+            privileged=True,
+        )
+        if hosts_path == "/etc/hosts.new":
+            self.run(["mv", hosts_path, "/etc/hosts"], privileged=True)
+
+    def hostname(self) -> str:
+        """Return the unit's hostname."""
+        result = self.run(["hostname"], check=False)
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+    def enlist(self, timeout: float | None = None) -> None:
         """Block until the unit agent is responsive.
 
         Polls the unit with a simple command (``hostname``) until it exits
@@ -141,9 +169,7 @@ class Unit(ABC):
         """
         effective_timeout = Timeouts.UNIT_READY_TIMEOUT if timeout is None else timeout
         deadline = time.monotonic() + effective_timeout
-        while True:
-            if self.run(["hostname"], check=False).returncode == 0:
-                return
+        while not self.run(["hostname"], check=False).returncode == 0:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ClusterError(
@@ -151,6 +177,7 @@ class Unit(ABC):
                     f"after {effective_timeout:.0f}s"
                 )
             time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
+        self.update_etc_hosts()
 
     # ------------------------------------------------------------------
     # Cluster context integration

@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, LiteralString, cast
 
-from kube_galaxy.pkg.arch.detector import ArchInfo
+from kube_galaxy.pkg.utils.detector import ArchInfo
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.cluster_context import ClusterContext
@@ -97,9 +97,6 @@ class ComponentBase:
         # for InstallMethod Binary or BinaryArchive
         self.binary_path: Path | None = None  # path to downloaded binary (before installation)
         self.install_path: str | None = None  # path to root installed bin
-        # for InstallMethod Image or ImageArchive
-        self.image_repository: str | None = None
-        self.image_tag: str | None = None
         # for InstallMethod ContainerManifest
         self.manifest_path: Path | None = None  # path to downloaded manifest file
 

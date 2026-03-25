@@ -8,7 +8,7 @@ import pytest
 
 # Ensure component modules are imported during tests so coverage includes them
 import kube_galaxy.pkg.components  # noqa: F401
-from kube_galaxy.pkg.arch.detector import get_arch_info
+from kube_galaxy.pkg.utils.detector import get_arch_info
 
 
 @pytest.fixture

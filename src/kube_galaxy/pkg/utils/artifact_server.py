@@ -25,28 +25,12 @@ in :attr:`base_url`; it defaults to the machine's primary hostname.
 """
 
 import http.server
-import socket
 import threading
 from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from kube_galaxy.pkg.literals import SystemPaths
-
-
-def detect_orchestrator_ip() -> str:
-    """Detect the primary IP address of the orchestrator host.
-
-    Uses a UDP socket trick — connecting to an external address without
-    sending any data forces the OS to select the correct source interface,
-    which reveals the local IP.
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("1.1.1.1", 80))
-        return str(s.getsockname()[0])
-    finally:
-        s.close()
+from kube_galaxy.pkg.literals import SystemPaths, URLs
 
 
 class _StagingHTTPHandler(http.server.SimpleHTTPRequestHandler):
@@ -73,7 +57,7 @@ class ArtifactServer:
     Args:
         port: TCP port to listen on.  Defaults to ``8765``.
         advertise_host: Hostname or IP address included in :attr:`base_url`.
-            When *None* (default), ``socket.getfqdn()`` is used.
+            When *None* (default), ``URLs.ORCHESTRATOR_HOST`` is used.
 
     Example::
 
@@ -87,14 +71,9 @@ class ArtifactServer:
         advertise_host: str | None = None,
     ) -> None:
         self._port = port
-        self._advertise_host = advertise_host or self.detect_ip
+        self._advertise_host = advertise_host or URLs.ORCHESTRATOR_HOST
         self._server: http.server.HTTPServer | None = None
         self._thread: threading.Thread | None = None
-
-    @property
-    def detect_ip(self) -> str:
-        """Detect the machine's primary IP address by connecting a UDP socket."""
-        return detect_orchestrator_ip()
 
     @property
     def base_url(self) -> str:

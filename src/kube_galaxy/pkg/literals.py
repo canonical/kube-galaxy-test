@@ -219,6 +219,7 @@ class URLs:
     K8S_RELEASE_BASE = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2"
 
     # Container registries
+    ORCHESTRATOR_HOST = "kube-galaxy.orchestrator"
     REGISTRY_K8S_IO = "registry.k8s.io"
 
 

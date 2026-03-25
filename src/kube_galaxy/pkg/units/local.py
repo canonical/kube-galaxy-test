@@ -97,7 +97,7 @@ class LocalUnit(Unit):
 
         return compute_sha256(Path(path))
 
-    def wait_until_ready(self, timeout: float | None = None) -> None:
+    def enlist(self, timeout: float | None = None) -> None:
         """Local unit is always ready; nothing to wait for."""
 
 

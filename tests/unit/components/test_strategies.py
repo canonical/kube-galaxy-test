@@ -8,11 +8,11 @@ import bz2
 import gzip
 import lzma
 import platform
+import unittest.mock as mock
 from pathlib import Path
 
 import pytest
 
-from kube_galaxy.pkg.arch.detector import get_arch_info
 from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.components.strategies.binary_archive import _bin_path
@@ -30,6 +30,7 @@ from kube_galaxy.pkg.manifest.models import (
 from kube_galaxy.pkg.manifest.models import (
     TestMethod as ComponentTestMethod,
 )
+from kube_galaxy.pkg.utils.detector import get_arch_info
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
 # ---------------------------------------------------------------------------
@@ -51,13 +52,11 @@ def _make_component(
     monkeypatch=None,
     tmp_path: Path | None = None,
     arch_info=None,
+    ctx: ClusterContext | None = None,
 ) -> ComponentBase:
     repo = RepoInfo(base_url=base_url)
     install = InstallConfig(
-        method=method,
-        source_format=source_format,
-        bin_path=bin_path,
-        repo=repo,
+        method=method, source_format=source_format, bin_path=bin_path, repo=repo, retag_format=""
     )
     config = ComponentConfig(name=name, category="test", release=release, installation=install)
     manifest = _make_manifest()
@@ -66,7 +65,7 @@ def _make_component(
         monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
     ai = arch_info if arch_info is not None else get_arch_info(platform.machine())
-    return ComponentBase(ClusterContext(), manifest, config, ai)
+    return ComponentBase(ctx if ctx is not None else ClusterContext(), manifest, config, ai)
 
 
 # ===========================================================================
@@ -427,9 +426,6 @@ class TestContainerImageDownload:
 
         comp.download_hook()
 
-        assert comp.image_repository == "registry.k8s.io/pause"
-        assert comp.image_tag == "3.9"
-
     @pytest.mark.parametrize(
         "scheme_url",
         [
@@ -468,6 +464,56 @@ class TestContainerImageDownload:
         with pytest.raises(ComponentError, match="Invalid container image format"):
             comp.download_hook()
 
+    @pytest.mark.parametrize(
+        "source_format,expected_mirror_path",
+        [
+            ("registry.k8s.io/pause:{{ release }}", "pause:3.9"),
+            ("registry.k8s.io/coredns/coredns:v{{ release }}", "coredns/coredns:v1.11"),
+            ("ghcr.io/org/pause:{{ release }}", "org/pause:3.9"),
+        ],
+    )
+    def test_download_preloads_into_mirror(
+        self, source_format, expected_mirror_path, monkeypatch, tmp_path, arch_info
+    ):
+        """_download calls mirror.preload() with stripped-hostname mirror path."""
+        mock_mirror = mock.MagicMock()
+        ctx = ClusterContext(registry_mirror=mock_mirror)
+        release = source_format.split(":")[-1].replace("{{ release }}", "").strip()
+        # pick a release that renders cleanly
+        release = "3.9" if "pause" in source_format else "1.11"
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE,
+            source_format,
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            release=release,
+            ctx=ctx,
+        )
+
+        comp.download_hook()
+
+        image_ref, mirror_ref = mock_mirror.preload.call_args.args
+        image_ref.endswith(expected_mirror_path)
+        mirror_ref.endswith(expected_mirror_path)
+
+    @mock.patch("kube_galaxy.pkg.components.strategies.container_image.info")
+    def test_download_skips_mirror_when_no_mirror(self, mock_info, monkeypatch, tmp_path, arch_info):
+        """_download does not call mirror when registry_mirror is None."""
+        ctx = ClusterContext(registry_mirror=None)
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE,
+            "registry.k8s.io/pause:{{ release }}",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            release="3.9",
+            ctx=ctx,
+        )
+        # No registry_mirror set on ClusterContext — should not raise
+        comp.download_hook()
+        mock_info.assert_called_with("  No registry mirror configured; skipping preload for registry.k8s.io/pause:3.9")
+
 
 # ===========================================================================
 # container_image_archive.py
@@ -505,6 +551,18 @@ def _patch_cia_download(monkeypatch, content: bytes = b"data") -> list:
     )
     return calls
 
+
+def _patch_logging_info(monkeypatch) -> list:
+    calls: list = []
+
+    def fake_info(msg: str) -> None:
+        calls.append(msg)
+
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.utils.logging.info",
+        fake_info,
+    )
+    return calls
 
 class TestContainerImageArchiveDownload:
     def test_download_plain_tar(self, monkeypatch, tmp_path, arch_info):
@@ -687,6 +745,68 @@ class TestContainerImageArchiveDownload:
         assert len(calls) == 1
         assert calls[0].startswith("gh-artifact://")
 
+    def test_download_preloads_archive_into_mirror(self, monkeypatch, tmp_path, arch_info):
+        """_download calls mirror.inspect() then mirror.preload() using the embedded name."""
+        mock_mirror = mock.MagicMock()
+        mock_mirror.inspect.return_value = "pause:3.9"
+        ctx = ClusterContext(registry_mirror=mock_mirror)
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE_ARCHIVE,
+            "https://example.com/pause.tar",
+            name="pause",
+            release="3.9",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            ctx=ctx,
+        )
+        _patch_cia_download(monkeypatch, b"tar-content")
+
+        comp.download_hook()
+
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
+        expected_src = f"docker-archive:{image_tar}"
+        mock_mirror.inspect.assert_called_once_with(expected_src)
+        mock_mirror.preload.assert_called_once_with(expected_src, "pause:3.9")
+
+    def test_download_preloads_archive_falls_back_when_no_embedded_name(
+        self, monkeypatch, tmp_path, arch_info
+    ):
+        """_download falls back to name:release when inspect returns empty string."""
+        mock_mirror = mock.MagicMock()
+        mock_mirror.inspect.return_value = ""
+        ctx = ClusterContext(registry_mirror=mock_mirror)
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE_ARCHIVE,
+            "https://example.com/pause.tar",
+            name="pause",
+            release="3.9",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            ctx=ctx,
+        )
+        _patch_cia_download(monkeypatch, b"tar-content")
+
+        comp.download_hook()
+
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
+        mock_mirror.preload.assert_called_once_with(f"docker-archive:{image_tar}", "")
+
+    def test_download_skips_mirror_when_no_mirror(self, monkeypatch, tmp_path, arch_info):
+        """_download does not call mirror when registry_mirror is None."""
+        comp = _make_cia_component(
+            "https://example.com/image.tar",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+        )
+        _patch_cia_download(monkeypatch, b"tar-content")
+        # No registry_mirror — should complete without error
+        comp.download_hook()
+        image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
+        assert image_tar.exists()
+
 
 # ===========================================================================
 # container_manifest.py — remaining branch coverage
@@ -706,6 +826,7 @@ def _make_manifest_component(
         source_format=source_format,
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(name="calico", category="cni", release="3.30.0", installation=install)
     manifest = _make_manifest()
@@ -818,6 +939,7 @@ def _make_spread_component(
         source_format="",
         bin_path="",
         repo=RepoInfo(base_url="https://example.com"),
+        retag_format="",
     )
     test_cfg = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,

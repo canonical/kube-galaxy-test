@@ -28,6 +28,7 @@ def make_config(name: str = "example") -> ComponentConfig:
         source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/binary",
         bin_path="./*",
         repo=RepoInfo(base_url="https://example.com/r"),
+        retag_format="",
     )
     return ComponentConfig(name=name, category="cat", release="v1", installation=install)
 
@@ -50,6 +51,7 @@ def test_format_component_pattern_hyphenated_key_native(arch_info):
         source_format="{{ repo.base-url }}/path",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="tool",
@@ -69,6 +71,7 @@ def test_format_component_pattern_remote(arch_info):
         source_format="{{ repo.base-url }}/releases/download/v{{ release }}/bin-{{ arch }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mybin",
@@ -89,6 +92,7 @@ def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatc
         source_format="{{ repo.base-url }}/mybin-{{ arch }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mybin",
@@ -108,6 +112,7 @@ def test_format_component_pattern_subdir_and_ref(arch_info):
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}/{{ release }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="tool",
@@ -132,6 +137,7 @@ def test_format_component_pattern_empty_subdir_and_ref(arch_info):
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="tool",
@@ -151,6 +157,7 @@ def test_format_component_pattern_name_variable(arch_info):
         source_format="{{ repo.base-url }}/components/{{ name }}/bin",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mytool",
@@ -171,6 +178,7 @@ def test_format_component_pattern_prerender_name_in_subdir(arch_info, tmp_path, 
         source_format="{{ repo.base-url }}/{{ repo.subdir }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="sonobuoy",
@@ -190,6 +198,7 @@ def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/release-{{ release }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mytool",
@@ -211,9 +220,7 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
     (suite_src / "task.yaml").write_text("summary: A fake task")
 
     install = InstallConfig(
-        method=InstallMethod.NONE,
-        source_format="",
-        bin_path="./*",
+        method=InstallMethod.NONE, source_format="", bin_path="./*", retag_format=""
     )
     test_cfg = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,

@@ -7,11 +7,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import kube_galaxy.pkg.utils.artifact_server as artifact_server_mod
 from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.units.local import LocalUnit
-from kube_galaxy.pkg.utils.artifact_server import ArtifactServer, detect_orchestrator_ip
+from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
 from kube_galaxy.pkg.utils.components import install_binary
 from tests.unit.components.conftest import MockUnit
 
@@ -221,23 +220,3 @@ class TestInstallBinaryUsesDownload:
         assert not unit.put_calls, "install_binary must not call unit.put()"
         url, _ = unit.download_calls[0]
         assert url.startswith("http://192.168.1.1:8765/")
-
-
-# ---------------------------------------------------------------------------
-# detect_orchestrator_ip — module-level function
-# ---------------------------------------------------------------------------
-
-
-def test_detect_orchestrator_ip_returns_ip_string():
-    """detect_orchestrator_ip() returns a non-empty IPv4-like string."""
-    ip = detect_orchestrator_ip()
-    assert isinstance(ip, str)
-    assert len(ip) > 0
-    assert "." in ip  # basic IPv4 sanity check
-
-
-def test_artifact_server_detect_ip_delegates_to_module_function(monkeypatch):
-    """ArtifactServer.detect_ip delegates to the module-level detect_orchestrator_ip()."""
-    monkeypatch.setattr(artifact_server_mod, "detect_orchestrator_ip", lambda: "1.2.3.4")
-    srv = ArtifactServer(port=9999)
-    assert srv.detect_ip == "1.2.3.4"

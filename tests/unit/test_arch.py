@@ -4,8 +4,9 @@ import platform
 
 import pytest
 
-from kube_galaxy.pkg.arch.detector import (
+from kube_galaxy.pkg.utils.detector import (
     ArchInfo,
+    detect_ip,
     get_arch_info,
     map_to_image_arch,
     map_to_k8s_arch,
@@ -88,3 +89,11 @@ def test_arch_info_consistency():
     # All fields should match expected mappings
     assert info.k8s == map_to_k8s_arch(info.system)
     assert info.image == map_to_image_arch(info.system)
+
+
+def test_detect_ip_returns_ip_string():
+    """detect_ip() returns a non-empty IPv4-like string."""
+    ip = detect_ip()
+    assert isinstance(ip, str)
+    assert len(ip) > 0
+    assert "." in ip  # basic IPv4 sanity check

@@ -18,8 +18,8 @@ _FAKE_IP = "10.0.0.1"
 
 @pytest.fixture
 def patched_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Patch detect_orchestrator_ip and staging_root for all mirror tests."""
-    monkeypatch.setattr(mirror_mod, "detect_orchestrator_ip", lambda: _FAKE_IP)
+    """Patch detect_ip and staging_root for all mirror tests."""
+    monkeypatch.setattr(mirror_mod, "detect_ip", lambda: _FAKE_IP)
     monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
     return tmp_path
 
@@ -91,12 +91,12 @@ class TestRegistryMirrorProperties:
     def test_base_url_uses_ip_and_port(self, patched_env: Path) -> None:
         """base_url combines detected IP with configured port."""
         mirror = RegistryMirror(RegistryConfig(port=5000))
-        assert mirror.base_url == f"http://{_FAKE_IP}:5000"
+        assert mirror.registry_address(local=True) == f"{_FAKE_IP}:5000"
 
     def test_base_url_respects_custom_port(self, patched_env: Path) -> None:
         """base_url reflects a non-default port."""
         mirror = RegistryMirror(RegistryConfig(port=6000))
-        assert mirror.base_url == f"http://{_FAKE_IP}:6000"
+        assert mirror.registry_address(local=True) == f"{_FAKE_IP}:6000"
 
     def test_data_dir_is_under_staging_root(self, patched_env: Path, tmp_path: Path) -> None:
         """data_dir is always staging_root()/registry/data."""
@@ -137,7 +137,7 @@ class TestRegistryMirrorStart:
         assert cmd[cmd.index("--name") + 1] == "registry-cache"
         assert cmd[cmd.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
         assert not any("REGISTRY_PROXY_REMOTEURL" in arg for arg in cmd)
-        assert cmd[-1] == "registry:2"
+        assert cmd[-1] == "registry:3"
 
 
 # ---------------------------------------------------------------------------
@@ -164,63 +164,29 @@ class TestRegistryMirrorStop:
 
 
 class TestRegistryMirrorPreload:
-    def test_preload_pulls_matching_refs(
+    def test_preload_copies_docker_ref_to_mirror(
         self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """preload() copies refs whose hostname matches cfg.remote_registry."""
+        """preload() copies a docker:// ref to the local mirror at mirror_path."""
         calls: list[list[str]] = []
         monkeypatch.setattr(
             mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
         )
-        mirror = RegistryMirror(RegistryConfig(remote_registry=URLs.REGISTRY_K8S_IO, port=5000))
+        mirror = RegistryMirror(RegistryConfig(port=5000))
         mirror.preload(
-            [
-                f"{URLs.REGISTRY_K8S_IO}/pause:3.10",
-                f"{URLs.REGISTRY_K8S_IO}/etcd:3.5.0",
-            ]
-        )
-        assert len(calls) == 2
-        assert calls[0] == [
-            "skopeo",
-            "copy",
-            "--all",
-            "--dest-tls-verify=false",
             f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10",
-            f"docker://{_FAKE_IP}:5000/pause:3.10",
-        ]
-        assert calls[1] == [
-            "skopeo",
-            "copy",
-            "--all",
-            "--dest-tls-verify=false",
-            f"docker://{URLs.REGISTRY_K8S_IO}/etcd:3.5.0",
-            f"docker://{_FAKE_IP}:5000/etcd:3.5.0",
-        ]
-
-    def test_preload_skips_non_matching_refs(
-        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """preload() silently skips refs from other registries."""
-        calls: list[list[str]] = []
-        monkeypatch.setattr(
-            mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
+            "pause:3.10",
         )
-        mirror = RegistryMirror(RegistryConfig(remote_registry=URLs.REGISTRY_K8S_IO, port=5000))
-        mirror.preload(
+        assert calls == [
             [
-                f"{URLs.REGISTRY_K8S_IO}/pause:3.10",
-                "docker.io/library/ubuntu:22.04",
-                "ghcr.io/org/image:latest",
+                "skopeo",
+                "copy",
+                "--all",
+                "--quiet",
+                "--dest-tls-verify=false",
+                f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10",
+                f"docker://{_FAKE_IP}:5000/pause:3.10",
             ]
-        )
-        assert len(calls) == 1
-        assert calls[0] == [
-            "skopeo",
-            "copy",
-            "--all",
-            "--dest-tls-verify=false",
-            f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10",
-            f"docker://{_FAKE_IP}:5000/pause:3.10",
         ]
 
     def test_preload_handles_nested_image_paths(
@@ -232,77 +198,72 @@ class TestRegistryMirrorPreload:
             mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
         )
         mirror = RegistryMirror(RegistryConfig(remote_registry=URLs.REGISTRY_K8S_IO, port=5000))
-        mirror.preload([f"{URLs.REGISTRY_K8S_IO}/coredns/coredns:v1.10.1"])
+        mirror.preload(
+            f"docker://{URLs.REGISTRY_K8S_IO}/coredns/coredns:v1.10.1",
+            "coredns/coredns:v1.10.1",
+        )
         assert calls == [
             [
                 "skopeo",
                 "copy",
                 "--all",
+                "--quiet",
                 "--dest-tls-verify=false",
                 f"docker://{URLs.REGISTRY_K8S_IO}/coredns/coredns:v1.10.1",
                 f"docker://{_FAKE_IP}:5000/coredns/coredns:v1.10.1",
             ]
         ]
 
-    def test_preload_empty_list_is_noop(
-        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """preload() with an empty list makes no skopeo calls."""
-        calls: list[list[str]] = []
-        monkeypatch.setattr(
-            mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
-        )
-        RegistryMirror(RegistryConfig()).preload([])
-        assert calls == []
-
-    def test_preload_docker_archive_tuple(
+    def test_preload_docker_archive(
         self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """preload() accepts (docker-archive:path, dest_path) tuples."""
+        """preload() accepts a docker-archive source ref."""
         calls: list[list[str]] = []
         monkeypatch.setattr(
             mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
         )
         tar = tmp_path / "etcd.tar"
         mirror = RegistryMirror(RegistryConfig(port=5000))
-        mirror.preload([(f"docker-archive:{tar}", "etcd:3.5.0")])
+        mirror.preload(f"docker-archive:{tar}", "etcd:3.5.0")
         assert calls == [
             [
                 "skopeo",
                 "copy",
                 "--all",
+                "--quiet",
                 "--dest-tls-verify=false",
                 f"docker-archive:{tar}",
                 f"docker://{_FAKE_IP}:5000/etcd:3.5.0",
             ]
         ]
 
-    def test_preload_oci_archive_tuple(
+    def test_preload_oci_archive(
         self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """preload() accepts (oci-archive:path:tag, dest_path) tuples."""
+        """preload() accepts an oci-archive source ref."""
         calls: list[list[str]] = []
         monkeypatch.setattr(
             mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
         )
         tar = tmp_path / "pause.tar"
         mirror = RegistryMirror(RegistryConfig(port=5000))
-        mirror.preload([(f"oci-archive:{tar}:pause:3.10", "pause:3.10")])
+        mirror.preload(f"oci-archive:{tar}:pause:3.10", "pause:3.10")
         assert calls == [
             [
                 "skopeo",
                 "copy",
                 "--all",
+                "--quiet",
                 "--dest-tls-verify=false",
                 f"oci-archive:{tar}:pause:3.10",
                 f"docker://{_FAKE_IP}:5000/pause:3.10",
             ]
         ]
 
-    def test_preload_mixed_registry_and_archive(
+    def test_preload_called_twice_for_mixed_sources(
         self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        """preload() handles a mix of registry refs and archive tuples."""
+        """Two preload() calls (registry + archive) each issue one skopeo copy."""
         calls: list[list[str]] = []
         monkeypatch.setattr(
             mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
@@ -310,15 +271,17 @@ class TestRegistryMirrorPreload:
         tar = tmp_path / "etcd.tar"
         mirror = RegistryMirror(RegistryConfig(remote_registry=URLs.REGISTRY_K8S_IO, port=5000))
         mirror.preload(
-            [
-                f"{URLs.REGISTRY_K8S_IO}/pause:3.10",
-                (f"docker-archive:{tar}", "etcd:3.5.0"),
-            ]
+            f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10",
+            "pause:3.10",
+        )
+        mirror.preload(
+            f"docker-archive:{tar}",
+            "etcd:3.5.0",
         )
         assert len(calls) == 2
-        assert calls[0][4] == f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10"
-        assert calls[1][4] == f"docker-archive:{tar}"
-        assert calls[1][5] == f"docker://{_FAKE_IP}:5000/etcd:3.5.0"
+        assert calls[0][5] == f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10"
+        assert calls[1][5] == f"docker-archive:{tar}"
+        assert calls[1][6] == f"docker://{_FAKE_IP}:5000/etcd:3.5.0"
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +304,7 @@ class TestRegistryMirrorRetag:
                 "skopeo",
                 "copy",
                 "--all",
+                "--quiet",
                 "--src-tls-verify=false",
                 "--dest-tls-verify=false",
                 f"docker://{_FAKE_IP}:5000/pause:3.10",
@@ -364,6 +328,7 @@ class TestRegistryMirrorRetag:
                 "skopeo",
                 "copy",
                 "--all",
+                "--quiet",
                 "--src-tls-verify=false",
                 "--dest-tls-verify=false",
                 f"docker://{_FAKE_IP}:5000/coredns/coredns:v1.10.1",
@@ -380,5 +345,70 @@ class TestRegistryMirrorRetag:
             mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
         )
         RegistryMirror(RegistryConfig(port=6000)).retag("nginx:1.25", "nginx:1.25-custom")
-        assert calls[0][5] == f"docker://{_FAKE_IP}:6000/nginx:1.25"
-        assert calls[0][6] == f"docker://{_FAKE_IP}:6000/nginx:1.25-custom"
+        assert calls[0][6] == f"docker://{_FAKE_IP}:6000/nginx:1.25"
+        assert calls[0][7] == f"docker://{_FAKE_IP}:6000/nginx:1.25-custom"
+
+
+# ---------------------------------------------------------------------------
+# RegistryMirror — inspect
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryMirrorInspect:
+    def test_inspect_returns_name_without_registry_prefix(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """inspect() strips the registry hostname and returns the image path."""
+        tar = tmp_path / "pause.tar"
+        payload = '{"Name": "registry.k8s.io/pause:3.10"}'
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr=""),
+        )
+        result = RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
+        assert result == "pause:3.10"
+
+    def test_inspect_preserves_nested_path(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """inspect() keeps nested path components after stripping the registry host."""
+        tar = tmp_path / "coredns.tar"
+        payload = '{"Name": "registry.k8s.io/coredns/coredns:v1.11.1"}'
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr=""),
+        )
+        result = RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
+        assert result == "coredns/coredns:v1.11.1"
+
+    def test_inspect_returns_empty_string_when_name_absent(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """inspect() returns '' when the JSON has no Name field."""
+        tar = tmp_path / "unknown.tar"
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr=""),
+        )
+        result = RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
+        assert result == ""
+
+    def test_inspect_calls_skopeo_inspect(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """inspect() invokes skopeo inspect with the supplied image_ref."""
+        tar = tmp_path / "etcd.tar"
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: (
+                calls.append(cmd)
+                or subprocess.CompletedProcess(cmd, 0, stdout='{"Name": "etcd:3.5.0"}', stderr="")
+            ),
+        )
+        RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
+        assert calls == [["skopeo", "inspect", f"docker-archive:{tar}"]]

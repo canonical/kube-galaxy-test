@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 import yaml
 
 from kube_galaxy.pkg.cluster_context import ClusterContext
@@ -31,6 +33,7 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
         source_format="https://example/{{ repo.base-url }}/{{ release }}/kubeadm",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(name="kubeadm", category="k8s", release="v1", installation=install)
 
@@ -92,3 +95,26 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
     assert any(str(comp._cluster_config) in str(dest) for _, dest in mock_unit.put_calls), (
         "expected unit.put() call for cluster config"
     )
+
+
+class ComponentStub:
+    def __init__(self, name, method: str, repo=None, tag=None, release=None):
+        self.config = MagicMock()
+        self.config.name = name
+        self.config.release = release or "v1.0"
+        self.config.installation.method = InstallMethod[method]
+        self.image_repository = repo
+        self.image_tag = tag
+
+
+def _make_kubeadm_config() -> ComponentConfig:
+    """Return a minimal ComponentConfig that passes _INSTALL_STRATEGIES validation."""
+    repo = RepoInfo(base_url="https://github.com/kubernetes/kubernetes")
+    install = InstallConfig(
+        method=InstallMethod.BINARY,
+        source_format="https://example/{{ release }}/kubeadm",
+        bin_path="./*",
+        repo=repo,
+        retag_format="",
+    )
+    return ComponentConfig(name="kubeadm", category="k8s", release="v1", installation=install)

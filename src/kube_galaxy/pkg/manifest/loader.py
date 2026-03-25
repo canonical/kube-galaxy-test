@@ -121,6 +121,7 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         installation = InstallConfig(
             method=InstallMethod(install_data.get("method", "none")),
             source_format=install_data.get("source-format", ""),
+            retag_format=install_data.get("retag-format", ""),
             bin_path=install_data.get("bin-path", "./*"),
             repo=_parse_repo(install_data.get("repo"), comp_name),
         )

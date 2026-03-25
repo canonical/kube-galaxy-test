@@ -65,7 +65,7 @@ def setup_cluster(manifest_path: str) -> None:
         provider = provider_factory(manifest)
         lead_unit = provider.provision(NodeRole.CONTROL_PLANE, 0)
         info("Waiting for Lead Control-Plane unit to become ready...")
-        lead_unit.wait_until_ready()
+        lead_unit.enlist()
         info(f"Lead Control-Plane unit '{lead_unit.name}' is ready")
 
         # TODO: Support multiple units based on manifest

@@ -37,6 +37,7 @@ def calico_config():
         ),
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     return ComponentConfig(
         name="calico",
@@ -96,6 +97,7 @@ def test_download_hook_formats_url_with_placeholders(manifest, arch_info, monkey
         source_format="{{ repo.base-url }}/releases/{{ release }}/manifest-{{ arch }}.yaml",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="test-component",
@@ -239,6 +241,7 @@ def test_delete_hook_works_for_all_install_methods(manifest, arch_info):
         source_format="https://example/{{ arch }}/bin",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="test-binary", category="test", release="v1", installation=install

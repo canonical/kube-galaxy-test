@@ -16,19 +16,20 @@ Typical flow::
     mirror.stop()               # called once during teardown_cluster
 """
 
+import json
 import os
 from pathlib import Path
 
-from kube_galaxy.pkg.literals import SystemPaths
+from kube_galaxy.pkg.literals import SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import RegistryConfig
 from kube_galaxy.pkg.utils import shell
-from kube_galaxy.pkg.utils.artifact_server import detect_orchestrator_ip
+from kube_galaxy.pkg.utils.detector import detect_ip
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import info, success
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CONTAINER_NAME = "registry-cache"
-_REGISTRY_IMAGE = "registry:2"
+_REGISTRY_IMAGE = "registry:3"
 _REQUIRED_TOOLS = ("docker", "skopeo")
 
 
@@ -73,11 +74,6 @@ class RegistryMirror:
         self._cfg = cfg
 
     @property
-    def base_url(self) -> str:
-        """HTTP URL of the registry cache, routable from cluster nodes."""
-        return f"http://{detect_orchestrator_ip()}:{self._cfg.port}"
-
-    @property
     def data_dir(self) -> Path:
         """Local directory where the registry stores cached image layers."""
         return SystemPaths.staging_root() / "registry" / "data"
@@ -116,37 +112,56 @@ class RegistryMirror:
         """
         shell.run(["docker", "rm", "-f", _CONTAINER_NAME], check=not force)
 
-    def preload(self, image_refs: list[str | tuple[str, str]]) -> None:
-        """Copy *image_refs* into the local cache.
+    def inspect(self, image_ref: str) -> str:
+        """Return the image name embedded in a skopeo source reference.
 
-        Each entry is either:
+        Runs ``skopeo inspect`` against *image_ref* (e.g.
+        ``"docker-archive:/path/image.tar"``) and returns the ``Name`` field
+        from the resulting JSON, with the registry hostname prefix stripped so
+        the result is suitable as a :meth:`preload` *mirror_path*.
 
-        * A plain registry reference string such as
-          ``"registry.k8s.io/pause:3.10"``.  Only refs whose hostname matches
-          ``cfg.remote_registry`` are copied; all others are silently skipped.
-          The destination path is derived by stripping the registry prefix.
-
-        * A ``(skopeo_src, local_dest_path)`` tuple for any skopeo source
-          transport, including tar archives::
-
-              ("docker-archive:/path/etcd.tar", "etcd:3.5.0")
-              ("oci-archive:/path/pause.tar:pause:3.10", "pause:3.10")
-
-          The destination is always the local registry at *local_dest_path*.
+        Returns an empty string if the ``Name`` field is absent or blank.
 
         Args:
-            image_refs: Registry refs and/or ``(skopeo_src, dest_path)`` pairs.
+            image_ref: Any skopeo source transport reference.
+
+        Returns:
+            The image path without registry host, e.g. ``"pause:3.10"``.
         """
-        prefix = self._cfg.remote_registry + "/"
-        registry_addr = self.base_url.removeprefix("http://")
-        for ref in image_refs:
-            if isinstance(ref, tuple):
-                src, image_path = ref
-            else:
-                if not ref.startswith(prefix):
-                    continue
-                src, image_path = f"docker://{ref}", ref[len(prefix) :]
-            self._skopeo_copy(src, f"docker://{registry_addr}/{image_path}")
+        result = shell.run(["skopeo", "inspect", image_ref], capture_output=True)
+        name: str = json.loads(result.stdout).get("Name", "")
+        if not name:
+            return ""
+        # Strip leading registry hostname (e.g. "registry.k8s.io/pause:3.10" -> "pause:3.10")
+        return name.split("/", 1)[-1] if "/" in name else name
+
+    def registry_address(self, local: bool = False) -> str:
+        """Return the registry address for use in container image references."""
+        if local:
+            registry_addr = detect_ip()
+            return f"{registry_addr}:{self._cfg.port}"
+        return f"{URLs.ORCHESTRATOR_HOST}:{self._cfg.port}"
+
+    def preload(self, image_ref: str, mirror_path: str) -> None:
+        """Copy a single image into the local registry cache.
+
+        *image_ref* is any skopeo source transport reference:
+
+        * A ``docker://`` registry reference, e.g.
+          ``"docker://registry.k8s.io/pause:3.10"``.
+        * An archive reference, e.g.
+          ``"docker-archive:/path/etcd.tar"`` or
+          ``"oci-archive:/path/pause.tar:pause:3.10"``.
+
+        *mirror_path* is the destination path within the local registry
+        (without the registry host prefix), e.g. ``"pause:3.10"``.
+
+        Args:
+            image_ref: Skopeo source transport reference for the image.
+            mirror_path: Destination path within the local registry.
+        """
+        registry_addr = self.registry_address(local=True)
+        self._skopeo_copy(image_ref, f"docker://{registry_addr}/{mirror_path}")
 
     def retag(self, src_path: str, dst_path: str) -> None:
         """Copy an image already in the local cache under a new tag or path.
@@ -161,7 +176,7 @@ class RegistryMirror:
             src_path: Source image path within the local registry.
             dst_path: Destination image path within the local registry.
         """
-        registry_addr = self.base_url.removeprefix("http://")
+        registry_addr = self.registry_address(local=True)
         self._skopeo_copy(
             f"docker://{registry_addr}/{src_path}",
             f"docker://{registry_addr}/{dst_path}",
@@ -177,7 +192,7 @@ class RegistryMirror:
             src_tls_verify: When ``False``, passes ``--src-tls-verify=false``
                 (needed when the source is the local plain-HTTP registry).
         """
-        cmd = ["skopeo", "copy", "--all"]
+        cmd = ["skopeo", "copy", "--all", "--quiet"]
         if not src_tls_verify:
             cmd.append("--src-tls-verify=false")
         cmd += ["--dest-tls-verify=false", src, dst]

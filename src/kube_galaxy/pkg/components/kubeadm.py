@@ -6,7 +6,6 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 
 import shlex
 import shutil
-from functools import cached_property
 from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
@@ -60,6 +59,10 @@ class Kubeadm(ClusterComponentBase):
         if not networking:
             raise ComponentError("No networking configuration found in manifest")
 
+        registry_address = ""
+        if mirror := self._ctx.registry_mirror:
+            registry_address = mirror.registry_address()
+
         config["networking"].update(
             {
                 "podSubnet": networking.pod_cidr,
@@ -67,8 +70,11 @@ class Kubeadm(ClusterComponentBase):
             }
         )
         config["clusterName"] = self.manifest.name
-        config["imageRepository"] = self.LOCAL_REGISTRY
         config["kubernetesVersion"] = self.manifest.kubernetes_version
+        if registry_address:
+            config["imageRepository"] = registry_address
+            config["dns"].update({"imageRepository": registry_address})
+            config["etcd"].update({"imageRepository": registry_address})
 
     def _update_init_config(self, config: dict[str, Any]) -> None:
         """
@@ -78,42 +84,8 @@ class Kubeadm(ClusterComponentBase):
         control plane settings.
         """
         config["nodeRegistration"]["taints"] = []
+        config["nodeRegistration"]["name"] = self.unit.hostname()
         config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
-
-    @cached_property
-    def _images_list(self) -> list[str]:
-        """List of images kubeadm will use based on the cluster configuration."""
-        cmd = [
-            "kubeadm",
-            "config",
-            "images",
-            "list",
-            "--kubernetes-version",
-            self.manifest.kubernetes_version,
-            "--image-repository",
-            self.LOCAL_REGISTRY,
-        ]
-        result = self.unit.run(cmd, check=True)
-        return result.stdout.splitlines()
-
-    def find_image_retag(self, image: str) -> str:
-        """
-        Match an image against the list of images kubeadm will use
-        If there's a match, return the retagged name with the local registry prefix.
-
-        Args:
-            image: Replacement image name to match against kubeadm's image list
-
-        Returns:
-            Retagged image name with local registry prefix, or '' if not found
-        """
-        custom_image_name, _ = image.rsplit(":", 1)
-        _, custom_image_name = custom_image_name.rsplit("/", 1)
-        for img in self._images_list:
-            kubeadm_image_name = img.rsplit(":", 1)[0]
-            if kubeadm_image_name.endswith(custom_image_name):
-                return img
-        return ""
 
     def configure_hook(self) -> None:
         """

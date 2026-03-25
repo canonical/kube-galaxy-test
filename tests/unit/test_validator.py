@@ -93,7 +93,9 @@ def test_tests_component_root_always_uses_tests_root(monkeypatch):
     fake_root = Path("/fake/tests")
     monkeypatch.setattr(SystemPaths, "local_tests_root", lambda: fake_root)
 
-    install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    install = InstallConfig(
+        method=InstallMethod.NONE, source_format="", bin_path="", retag_format=""
+    )
     test = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/spread/kube-galaxy",
@@ -146,7 +148,9 @@ def test_get_components_with_spread_local_source(tmp_path, monkeypatch):
     task_dir.mkdir(parents=True)
     (task_dir / "task.yaml").write_text("summary: local test\nexecute: |\n    echo done\n")
 
-    install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    install = InstallConfig(
+        method=InstallMethod.NONE, source_format="", bin_path="", retag_format=""
+    )
     test = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
         source_format="{{ repo.base-url }}/components/{{ name }}",

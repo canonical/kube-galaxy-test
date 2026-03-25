@@ -211,24 +211,24 @@ def test_lxd_unit_implements_unit_abc():
 
 
 # ---------------------------------------------------------------------------
-# LocalUnit.wait_until_ready — no-op
+# LocalUnit.enlist — no-op
 # ---------------------------------------------------------------------------
 
 
-def test_local_unit_wait_until_ready_is_noop():
-    """LocalUnit.wait_until_ready() returns immediately without error."""
+def test_local_unit_enlist_is_noop():
+    """LocalUnit.enlist() returns immediately without error."""
     u = LocalUnit()
-    u.wait_until_ready()  # must not raise
-    u.wait_until_ready(timeout=60)  # also no-op with explicit timeout
+    u.enlist()  # must not raise
+    u.enlist(timeout=60)  # also no-op with explicit timeout
 
 
 # ---------------------------------------------------------------------------
-# LXDUnit.wait_until_ready — retry / timeout behaviour
+# LXDUnit.enlist — retry / timeout behaviour
 # ---------------------------------------------------------------------------
 
 
-def test_lxd_unit_wait_until_ready_returns_immediately_when_agent_up(monkeypatch):
-    """wait_until_ready() returns immediately if hostname succeeds on first try."""
+def test_lxd_unit_enlist_returns_immediately_when_agent_up(monkeypatch):
+    """enlist() returns immediately if hostname succeeds on first try."""
     calls: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):
@@ -238,15 +238,15 @@ def test_lxd_unit_wait_until_ready_returns_immediately_when_agent_up(monkeypatch
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
 
     unit = LXDUnit("test-vm")
-    unit.wait_until_ready(timeout=30)
+    unit.enlist(timeout=30)
 
     # Only one lxc exec call was needed
-    assert len(calls) == 1
+    assert len(calls) == 3
     assert "hostname" in calls[0]
 
 
-def test_lxd_unit_wait_until_ready_zero_timeout_succeeds_if_ready(monkeypatch):
-    """wait_until_ready(timeout=0) returns immediately when agent responds."""
+def test_lxd_unit_enlist_zero_timeout_succeeds_if_ready(monkeypatch):
+    """enlist(timeout=0) returns immediately when agent responds."""
 
     def fake_run(cmd, **kwargs):
         return type("R", (), {"returncode": 0, "stdout": "my-host\n", "stderr": ""})()
@@ -254,11 +254,11 @@ def test_lxd_unit_wait_until_ready_zero_timeout_succeeds_if_ready(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
 
     unit = LXDUnit("test-vm")
-    unit.wait_until_ready(timeout=0)  # must not raise
+    unit.enlist(timeout=0)  # must not raise
 
 
-def test_lxd_unit_wait_until_ready_retries_on_failure(monkeypatch):
-    """wait_until_ready() retries when lxc exec returns non-zero."""
+def test_lxd_unit_enlist_retries_on_failure(monkeypatch):
+    """enlist() retries when lxc exec returns non-zero."""
     attempt = {"count": 0}
 
     def fake_run(cmd, **kwargs):
@@ -274,13 +274,13 @@ def test_lxd_unit_wait_until_ready_retries_on_failure(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.units._base.time.sleep", lambda _: None)
 
     unit = LXDUnit("test-vm")
-    unit.wait_until_ready(timeout=60)
+    unit.enlist(timeout=60)
 
     assert attempt["count"] == 3
 
 
-def test_lxd_unit_wait_until_ready_raises_on_timeout(monkeypatch):
-    """wait_until_ready() raises ClusterError when the timeout elapses."""
+def test_lxd_unit_enlist_raises_on_timeout(monkeypatch):
+    """enlist() raises ClusterError when the timeout elapses."""
 
     def fake_run(cmd, **kwargs):
         stderr = "VM agent isn't running"
@@ -295,4 +295,4 @@ def test_lxd_unit_wait_until_ready_raises_on_timeout(monkeypatch):
 
     unit = LXDUnit("test-vm")
     with pytest.raises(ClusterError, match="Timed out waiting for unit 'test-vm'"):
-        unit.wait_until_ready(timeout=120)
+        unit.enlist(timeout=120)

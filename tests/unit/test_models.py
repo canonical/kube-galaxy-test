@@ -28,6 +28,7 @@ def test_component_creation():
         source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
         repo=RepoInfo(base_url="https://github.com/test/repo"),
+        retag_format="",
     )
     test = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
@@ -53,6 +54,7 @@ def test_component_no_test():
         method=InstallMethod.BINARY_ARCHIVE,
         source_format="https://example.com/binary.tar.gz",
         bin_path="./*",
+        retag_format="",
     )
     config = ComponentConfig(
         name="test-comp",
@@ -81,6 +83,7 @@ def test_manifest_creation():
         source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
         repo=RepoInfo(base_url="https://github.com/test/repo"),
+        retag_format="",
     )
     components = [
         ComponentConfig(
@@ -115,6 +118,7 @@ def test_manifest_get_component():
         source_format="https://example.com/{{ release }}/{{ arch }}/binary.tar.gz",
         bin_path="./*",
         repo=RepoInfo(base_url="https://github.com/test/repo1"),
+        retag_format="",
     )
     comp1 = ComponentConfig(
         name="comp1",
@@ -131,6 +135,7 @@ def test_manifest_get_component():
             source_format="https://example.com/binary.tar.gz",
             bin_path="./*",
             repo=RepoInfo(base_url="https://github.com/test/repo2"),
+            retag_format="",
         ),
     )
 
@@ -231,7 +236,9 @@ def test_manifest_path_default():
 
 def test_install_config_default_repo():
     """InstallConfig.repo defaults to empty RepoInfo."""
-    install = InstallConfig(method=InstallMethod.NONE, source_format="", bin_path="")
+    install = InstallConfig(
+        method=InstallMethod.NONE, source_format="", bin_path="", retag_format=""
+    )
     assert install.repo.base_url == ""
 
 
