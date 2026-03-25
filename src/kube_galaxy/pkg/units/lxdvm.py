@@ -72,20 +72,29 @@ class LXDUnit(Unit):
 
     def put(self, local: Path, remote: str) -> None:
         result = subprocess.run(
-            ["lxc", "file", "push", "--create-dirs", str(local), f"{self._name}/{remote}"],
+            [
+                "lxc",
+                "file",
+                "push",
+                "--create-dirs",
+                "--",
+                str(local),
+                f"{self._name}/{remote}",
+            ],
             capture_output=True,
             text=True,
             check=False,
         )
         if result.returncode != 0:
             raise ComponentError(
-                f"Failed to push '{local}' to '{self._name}:{remote}': {result.stderr}"
+                f"Failed to push '{local}' ({local.stat().st_size} bytes) "
+                f"to '{self._name}:{remote}': {result.stderr}"
             )
 
     def get(self, remote: str, local: Path) -> None:
         ensure_dir(local.parent)
         result = subprocess.run(
-            ["lxc", "file", "pull", f"{self._name}/{remote}", str(local)],
+            ["lxc", "file", "pull", "--", f"{self._name}/{remote}", str(local)],
             capture_output=True,
             text=True,
             check=False,

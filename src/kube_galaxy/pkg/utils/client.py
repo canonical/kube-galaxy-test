@@ -350,8 +350,9 @@ def create(
     if output_format:
         cmd.extend(["-o", output_format])
     if file:
-        unit.put(Path(file), "/tmp/create_input.yaml")
-        cmd.extend(["-f", "/tmp/create_input.yaml"])
+        remote = f"/tmp/kube-galaxy-create-{Path(file).stem}.yaml"
+        unit.put(Path(file), remote)
+        cmd.extend(["-f", remote])
     result = kubectl(unit, *cmd, check=True)
     if output_format == "json":
         return json.loads(result.stdout)
@@ -438,10 +439,11 @@ def apply_manifest(unit: Unit, manifest_path: Path | str) -> None:
     if not manifest_path.exists():
         raise ClusterError(f"Manifest not found: {manifest_path}")
 
+    remote = f"/tmp/kube-galaxy-apply-{manifest_path.stem}.yaml"
     try:
         info(f"Applying manifest: {manifest_path.name}")
-        unit.put(manifest_path, "/tmp/apply_now")
-        kubectl(unit, "apply", "-f", "/tmp/apply_now", check=True)
+        unit.put(manifest_path, remote)
+        kubectl(unit, "apply", "-f", remote, check=True)
         success(f"Manifest applied: {manifest_path.name}")
     except ShellError as exc:
         raise ClusterError(f"Failed to apply manifest {manifest_path}: {exc}") from exc
