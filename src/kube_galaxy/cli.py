@@ -5,7 +5,7 @@ import sys
 import typer
 
 from kube_galaxy import __version__
-from kube_galaxy.cmd import cleanup, setup, status, test
+from kube_galaxy.cmd import cleanup, logs, setup, status, test
 from kube_galaxy.pkg.utils.paths import get_active_manifest
 
 app = typer.Typer(
@@ -131,6 +131,17 @@ def status_cmd(
 ) -> None:
     """Display project status and optional cluster health verification."""
     status.status(_resolve_manifest(manifest), wait=wait, timeout=timeout)
+
+
+@app.command(name="logs")
+def logs_cmd(
+    manifest: str | None = typer.Argument(
+        None,
+        help="Path to manifest file for cluster cleanup (defaults to active manifest)",
+    ),
+) -> None:
+    """Display logs from the most recent test run."""
+    logs.logs(_resolve_manifest(manifest))
 
 
 def main() -> None:

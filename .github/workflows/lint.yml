@@ -22,10 +22,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write         # for reviewdog to report results on PRs
+  pull-requests: write  # so reviewdog can leave comments on PRs
+
 jobs:
   call-inclusive-naming-check:
     name: Inclusive Naming
     uses: canonical/inclusive-naming/.github/workflows/woke.yaml@main
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     with:
       fail-on-error: "true"
   linting:

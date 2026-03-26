@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from kube_galaxy.pkg.literals import SystemPaths, Timeouts
+from kube_galaxy.pkg.literals import SystemPaths, TestDirectories, Timeouts
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest
 from kube_galaxy.pkg.manifest.validator import (
@@ -18,6 +18,29 @@ from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError, run
+
+
+def _TeeRun(cmd: list[str], cwd: Path, env: dict[str, str], log_file: Path) -> int:
+    """Write to a file and stdout simultaneously."""
+    with log_file.open("w") as log:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,  # line-buffered
+        )
+        if proc.stdout is None:
+            raise ClusterError("Failed to capture subprocess output")
+
+        for line in iter(proc.stdout.readline, ""):
+            print(line, end="")
+            log.write(line)
+
+        proc.stdout.close()
+        return proc.wait()
 
 
 class SpreadYamlDumper(yaml.SafeDumper):
@@ -90,6 +113,27 @@ def _verify_test_prerequisites() -> None:
         raise ClusterError("Test prerequisites not met") from exc
 
 
+def _component_kill_timeout(component: ComponentConfig) -> str | None:
+    """Determine if a custom kill timeout is needed for the component."""
+    timeout_s = component.test.environment.get("TEST_TIMEOUT_S")
+    timeout_m = component.test.environment.get("TEST_TIMEOUT_M")
+    buffer = 30
+
+    if timeout_s and not timeout_m:
+        return f"{int(timeout_s) + buffer}s"
+    elif timeout_m and not timeout_s:
+        return f"{int(timeout_m) * 60 + buffer}s"
+    elif timeout_s and timeout_m and int(timeout_s) == int(timeout_m) * 60:
+        return f"{int(timeout_s) + buffer}s"
+    elif timeout_s and timeout_m:
+        raise ClusterError(
+            f"Component '{component.name}' has inconsistent test timeouts: "
+            f"TEST_TIMEOUT_S={timeout_s}, TEST_TIMEOUT_M={timeout_m}"
+        )
+
+    return None
+
+
 def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> list[str]:
     """
     Generate spread.yaml from template for component test orchestration.
@@ -113,6 +157,7 @@ def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> li
         suites = {}
         spread_def = {
             "path": local_test,
+            "kill-timeout": f"{Timeouts.TEST_EXECUTION_TIMEOUT_S + 30}s",
             "environment": {
                 "PROJECT_PATH": str(local_test),
                 "TEST_TIMEOUT_S": str(Timeouts.TEST_EXECUTION_TIMEOUT_S),
@@ -141,8 +186,12 @@ def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> li
                     "SYSTEM_ARCH": arch_info.system,
                     "K8S_ARCH": arch_info.k8s,
                     "IMAGE_ARCH": arch_info.image,
+                    **each.test.environment,
                 },
             }
+            if kill_timeout := _component_kill_timeout(each):
+                info(f"Setting kill timeout for component '{each.name}' to {kill_timeout}")
+                suites[f"{rel}/"]["kill-timeout"] = kill_timeout
 
         spread_def["suites"] = suites
 
@@ -195,28 +244,20 @@ def _execute_spread_for_component(
         )
 
         # Only run spread for the kube-galaxy-task within the component suite
-        cmd = ["spread", "-v", f"{suite_path}/kube-galaxy"]
+        artifacts = log_file.parent.absolute() / "artifacts"
+        cmd = ["spread", "-v", f"-artifacts={artifacts}", f"{suite_path}/kube-galaxy"]
 
         info(f"  Command: {' '.join(cmd)}")
         info(f"  Working directory: {spread_yaml.parent}")
 
-        # Run spread and capture output
-        with open(log_file, "w") as log:
-            result = subprocess.run(
-                cmd,
-                cwd=spread_yaml.parent,
-                env=env,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-
-        if result.returncode == 0:
+        # Run spread, tee output to stdout and log file
+        return_code = _TeeRun(cmd, spread_yaml.parent, env, log_file)
+        if return_code == 0:
             success(f"  Tests passed for {component.name}")
         else:
-            error(f"  Tests failed for {component.name} (exit code: {result.returncode})")
+            error(f"  Tests failed for {component.name} (exit code: {return_code})")
             error(f"  Log file: {log_file}")
-        return result.returncode == 0
+        return return_code == 0
 
     except Exception as exc:
         error(f"  Test execution error: {exc}")
@@ -263,7 +304,7 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
         info(f"  Repo: {component.test.repo.base_url}")
 
         # Component-specific directories
-        log_dir = work_dir / "logs" / component.name
+        log_dir = work_dir / TestDirectories.DEBUG_LOGS / component.name
         ensure_dir(log_dir)
         log_file = log_dir / "test-output.log"
 
@@ -336,14 +377,14 @@ def collect_test_results(work_dir: str = ".") -> str | None:
         Path to consolidated test results file or None if no results
     """
     work_dir_path = Path(work_dir)
-    logs_dir = work_dir_path / "logs"
+    logs_dir = work_dir_path / TestDirectories.DEBUG_LOGS
 
     if not logs_dir.exists():
         warning(f"No test logs found in {logs_dir}")
         return None
 
     # Collect results from all components
-    results_summary = work_dir_path / "logs" / "summary.txt"
+    results_summary = logs_dir / "spread-summary.txt"
 
     try:
         with open(results_summary, "w") as f:
