@@ -279,17 +279,20 @@ components:
       source-format: "registry.k8s.io/sig-storage/csi-external-health-monitor-controller:v{{ release }}"
 
   # Test only component, nothing installed in the cluster
-  - name: sonobuoy
-    category: vmware-tanzu/sonobuoy
+  - name: cncf-quick
+    category: Conformance
     release: "0.57.3"
     installation:
       method: none
     test:
       method: spread
       repo:
-        base-url: local://components/sonobuoy/
-        subdir: spread/kube-galaxy
-      source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
+        base-url: https://github.com/canonical/mx-kubernetes
+        subdir: spread/cncf-conformance
+        ref: canonical/test/kube-galaxy/cncf/test-definitions
+      source-format: "https://api.github.com/repos/canonical/mx-kubernetes/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
+      environment:
+        SONOBUOY_EXTRA_ARGS: --mode=quick --plugin-env=e2e.E2E_EXTRA_ARGS="--ginkgo.fail-fast=false"
 
 networking:
   - name: default
