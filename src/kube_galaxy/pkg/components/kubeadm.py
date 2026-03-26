@@ -4,6 +4,7 @@ Kubeadm component installation and management.
 Kubeadm is used to bootstrap Kubernetes clusters.
 """
 
+import re
 import shlex
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ class Kubeadm(ClusterComponentBase):
     # Timeout configuration (in seconds)
 
     _cluster_config: Path | None = None
+    _cert_key: str | None = None  # Certificate key from kubeadm init --upload-certs
 
     def _system_settings(self) -> None:
         """
@@ -136,10 +138,15 @@ class Kubeadm(ClusterComponentBase):
         """Bootstrap the initial control-plane on this unit."""
         if not self._cluster_config or not self.unit.path_exists(self._cluster_config):
             raise ComponentError("Cluster config not generated. Run configure hook first.")
-        self.unit.run(
-            ["kubeadm", "init", f"--config={self._cluster_config}"],
+        result = self.unit.run(
+            ["kubeadm", "init", f"--config={self._cluster_config}", "--upload-certs"],
             privileged=True,
+            check=True,
         )
+        # Parse the certificate key so additional control-plane nodes can join
+        match = re.search(r"--certificate-key\s+([a-f0-9]{64})", result.stdout)
+        if match:
+            self._cert_key = match.group(1)
 
     def pull_kubeconfig(self) -> None:
         """Pull kubeconfig from this unit to the orchestrator's /opt/kube-galaxy/.kube/config."""
@@ -164,6 +171,8 @@ class Kubeadm(ClusterComponentBase):
         cmd = shlex.split(token)
         if role == NodeRole.CONTROL_PLANE:
             cmd.append("--control-plane")
+            if self._cert_key:
+                cmd.extend(["--certificate-key", self._cert_key])
         self.unit.run(cmd, privileged=True, check=True)
 
     def bootstrap_hook(self) -> None:
