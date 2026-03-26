@@ -21,7 +21,7 @@ from kube_galaxy.pkg.utils.client import (
     wait_for_nodes,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.logging import info, warning
 from kube_galaxy.pkg.utils.paths import ensure_dir
 
 
@@ -143,10 +143,18 @@ class Kubeadm(ClusterComponentBase):
             privileged=True,
             check=True,
         )
-        # Parse the certificate key so additional control-plane nodes can join
-        match = re.search(r"--certificate-key\s+([a-f0-9]{64})", result.stdout)
+        # Parse the certificate key so additional control-plane nodes can join.
+        # kubeadm may write the key to stdout or stderr depending on version.
+        match = re.search(
+            r"--certificate-key\s+([a-f0-9]{64})", result.stdout + result.stderr
+        )
         if match:
             self._cert_key = match.group(1)
+        else:
+            warning(
+                "Could not extract certificate key from kubeadm init output. "
+                "Additional control-plane nodes will not be able to join automatically."
+            )
 
     def pull_kubeconfig(self) -> None:
         """Pull kubeconfig from this unit to the orchestrator's /opt/kube-galaxy/.kube/config."""
