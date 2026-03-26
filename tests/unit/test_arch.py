@@ -96,4 +96,4 @@ def test_detect_ip_returns_ip_string():
     ip = detect_ip()
     assert isinstance(ip, str)
     assert len(ip) > 0
-    assert "." in ip  # basic IPv4 sanity check
+    assert "." in ip  # basic IPv4 coherence check
