@@ -31,7 +31,15 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout kube-galaxy-test
+      # Internal call (manifests live in this repo): use the caller's own context.
+      - name: Checkout kube-galaxy-test (internal)
+        if: inputs.manifests-repo == ''
+        uses: actions/checkout@v6
+
+      # External call (manifests live in a separate repo): check out
+      # canonical/kube-galaxy-test at the caller-specified ref.
+      - name: Checkout kube-galaxy-test (external)
+        if: inputs.manifests-repo != ''
         uses: actions/checkout@v6
         with:
           repository: canonical/kube-galaxy-test

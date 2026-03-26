@@ -31,6 +31,13 @@ on:
         description: "Open a GitHub issue when a test job fails"
         type: boolean
         default: false
+    secrets:
+      DOCKERHUB_USERNAME:
+        description: "Docker Hub username for authenticated image pulls"
+        required: false
+      DOCKERHUB_TOKEN:
+        description: "Docker Hub access token for authenticated image pulls"
+        required: false
 
 permissions:
   contents: read
@@ -50,8 +57,17 @@ jobs:
         include: ${{ fromJson(inputs.manifests-json) }}
 
     steps:
-      # ---- Checkout kube-galaxy-test (the CLI + components + spread tests)
-      - name: Checkout kube-galaxy-test
+      # ---- Checkout kube-galaxy-test (the CLI + components + spread tests) ----
+      # Internal call (manifests live in this repo): use the caller's own context so
+      # PR branches are tested as-is rather than always falling back to main.
+      - name: Checkout kube-galaxy-test (internal)
+        if: inputs.manifests-repo == ''
+        uses: actions/checkout@v6
+
+      # External call (manifests live in a separate repo): check out
+      # canonical/kube-galaxy-test at the caller-specified ref.
+      - name: Checkout kube-galaxy-test (external)
+        if: inputs.manifests-repo != ''
         uses: actions/checkout@v6
         with:
           repository: canonical/kube-galaxy-test
@@ -92,6 +108,25 @@ jobs:
 
       - name: Setup LXD
         uses: canonical/setup-lxd@main
+
+      - name: Setup Skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install kube-galaxy
         shell: bash
