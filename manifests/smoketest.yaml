@@ -288,9 +288,11 @@ components:
       method: spread
       repo:
         base-url: https://github.com/canonical/mx-kubernetes
-        subdir: spread/cncf-quick
+        subdir: spread/cncf-conformance
         ref: canonical/test/kube-galaxy/cncf/test-definitions
       source-format: "https://api.github.com/repos/canonical/mx-kubernetes/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
+      environment:
+        SONOBUOY_EXTRA_ARGS: --mode=quick --plugin-env=e2e.E2E_EXTRA_ARGS="--ginkgo.fail-fast=false"
 
 networking:
   - name: default
