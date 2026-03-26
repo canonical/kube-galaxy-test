@@ -23,20 +23,24 @@ from kube_galaxy.pkg.utils.shell import ShellError, run
 def _TeeRun(cmd: list[str], cwd: Path, env: dict[str, str], log_file: Path) -> int:
     """Write to a file and stdout simultaneously."""
     with log_file.open("w") as log:
-        result = subprocess.Popen(
+        proc = subprocess.Popen(
             cmd,
             cwd=cwd,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,  # line-buffered
         )
-        if result.stdout:
-            for line in result.stdout:
-                print(line, end="")  # Print to stdout
-                log.write(line)  # Write to log file
-                log.flush()
-    return result.wait()
+        if proc.stdout is None:
+            raise ClusterError("Failed to capture subprocess output")
+
+        for line in iter(proc.stdout.readline, ""):
+            print(line, end="")
+            log.write(line)
+
+        proc.stdout.close()
+        return proc.wait()
 
 
 class SpreadYamlDumper(yaml.SafeDumper):
