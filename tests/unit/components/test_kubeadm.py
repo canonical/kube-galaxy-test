@@ -66,22 +66,10 @@ def test_kubeadm_configure_writes_cluster_config(arch_info, monkeypatch, tmp_pat
 
     comp.components["kubelet"] = StubKubelet()
 
-    # Fake urlopen used in configure_hook to fetch kubelet config
-    class StubResp:
-        def __init__(self, data: bytes):
-            self._data = data
-
-        def read(self) -> bytes:
-            return self._data
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
+    # Fake requests.get used in configure_hook to fetch kubelet config
+    mock_resp = MagicMock(text="/usr/bin/kubelet")
     monkeypatch.setattr(
-        "kube_galaxy.pkg.components.kubeadm.urlopen", lambda url: StubResp(b"/usr/bin/kubelet")
+        "kube_galaxy.pkg.components.kubeadm.requests.get", lambda url, **kw: mock_resp
     )
 
     # redirect staging root to test tmp_path to avoid cwd writes

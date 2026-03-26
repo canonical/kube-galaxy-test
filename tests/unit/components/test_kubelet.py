@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock
+
 from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components.kubelet import Kubelet
 from kube_galaxy.pkg.literals import SystemPaths
@@ -10,20 +12,6 @@ from kube_galaxy.pkg.manifest.models import (
 )
 from kube_galaxy.pkg.units._base import RunResult
 from tests.unit.components.conftest import MockUnit
-
-
-class ExampleResp:
-    def __init__(self, data: bytes):
-        self._data = data
-
-    def read(self) -> bytes:
-        return self._data
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
 
 
 def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_path):
@@ -50,10 +38,11 @@ def test_kubelet_configure_calls_urlopen_and_tee(arch_info, monkeypatch, tmp_pat
     # set an install path so replace works
     comp.install_path = "/usr/local/bin/kubelet"
 
-    # Fake urlopen to return service content containing /usr/bin/kubelet
+    # Fake requests.get to return service content containing /usr/bin/kubelet
+    mock_resp = MagicMock(text="ExecStart=/usr/bin/kubelet\n")
     monkeypatch.setattr(
-        "kube_galaxy.pkg.components.kubelet.urlopen",
-        lambda url: ExampleResp(b"ExecStart=/usr/bin/kubelet\n"),
+        "kube_galaxy.pkg.components.kubelet.requests.get",
+        lambda url, **kw: mock_resp,
     )
 
     # redirect staging root to test tmp_path to avoid cwd writes

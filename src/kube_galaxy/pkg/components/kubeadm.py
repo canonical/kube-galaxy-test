@@ -7,8 +7,8 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 import shlex
 from pathlib import Path
 from typing import Any
-from urllib.request import urlopen
 
+import requests
 import yaml
 
 from kube_galaxy.pkg.components import ClusterComponentBase, register_component
@@ -97,8 +97,9 @@ class Kubeadm(ClusterComponentBase):
         # Configure kubeadm.service based on Kubernetes release repository
         info("  Installing kubelet configs")
         service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
-        with urlopen(service_url) as response:
-            service_content = response.read().decode("utf-8")
+        resp = requests.get(service_url, timeout=30)
+        resp.raise_for_status()
+        service_content = resp.text
 
         # Write kubelet configuration for kubeadm (10-kubeadm.conf)
         service_content = service_content.replace(
