@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.units._base import Unit
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
@@ -11,6 +15,8 @@ if TYPE_CHECKING:
     from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror
 
 __all__ = ["ClusterContext"]
+
+UnitKey = tuple[NodeRole, int]
 
 
 @dataclass
@@ -26,3 +32,14 @@ class ClusterContext:
     components: dict[str, ComponentBase] = field(default_factory=dict)
     artifact_server: ArtifactServer | None = None
     registry_mirror: RegistryMirror | None = None
+    _units: dict[UnitKey, Unit] = field(default_factory=dict)
+
+    @property
+    def units(self) -> dict[UnitKey, Unit]:
+        """Lookup dict for all Units in the cluster, keyed by (role, index)."""
+        return self._units
+
+    @units.setter
+    def units(self, value: Iterable[Unit]) -> None:
+        """Set the list of Units in the cluster, indexed by (role, index)."""
+        self._units = {(unit.role, unit.index): unit for unit in value}

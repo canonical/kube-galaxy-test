@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.units._base import RunResult, Unit
 from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.units.lxdvm import LXDUnit
@@ -199,14 +200,14 @@ def test_local_unit_extract_zip_missing_entry_raises(tmp_path):
 
 def test_lxd_unit_importable():
     """LXDUnit can be imported and instantiated without error."""
-    unit = LXDUnit("test-container")
+    unit = LXDUnit("test-container", NodeRole.CONTROL_PLANE, 0)
     assert unit.name == "test-container"
 
 
 def test_lxd_unit_implements_unit_abc():
     """LXDUnit has no unimplemented abstract methods — mypy/ABC compliant."""
     # If LXDUnit is missing any abstract method, this will raise TypeError
-    unit = LXDUnit("abc")
+    unit = LXDUnit("abc", NodeRole.CONTROL_PLANE, 0)
     assert isinstance(unit, Unit)
 
 
@@ -237,7 +238,7 @@ def test_lxd_unit_enlist_returns_immediately_when_agent_up(monkeypatch):
 
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
 
-    unit = LXDUnit("test-vm")
+    unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
     unit.enlist(timeout=30)
 
     # Only one lxc exec call was needed
@@ -253,7 +254,7 @@ def test_lxd_unit_enlist_zero_timeout_succeeds_if_ready(monkeypatch):
 
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
 
-    unit = LXDUnit("test-vm")
+    unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
     unit.enlist(timeout=0)  # must not raise
 
 
@@ -273,7 +274,7 @@ def test_lxd_unit_enlist_retries_on_failure(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
     monkeypatch.setattr("kube_galaxy.pkg.units._base.time.sleep", lambda _: None)
 
-    unit = LXDUnit("test-vm")
+    unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
     unit.enlist(timeout=60)
 
     assert attempt["count"] == 3
@@ -293,6 +294,6 @@ def test_lxd_unit_enlist_raises_on_timeout(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.units._base.time.monotonic", lambda: next(times))
     monkeypatch.setattr("kube_galaxy.pkg.units._base.time.sleep", lambda _: None)
 
-    unit = LXDUnit("test-vm")
+    unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
     with pytest.raises(ClusterError, match="Timed out waiting for unit 'test-vm'"):
         unit.enlist(timeout=120)

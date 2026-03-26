@@ -1,11 +1,11 @@
 """UnitProvider ABC and concrete implementations for machine lifecycle management."""
 
-from kube_galaxy.pkg.manifest.models import Manifest, ProviderConfig
+import kube_galaxy.pkg.units.lxdvm as lxdvm
+import kube_galaxy.pkg.units.multipass as multipass
+import kube_galaxy.pkg.units.ssh as ssh
+from kube_galaxy.pkg.manifest.models import Manifest, ProviderConfig, RoleCounts
 from kube_galaxy.pkg.units._base import UnitProvider
 from kube_galaxy.pkg.units.local import LocalUnitProvider
-from kube_galaxy.pkg.units.lxdvm import LXDUnitProvider
-from kube_galaxy.pkg.units.multipass import MultipassUnitProvider
-from kube_galaxy.pkg.units.ssh import SSHUnitProvider
 
 
 def provider_factory(manifest: Manifest) -> UnitProvider:
@@ -15,14 +15,18 @@ def provider_factory(manifest: Manifest) -> UnitProvider:
     (``provider.type`` defaults to ``"lxd"``).
     """
     cfg: ProviderConfig = manifest.provider
+    nodes: RoleCounts = manifest.provider.nodes
     match cfg.type:
         case "local":
-            return LocalUnitProvider()
+            return LocalUnitProvider(nodes, image=cfg.image)
         case "lxd":
-            return LXDUnitProvider(image=cfg.image)
+            lxdvm.print_dependency_status()
+            return lxdvm.LXDUnitProvider(nodes, image=cfg.image)
         case "multipass":
-            return MultipassUnitProvider(image=cfg.image)
+            multipass.print_dependency_status()
+            return multipass.MultipassUnitProvider(nodes, image=cfg.image)
         case "ssh":
-            return SSHUnitProvider(hosts=cfg.hosts)
+            ssh.print_dependency_status()
+            return ssh.SSHUnitProvider(nodes, image="", hosts=cfg.hosts)
         case _:
             raise ValueError(f"Unknown provider type: {cfg.type!r}")

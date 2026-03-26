@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.utils.client import apply_manifest, create, kubectl
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
@@ -19,6 +20,8 @@ def _download(comp: ComponentBase) -> None:
 
 def _bootstrap(comp: ComponentBase) -> None:
     comp_name = comp.config.name
+    if (comp.unit.role, comp.unit.index) != (NodeRole.CONTROL_PLANE, 0):
+        return  # Only bootstrap on the first control-plane unit
     if not comp.manifest_path or not comp.manifest_path.exists():
         raise ComponentError(f"{comp_name} manifest not downloaded. Run download hook first.")
     try:

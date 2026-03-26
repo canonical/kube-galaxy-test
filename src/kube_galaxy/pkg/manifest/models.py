@@ -87,6 +87,14 @@ class TestConfig:
 
 
 @dataclass
+class RoleCounts:
+    """Node counts for each role, used by providers that manage their own nodes."""
+
+    control_plane: int = 1
+    worker: int = 0
+
+
+@dataclass
 class ProviderConfig:
     """Provider configuration for cluster nodes.
 
@@ -96,6 +104,9 @@ class ProviderConfig:
 
     type: str = "lxd"  # local | lxd | multipass | ssh
     image: str = "ubuntu:24.04"  # base image for lxd / multipass providers
+    nodes: RoleCounts = field(
+        default_factory=RoleCounts
+    )  # node counts for each role (lxd/multipass)
     hosts: list[str] = field(default_factory=list)  # pre-existing hosts for ssh provider
 
 

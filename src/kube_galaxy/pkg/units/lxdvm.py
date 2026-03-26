@@ -15,7 +15,7 @@ from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError, check_version
 
 
-def _print_dependency_status() -> None:
+def print_dependency_status() -> None:
     """Verify that ``lxc`` is available.
 
     Raises:
@@ -35,7 +35,8 @@ class LXDUnit(Unit):
     is silently accepted and has no additional effect.
     """
 
-    def __init__(self, container_name: str) -> None:
+    def __init__(self, container_name: str, role: NodeRole, index: int) -> None:
+        super().__init__(role, index)
         self._name = container_name
 
     @property
@@ -121,11 +122,6 @@ class LXDUnit(Unit):
 class LXDUnitProvider(UnitProvider):
     """Provisions and destroys LXD containers/VMs."""
 
-    def __init__(self, image: str = "ubuntu:24.04") -> None:
-        super().__init__()
-        _print_dependency_status()
-        self._image = image
-
     @property
     def is_ephemeral(self) -> bool:
         return True
@@ -151,13 +147,13 @@ class LXDUnitProvider(UnitProvider):
         )
         if result.returncode != 0:
             raise ComponentError(f"Failed to launch LXD VM '{name}': {result.stderr}")
-        unit: Unit = LXDUnit(name)
+        unit: Unit = LXDUnit(name, role, index)
         self._track(unit)
         return unit
 
     def locate(self, role: NodeRole, index: int) -> Unit:
         name = f"kube-galaxy-{role.value}-{index}"
-        unit: Unit = LXDUnit(name)
+        unit: Unit = LXDUnit(name, role, index)
         self._track(unit)
         return unit
 

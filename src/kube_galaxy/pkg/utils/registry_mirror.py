@@ -18,14 +18,17 @@ Typical flow::
 
 import json
 import os
+import time
 from pathlib import Path
+
+import requests
 
 from kube_galaxy.pkg.literals import SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import RegistryConfig
 from kube_galaxy.pkg.utils import shell
 from kube_galaxy.pkg.utils.detector import detect_ip
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.logging import info, success
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CONTAINER_NAME = "registry-cache"
@@ -78,10 +81,11 @@ class RegistryMirror:
         return SystemPaths.staging_root() / "registry" / "data"
 
     def start(self) -> None:
-        """Start the registry container.
+        """Start the registry container and wait until it is ready.
 
-        Creates :attr:`data_dir` if it does not already exist, then launches
-        the Docker container in the background.
+        Creates :attr:`data_dir` if it does not already exist, launches the
+        Docker container in the background, then blocks until the registry
+        HTTP API responds.
         """
         _print_dependency_status()
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -101,6 +105,31 @@ class RegistryMirror:
                 _REGISTRY_IMAGE,
             ]
         )
+        self._wait_for_registry()
+
+    def _wait_for_registry(self, timeout: int = 30, interval: float = 0.5) -> None:
+        """Poll the registry ``/v2/`` endpoint until it responds or timeout.
+
+        Args:
+            timeout: Maximum seconds to wait before raising an error.
+            interval: Seconds to sleep between attempts.
+
+        Raises:
+            ClusterError: If the registry does not respond within *timeout* seconds.
+        """
+        url = f"http://localhost:{self._cfg.port}/v2/"
+        deadline = time.monotonic() + timeout
+        info("Waiting for registry to become ready...")
+        while time.monotonic() < deadline:
+            try:
+                response = requests.get(url, timeout=2)
+                if response.ok:
+                    success("Registry is ready")
+                    return
+            except requests.ConnectionError:
+                pass
+            time.sleep(interval)
+        raise ClusterError(f"Registry did not become ready within {timeout}s")
 
     def stop(self, force: bool = False) -> None:
         """Stop and remove the registry container.

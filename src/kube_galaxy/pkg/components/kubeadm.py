@@ -160,7 +160,10 @@ class Kubeadm(ClusterComponentBase):
         """Join this unit to the cluster using the token from generate_join_token()."""
         # token is the full join command returned by kubeadm token create --print-join-command
         # shlex.split() safely parses the command string into a list for subprocess execution
-        self.unit.run(shlex.split(token), privileged=True, check=True)
+        cmd = shlex.split(token)
+        if role == NodeRole.CONTROL_PLANE:
+            cmd.append("--control-plane")
+        self.unit.run(cmd, privileged=True, check=True)
 
     def bootstrap_hook(self) -> None:
         """
@@ -168,8 +171,16 @@ class Kubeadm(ClusterComponentBase):
 
         This is where the cluster is actually created.
         """
-        self.init_cluster()
-        self.pull_kubeconfig()
+        if (self.unit.role, self.unit.index) == (NodeRole.CONTROL_PLANE, 0):
+            self.init_cluster()
+            self.pull_kubeconfig()
+            self.control_plane_join = self.generate_join_token(NodeRole.CONTROL_PLANE)
+            self.worker_join = self.generate_join_token(NodeRole.WORKER)
+        elif self.unit.role == NodeRole.CONTROL_PLANE:
+            self.join_cluster(self.control_plane_join, NodeRole.CONTROL_PLANE)
+            self.pull_kubeconfig()
+        elif self.unit.role == NodeRole.WORKER:
+            self.join_cluster(self.worker_join, NodeRole.WORKER)
 
     def verify_hook(self) -> None:
         """
@@ -177,9 +188,10 @@ class Kubeadm(ClusterComponentBase):
 
         Checks cluster connectivity and waits for nodes/pods to be ready.
         """
-        verify_connectivity(self.unit)
-        wait_for_nodes(self.unit, timeout=300)
-        get_api_server_status(self.unit, timeout=300)
+        if self.unit.role == NodeRole.CONTROL_PLANE:
+            verify_connectivity(self.unit)
+            wait_for_nodes(self.unit, timeout=300)
+            get_api_server_status(self.unit, timeout=300)
 
     def stop_hook(self) -> None:
         """
