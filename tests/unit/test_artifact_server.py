@@ -3,14 +3,24 @@
 import http.client
 import time
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
 from kube_galaxy.pkg.utils.components import install_binary
 from tests.unit.components.conftest import MockUnit
+
+
+def _ctx_with_server(base_url: str) -> ClusterContext:
+    """Return a ClusterContext wired to a mock ArtifactServer at *base_url*."""
+    server = MagicMock()
+    server.base_url = base_url
+    return ClusterContext(artifact_server=server)
+
 
 # ---------------------------------------------------------------------------
 # ArtifactServer — lifecycle
@@ -125,29 +135,30 @@ class TestUnitStagingUrl:
         assert "kubelet" in url
 
     def test_staging_url_returns_http_when_server_configured(self, monkeypatch, tmp_path):
-        """After set_artifact_server(), staging_url() returns an HTTP URL."""
+        """After set_cluster_context(), staging_url() returns an HTTP URL."""
         monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
         unit = MockUnit()
-        unit.set_artifact_server("http://10.0.0.1:8765")
+        unit.set_cluster_context(_ctx_with_server("http://10.0.0.1:8765"))
 
         staged = tmp_path / "opt/kube-galaxy/kubelet/temp/kubelet"
         url = unit.staging_url(staged)
         assert url == "http://10.0.0.1:8765/opt/kube-galaxy/kubelet/temp/kubelet"
 
     def test_set_artifact_server_is_per_instance(self):
-        """set_artifact_server() only affects the specific Unit instance."""
+        """set_cluster_context() only affects the specific Unit instance."""
         u1 = MockUnit()
         u2 = MockUnit()
-        u1.set_artifact_server("http://server:8765")
-        assert u1._artifact_base_url == "http://server:8765"
+        ctx = _ctx_with_server("http://server:8765")
+        u1.set_cluster_context(ctx)
+        assert u1._ctx is ctx
         # u2 is not affected
-        assert u2._artifact_base_url is None
+        assert u2._ctx is None
 
     def test_staging_url_strips_trailing_slash_from_base(self, monkeypatch, tmp_path):
         """Trailing slash in base_url does not produce a double slash."""
         monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
         unit = MockUnit()
-        unit.set_artifact_server("http://10.0.0.1:8765/")  # trailing slash
+        unit.set_cluster_context(_ctx_with_server("http://10.0.0.1:8765/"))  # trailing slash
 
         staged = tmp_path / "opt/kube-galaxy/runc/temp/runc"
         url = unit.staging_url(staged)
@@ -197,7 +208,7 @@ class TestInstallBinaryUsesDownload:
         monkeypatch.setattr(SystemPaths, "staging_root", classmethod(lambda cls: tmp_path))
 
         unit = MockUnit()
-        unit.set_artifact_server("http://192.168.1.1:8765")
+        unit.set_cluster_context(_ctx_with_server("http://192.168.1.1:8765"))
 
         comp_name = "mycomp"
         staged = tmp_path / "opt/kube-galaxy" / comp_name / "temp" / "mycomp"

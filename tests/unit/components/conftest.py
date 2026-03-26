@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, get_arch_info
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.units._base import RunResult, Unit
+from kube_galaxy.pkg.utils.detector import ArchInfo, get_arch_info
 
 
 @dataclass
@@ -65,7 +66,7 @@ class MockUnit(Unit):
     def sha256(self, path):  # type: ignore[override]
         return "abc123"
 
-    def wait_until_ready(self, timeout: float | None = None) -> None:  # type: ignore[override]
+    def enlist(self, timeout: float | None = None) -> None:  # type: ignore[override]
         pass
 
 
@@ -73,3 +74,9 @@ class MockUnit(Unit):
 def mock_unit() -> MockUnit:
     """Return a fresh MockUnit test double."""
     return MockUnit()
+
+
+@pytest.fixture
+def cluster_context() -> ClusterContext:
+    """Return a fresh empty ClusterContext for component tests."""
+    return ClusterContext()

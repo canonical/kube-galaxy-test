@@ -11,9 +11,10 @@ from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
-from kube_galaxy.pkg.arch.detector import ArchInfo, map_to_image_arch, map_to_k8s_arch
-from kube_galaxy.pkg.literals import SystemPaths, Timeouts
+from kube_galaxy.pkg.cluster_context import ClusterContext
+from kube_galaxy.pkg.literals import SystemPaths, Timeouts, URLs
 from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.utils.detector import ArchInfo, detect_ip, map_to_image_arch, map_to_k8s_arch
 from kube_galaxy.pkg.utils.errors import ClusterError
 
 _CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
@@ -125,7 +126,35 @@ class Unit(ABC):
         """Return the hex SHA-256 digest of a file at ``path`` on the unit."""
         return self.run(["sha256sum", path]).stdout.split()[0]
 
-    def wait_until_ready(self, timeout: float | None = None) -> None:
+    def update_etc_hosts(self) -> None:
+        """Ensure the unit's /etc/hosts contains entries for the orchestrator.
+
+        Each unit's /etc/hosts is updated with entries for the orchestrator's
+        hostname and IP address, both pointing to the orchestrator's IP.
+        """
+        if self.path_exists("/etc/hosts"):
+            hosts_path = "/etc/hosts"
+        else:
+            # Some minimal images (e.g. Ubuntu cloud images) may not have /etc/hosts
+            hosts_path = "/etc/hosts.new"
+        orchestrator_ip = detect_ip()
+        self.run(
+            [
+                "sh",
+                "-c",
+                f"echo '{orchestrator_ip} {URLs.ORCHESTRATOR_HOST}' >> {hosts_path}",
+            ],
+            privileged=True,
+        )
+        if hosts_path == "/etc/hosts.new":
+            self.run(["mv", hosts_path, "/etc/hosts"], privileged=True)
+
+    def hostname(self) -> str:
+        """Return the unit's hostname."""
+        result = self.run(["hostname"], check=False)
+        return result.stdout.strip() if result.returncode == 0 else ""
+
+    def enlist(self, timeout: float | None = None) -> None:
         """Block until the unit agent is responsive.
 
         Polls the unit with a simple command (``hostname``) until it exits
@@ -140,9 +169,7 @@ class Unit(ABC):
         """
         effective_timeout = Timeouts.UNIT_READY_TIMEOUT if timeout is None else timeout
         deadline = time.monotonic() + effective_timeout
-        while True:
-            if self.run(["hostname"], check=False).returncode == 0:
-                return
+        while not self.run(["hostname"], check=False).returncode == 0:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ClusterError(
@@ -150,16 +177,17 @@ class Unit(ABC):
                     f"after {effective_timeout:.0f}s"
                 )
             time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
+        self.update_etc_hosts()
 
     # ------------------------------------------------------------------
-    # Artifact server integration
+    # Cluster context integration
     # ------------------------------------------------------------------
 
-    #: Base URL of the orchestrator's artifact HTTP server.
-    #: ``None`` until :meth:`set_artifact_server` is called.
-    _artifact_base_url: str | None = None
+    #: Cluster context for this unit, set by the cluster orchestration logic.
+    #: ``None`` until :meth:`set_cluster_context` is called.
+    _ctx: ClusterContext | None = None
 
-    def set_artifact_server(self, base_url: str) -> None:
+    def set_cluster_context(self, cxt: ClusterContext) -> None:
         """Configure the artifact server URL for this unit.
 
         After this call, :meth:`staging_url` returns an HTTP URL pointing to
@@ -169,16 +197,16 @@ class Unit(ABC):
         their normal :meth:`download` method.
 
         Args:
-            base_url: HTTP base URL of the artifact server,
+            ctx: Cluster context containing the HTTP base URL of the artifact server,
                 e.g. ``"http://192.168.1.1:8765"``.
         """
-        self._artifact_base_url = base_url
+        self._ctx = cxt
 
     def staging_url(self, local_path: Path) -> str:
         """Return a URL suitable for this unit to download a staged file.
 
-        When an artifact server has been configured via
-        :meth:`set_artifact_server`, the URL uses the HTTP scheme so that
+        When a cluster context has been configured via
+        :meth:`set_cluster_context`, the URL uses the HTTP scheme so that
         remote units can pull the file from the orchestrator.  Otherwise
         a ``file://`` URL is returned, which works for
         :class:`~kube_galaxy.pkg.units.local.LocalUnit` whose
@@ -191,9 +219,9 @@ class Unit(ABC):
         Returns:
             A URL string that this unit can pass to :meth:`download`.
         """
-        if self._artifact_base_url is not None:
+        if self._ctx is not None and self._ctx.artifact_server is not None:
             relative = local_path.relative_to(SystemPaths.staging_root())
-            return f"{self._artifact_base_url.rstrip('/')}/{relative}"
+            return f"{self._ctx.artifact_server.base_url.rstrip('/')}/{relative}"
         return local_path.as_uri()
 
 

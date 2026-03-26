@@ -9,9 +9,15 @@ import shutil
 from abc import abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
-from typing import LiteralString, cast
+from typing import TYPE_CHECKING, LiteralString, cast
 
-from kube_galaxy.pkg.arch.detector import ArchInfo
+from kube_galaxy.pkg.utils.detector import ArchInfo
+
+if TYPE_CHECKING:
+    from kube_galaxy.pkg.cluster_context import ClusterContext
+    from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
+    from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror
+
 from kube_galaxy.pkg.components.strategies import (
     _INSTALL_STRATEGIES,
     _TEST_STRATEGIES,
@@ -69,21 +75,21 @@ class ComponentBase:
 
     def __init__(
         self,
-        components: dict[str, "ComponentBase"],
+        ctx: "ClusterContext",
         manifest: Manifest,
         config: ComponentConfig,
         arch_info: ArchInfo,
     ) -> None:
         """
-        Initialize component with components, manifest, config, and unit.
+        Initialize component with context, manifest, config, and unit.
 
         Args:
-            components: Dict of all components
+            ctx: Shared runtime cluster context (components, artifact_server, registry_mirror)
             manifest: The full Manifest object
             config: The ComponentConfig object for this specific component
             arch_info: Architecture information
         """
-        self.components = components
+        self._ctx = ctx
         self.manifest = manifest
         self.config = config
         # Allow tests and callers to omit arch_info; default to detected arch
@@ -91,9 +97,6 @@ class ComponentBase:
         # for InstallMethod Binary or BinaryArchive
         self.binary_path: Path | None = None  # path to downloaded binary (before installation)
         self.install_path: str | None = None  # path to root installed bin
-        # for InstallMethod Image or ImageArchive
-        self.image_repository: str | None = None
-        self.image_tag: str | None = None
         # for InstallMethod ContainerManifest
         self.manifest_path: Path | None = None  # path to downloaded manifest file
 
@@ -106,6 +109,21 @@ class ComponentBase:
         if test_method not in _TEST_STRATEGIES:
             raise ComponentError(f"Unsupported test method: {test_method}")
         self._test_strategy: _TestStrategy = _TEST_STRATEGIES[test_method]
+
+    @property
+    def components(self) -> "dict[str, ComponentBase]":
+        """Peer-component lookup dict (delegates to ClusterContext)."""
+        return self._ctx.components
+
+    @property
+    def artifact_server(self) -> "ArtifactServer | None":
+        """Active ArtifactServer, or None when outside the artifact-server context."""
+        return self._ctx.artifact_server
+
+    @property
+    def registry_mirror(self) -> "RegistryMirror | None":
+        """Active RegistryMirror, or None when the mirror is not enabled."""
+        return self._ctx.registry_mirror
 
     @property
     def name(self) -> str:

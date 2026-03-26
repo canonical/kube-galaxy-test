@@ -5,14 +5,12 @@ Containerd is the container runtime used by Kubernetes clusters.
 """
 
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from kube_galaxy.pkg.components import ClusterComponentBase, ComponentBase, register_component
-from kube_galaxy.pkg.literals import Permissions
+from kube_galaxy.pkg.components import ComponentBase, register_component
+from kube_galaxy.pkg.literals import Permissions, URLs
 from kube_galaxy.pkg.manifest.models import InstallMethod
 from kube_galaxy.pkg.utils.components import format_component_pattern
-from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.url import authentication_headers
 
@@ -32,66 +30,28 @@ def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
         host: Registry hostname (e.g., "ghcr.io")
         auth: Authentication string (e.g., "Basic <base64-encoded-credentials>")
     """
-    hosts_tmpl = Path(__file__).parent / "templates/containerd/hosts.toml"
+    hosts_tmpl = Path(__file__).parent / "templates/containerd/auth-hosts.toml"
     content = hosts_tmpl.read_text().format(host=host, authorization=auth)
 
     hosts_toml = HOSTS_D / host / "hosts.toml"
     component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
 
 
-def _image_pull_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
+def _registry_mirror(component: "ComponentBase") -> None:
     """
-    Pull a container image with containerd and retag for use in the cluster.
+    Configure containerd registry mirror
+
+    This function sets up a registry mirror in containerd for the specified host,
 
     Args:
-        cluster_manager: Cluster manager component defining image list
-        image: Component with CONTAINER_IMAGE method to pull
+        component: Container component instance to use for writing config files
     """
-    # Use ctr to pull images directly into containerd
-    to_pull = f"{image.image_repository}:{image.image_tag}"
-    info(f"    Pulling image: {to_pull}")
-    image.unit.run(["crictl", "pull", to_pull], privileged=True)
-    if to_tag := cluster_manager.find_image_retag(to_pull):
-        info(f"    Retag pulled image: {to_pull} -> {to_tag}")
-        image.unit.run(["ctr", "-n", "k8s.io", "images", "tag", to_pull, to_tag], privileged=True)
-    else:
-        info(f"    No retag found for image: {to_pull}")
-
-
-def _image_import_and_retag(cluster_manager: ClusterComponentBase, image: ComponentBase) -> None:
-    """
-    Import a container image archive with containerd and retag for use in the cluster.
-
-    Args:
-        cluster_manager: Cluster manager component defining image list
-        image: Component with CONTAINER_IMAGE_ARCHIVE method to import
-    """
-    # Use ctr to import images directly into containerd
-
-    if not image.extracted_dir:
-        raise ComponentError(
-            f"Image archive for {image.config.name} not extracted. Run download hook first."
-        )
-
-    tar_archive = str(image.extracted_dir / "image.tar")
-    before_result = image.unit.run(
-        ["ctr", "-n", "k8s.io", "images", "list", "--quiet"],
-        privileged=True,
-        check=True,
-    )
-    image.unit.run(["ctr", "-n", "k8s.io", "images", "import", tar_archive], privileged=True)
-    after_result = image.unit.run(
-        ["ctr", "-n", "k8s.io", "images", "list", "--quiet"],
-        privileged=True,
-        check=True,
-    )
-    new_images = set(after_result.stdout.splitlines()) - set(before_result.stdout.splitlines())
-    for img in new_images:
-        if to_tag := cluster_manager.find_image_retag(img):
-            info(f"    Retag imported image: {img} -> {to_tag}")
-            image.unit.run(["ctr", "-n", "k8s.io", "images", "tag", img, to_tag], privileged=True)
-        else:
-            info(f"    No retag found for imported image: {img}")
+    if mirror := component.registry_mirror:
+        hosts_tmpl = Path(__file__).parent / "templates/containerd/http-hosts.toml"
+        host = mirror.registry_address()
+        content = hosts_tmpl.read_text().format(host=host)
+        hosts_toml = HOSTS_D / host / "hosts.toml"
+        component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
 
 
 @register_component("containerd")
@@ -118,7 +78,7 @@ class Containerd(ComponentBase):
             Pause image URL to use in containerd config
         """
         # Fallback to default if no pause component
-        image_format = "registry.k8s.io/pause:3.9"
+        image_format = f"{URLs.REGISTRY_K8S_IO}/pause:3.9"
         if pause := self.components.get("pause"):
             # Use source_format if it's a container image
             install = pause.config.installation
@@ -130,27 +90,10 @@ class Containerd(ComponentBase):
                 image_format = pause.config.installation.source_format
             # Otherwise construct from release version
             elif pause.config.release:
-                image_format = f"registry.k8s.io/pause:{pause.config.release}"
+                image_format = f"{URLs.REGISTRY_K8S_IO}/pause:{pause.config.release}"
 
             return format_component_pattern(image_format, pause.config, self.arch_info)
         return image_format
-
-    def _image_comps_by_type(self) -> tuple[list[ComponentBase], list[ComponentBase]]:
-        """
-        Get lists of tagged images and image archives components.
-
-        Returns:
-            Tuple of (tagged_images, image_archives)
-        """
-        tagged_images = []
-        image_archives = []
-        for comp in self.components.values():
-            match comp.config.installation.method:
-                case InstallMethod.CONTAINER_IMAGE:
-                    tagged_images.append(comp)
-                case InstallMethod.CONTAINER_IMAGE_ARCHIVE:
-                    image_archives.append(comp)
-        return tagged_images, image_archives
 
     def pre_install_hook(self) -> None:
         """Remove any existing containerd installation to avoid conflicts."""
@@ -179,6 +122,7 @@ class Containerd(ComponentBase):
 
         for host, auth in authentication_headers(basic_auth=True).items():
             _registry_auth(self, host, auth)
+        _registry_mirror(self)
 
         # Create systemd service unit
         systemd_unit = Path(__file__).parent / "templates/containerd/systemd_unit"
@@ -203,27 +147,6 @@ class Containerd(ComponentBase):
                     f"Socket {self.SOCKET_PATH} did not appear within {self.BOOTSTRAP_TIMEOUT}s"
                 )
             time.sleep(0.1)
-
-        images_tagged, image_archives = self._image_comps_by_type()
-        cluster_manager = self.get_cluster_manager()
-        with ThreadPoolExecutor(max_workers=self.MAX_IMAGE_PULL_WORKERS) as executor:
-            # Pull and retag images in parallel
-            pull_futures = []
-            for image in images_tagged:
-                info(f"  Pull and retag image from {image.config.name} component")
-                future = executor.submit(_image_pull_and_retag, cluster_manager, image)
-                pull_futures.append(future)
-
-            # Import and retag image archives in parallel
-            import_futures = []
-            for image in image_archives:
-                info(f"  Import image archive from {image.config.name} component")
-                future = executor.submit(_image_import_and_retag, cluster_manager, image)
-                import_futures.append(future)
-
-            # Wait for all operations to complete
-            for future in pull_futures + import_futures:
-                future.result()  # This will raise any exceptions that occurred
 
     def verify_hook(self) -> None:
         """

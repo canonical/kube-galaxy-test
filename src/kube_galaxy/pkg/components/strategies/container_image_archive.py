@@ -8,7 +8,9 @@ import lzma
 import shutil
 from typing import TYPE_CHECKING
 
+from kube_galaxy.pkg.utils.components import format_component_pattern
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
 
 from ._base import _fetch_to_temp, _InstallStrategy
@@ -40,6 +42,27 @@ def _download(comp: ComponentBase) -> None:
             shutil.copyfileobj(src, dst)
     else:
         raise ComponentError(f"Unsupported archive format for {file_path.name}")
+
+    if image_retag := comp.config.installation.retag_format:
+        image_retag = format_component_pattern(
+            comp.config.installation.retag_format,
+            comp.config,
+            comp.arch_info,
+            comp.config.installation.repo,
+        )
+
+    mirror_path = None
+    if mirror := comp.registry_mirror:
+        mirror_path = mirror.inspect(f"docker-archive:{image_tar}")
+        info(f"  Preloading image archive into registry mirror: {image_tar} -> {mirror_path}")
+        mirror.preload(f"docker-archive:{image_tar}", mirror_path)
+
+    if mirror and mirror_path and image_retag:
+        retag_repo, retag_tag = image_retag.rsplit(":", 1)
+        parts = retag_repo.split("/", 1)
+        retag_path = f"{parts[1]}:{retag_tag}" if len(parts) > 1 else image_retag
+        info(f"  Retagging image in registry mirror: {mirror_path} -> {retag_path}")
+        mirror.retag(mirror_path, retag_path)
 
 
 _ContainerImageArchiveInstallStrategy = _InstallStrategy(download=_download)

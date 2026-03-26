@@ -219,6 +219,7 @@ class URLs:
     K8S_RELEASE_BASE = "https://raw.githubusercontent.com/kubernetes/release/v0.16.2"
 
     # Container registries
+    ORCHESTRATOR_HOST = "kube-galaxy.orchestrator"
     REGISTRY_K8S_IO = "registry.k8s.io"
 
 
@@ -262,17 +263,6 @@ class FilePatterns:
     # Test files
     TEST_CLUSTER_CONFIG = "test-cluster-config.yaml"
     SPREAD_YAML = "spread.yaml"
-
-
-class ContainerdConfig:
-    """Containerd-specific configuration values."""
-
-    # Configuration directives
-    SYSTEMD_CGROUP_FALSE = "SystemdCgroup = false"
-    SYSTEMD_CGROUP_TRUE = "SystemdCgroup = true"
-
-    # Default sandbox image
-    SANDBOX_IMAGE = 'sandbox_image = "registry.k8s.io/pause:3.8"'
 
 
 class NetworkDefaults:

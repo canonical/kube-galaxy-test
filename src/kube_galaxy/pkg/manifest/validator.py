@@ -44,6 +44,13 @@ def validate_manifest(manifest: Manifest) -> None:
     if manifest.nodes.worker < 0:
         raise ValueError("'nodes.worker' must be non-negative")
 
+    # Validate artifact.registry block
+    registry = manifest.artifact.registry
+    if registry.enabled and not (1 <= registry.port <= 65535):
+        raise ValueError(
+            f"'artifact.registry.port' must be between 1 and 65535, got {registry.port}"
+        )
+
 
 def validate_component_test_structure(component: ComponentConfig) -> list[str]:
     """Validate component has proper structure for spread tests.

@@ -5,7 +5,9 @@ from typing import Any
 
 import yaml
 
+from kube_galaxy.pkg.literals import NetworkDefaults, URLs
 from kube_galaxy.pkg.manifest.models import (
+    ArtifactConfig,
     ComponentConfig,
     InstallConfig,
     InstallMethod,
@@ -14,6 +16,7 @@ from kube_galaxy.pkg.manifest.models import (
     NodesConfig,
     Placement,
     ProviderConfig,
+    RegistryConfig,
     RepoInfo,
     TestConfig,
     TestMethod,
@@ -72,6 +75,40 @@ def _parse_repo(repo_data: Any, comp_name: str) -> RepoInfo:
     )
 
 
+def _parse_registry(registry_data: Any) -> RegistryConfig:
+    """Parse an ``artifact.registry`` block from a YAML dict.
+
+    Args:
+        registry_data: The raw value of an ``artifact.registry`` key.
+
+    Returns:
+        A populated :class:`RegistryConfig` instance with defaults for absent keys.
+    """
+    if not registry_data or not isinstance(registry_data, dict):
+        return RegistryConfig()
+    return RegistryConfig(
+        enabled=bool(registry_data.get("enabled", True)),
+        remote_registry=str(registry_data.get("remote-registry", URLs.REGISTRY_K8S_IO)),
+        port=int(registry_data.get("port", 5000)),
+    )
+
+
+def _parse_artifact(artifact_data: Any) -> ArtifactConfig:
+    """Parse an ``artifact`` top-level block from a YAML dict.
+
+    Args:
+        artifact_data: The raw value of the ``artifact`` key in the manifest.
+
+    Returns:
+        A populated :class:`ArtifactConfig` instance.
+    """
+    if not artifact_data or not isinstance(artifact_data, dict):
+        return ArtifactConfig()
+    return ArtifactConfig(
+        registry=_parse_registry(artifact_data.get("registry")),
+    )
+
+
 def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     """Deserialize manifest dictionary to Manifest dataclass."""
     # Parse components
@@ -84,6 +121,7 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         installation = InstallConfig(
             method=InstallMethod(install_data.get("method", "none")),
             source_format=install_data.get("source-format", ""),
+            retag_format=install_data.get("retag-format", ""),
             bin_path=install_data.get("bin-path", "./*"),
             repo=_parse_repo(install_data.get("repo"), comp_name),
         )
@@ -111,8 +149,8 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     for net_data in data.get("networking", []):
         net_config = NetworkConfig(
             name=net_data.get("name", "default"),
-            service_cidr=net_data.get("service-cidr", "10.96.0.0/12"),
-            pod_cidr=net_data.get("pod-cidr", "192.168.0.0/16"),
+            service_cidr=net_data.get("service-cidr", NetworkDefaults.SERVICE_CIDR),
+            pod_cidr=net_data.get("pod-cidr", NetworkDefaults.POD_CIDR),
         )
         networking.append(net_config)
 
@@ -144,4 +182,5 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         networking=networking,
         provider=provider,
         nodes=nodes,
+        artifact=_parse_artifact(data.get("artifact")),
     )

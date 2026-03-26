@@ -12,6 +12,12 @@ kubernetes-version: &k8s-version "1.35.2"
 #   control-plane: 1
 #   worker: 0
 
+# artifact:
+#   registry:
+#     enabled: true                      # default
+#     remote-registry:  registry.k8s.io  # default
+#     port:    5000                      # default
+
 components:
   # Container runtime
   - name: runc
@@ -89,6 +95,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-apiserver:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-apiserver:v{{ release }}"
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
@@ -98,6 +105,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-controller-manager:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-controller-manager:v{{ release }}"
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
@@ -107,6 +115,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-scheduler:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-scheduler:v{{ release }}"
 
   - name: kube-proxy
     category: kubernetes/kubernetes
@@ -116,6 +125,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-proxy:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-proxy:v{{ release }}"
 
   - name: pause
     category: kubernetes/kubernetes
@@ -125,6 +135,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/pause:{{ release }}"
+      retag-format: "{{ mirror.base-url }}/pause:{{ release }}"
 
   # etcd - required for cluster state
   - name: etcd
@@ -135,6 +146,7 @@ components:
       repo:
         base-url: https://github.com/etcd-io/etcd
       source-format: "registry.k8s.io/etcd:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/etcd:{{ release }}-0"
 
   # CoreDNS - required for cluster DNS
   - name: coredns
@@ -145,6 +157,7 @@ components:
       repo:
         base-url: https://github.com/coredns/coredns
       source-format: "registry.k8s.io/coredns/coredns:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/coredns:v{{ release }}"
 
   # Calico - required for cluster networking
   - name: calico

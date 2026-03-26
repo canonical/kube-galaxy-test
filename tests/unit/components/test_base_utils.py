@@ -1,3 +1,4 @@
+from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import (
@@ -27,6 +28,7 @@ def make_config(name: str = "example") -> ComponentConfig:
         source_format="https://example/{{ repo.base-url }}/{{ release }}/{{ arch }}/binary",
         bin_path="./*",
         repo=RepoInfo(base_url="https://example.com/r"),
+        retag_format="",
     )
     return ComponentConfig(name=name, category="cat", release="v1", installation=install)
 
@@ -49,6 +51,7 @@ def test_format_component_pattern_hyphenated_key_native(arch_info):
         source_format="{{ repo.base-url }}/path",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="tool",
@@ -68,6 +71,7 @@ def test_format_component_pattern_remote(arch_info):
         source_format="{{ repo.base-url }}/releases/download/v{{ release }}/bin-{{ arch }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mybin",
@@ -88,6 +92,7 @@ def test_format_component_pattern_local_uses_cwd(arch_info, tmp_path, monkeypatc
         source_format="{{ repo.base-url }}/mybin-{{ arch }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mybin",
@@ -107,6 +112,7 @@ def test_format_component_pattern_subdir_and_ref(arch_info):
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}/{{ release }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="tool",
@@ -131,6 +137,7 @@ def test_format_component_pattern_empty_subdir_and_ref(arch_info):
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/{{ repo.ref }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="tool",
@@ -150,6 +157,7 @@ def test_format_component_pattern_name_variable(arch_info):
         source_format="{{ repo.base-url }}/components/{{ name }}/bin",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mytool",
@@ -170,6 +178,7 @@ def test_format_component_pattern_prerender_name_in_subdir(arch_info, tmp_path, 
         source_format="{{ repo.base-url }}/{{ repo.subdir }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="sonobuoy",
@@ -189,6 +198,7 @@ def test_format_component_pattern_prerender_name_in_subdir_remote(arch_info):
         source_format="{{ repo.base-url }}/{{ repo.subdir }}/release-{{ release }}",
         bin_path="./*",
         repo=repo,
+        retag_format="",
     )
     config = ComponentConfig(
         name="mytool",
@@ -210,9 +220,7 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
     (suite_src / "task.yaml").write_text("summary: A fake task")
 
     install = InstallConfig(
-        method=InstallMethod.NONE,
-        source_format="",
-        bin_path="./*",
+        method=InstallMethod.NONE, source_format="", bin_path="./*", retag_format=""
     )
     test_cfg = ComponentTestConfig(
         method=ComponentTestMethod.SPREAD,
@@ -232,7 +240,10 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
     monkeypatch.setattr(SystemPaths, "local_tests_root", classmethod(lambda cls: tests_root))
 
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), config, arch_info
+        ClusterContext(),
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        config,
+        arch_info,
     )
     comp.download_hook()
 
@@ -244,7 +255,7 @@ def test_local_download_file_uses_source_format(monkeypatch, tmp_path, arch_info
 def test_ensure_temp_dir_creates_local_dir_only(monkeypatch, arch_info, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {},
+        ClusterContext(),
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
@@ -269,7 +280,10 @@ def test_ensure_temp_dir_creates_local_dir_only(monkeypatch, arch_info, tmp_path
 def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, arch_info):
     cfg = make_config("tool")
     comp = ExampleComponent(
-        {}, Manifest(name="m", description="d", kubernetes_version="1.0"), cfg, arch_info
+        ClusterContext(),
+        Manifest(name="m", description="d", kubernetes_version="1.0"),
+        cfg,
+        arch_info,
     )
 
     # create a fake binary file
@@ -288,7 +302,7 @@ def test_install_downloaded_binary_uses_install_binary(monkeypatch, tmp_path, ar
 def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {},
+        ClusterContext(),
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
@@ -321,7 +335,7 @@ def test_create_systemd_service_and_write_config(arch_info, monkeypatch, tmp_pat
 def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp_path):
     mock_unit = MockUnit()
     comp = ExampleComponent(
-        {},
+        ClusterContext(),
         Manifest(name="m", description="d", kubernetes_version="1.0"),
         make_config(),
         arch_info,
