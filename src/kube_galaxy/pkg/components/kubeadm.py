@@ -21,7 +21,7 @@ from kube_galaxy.pkg.utils.client import (
     wait_for_nodes,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.logging import info, warning
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
 
 
@@ -151,9 +151,9 @@ class Kubeadm(ClusterComponentBase):
         if match:
             self._cert_key = match.group(1)
         else:
-            warning(
+            raise ClusterError(
                 "Could not extract certificate key from kubeadm init output. "
-                "Additional control-plane nodes will not be able to join automatically."
+                "Additional control-plane nodes will not be able to join."
             )
 
     def pull_kubeconfig(self) -> None:
@@ -179,8 +179,12 @@ class Kubeadm(ClusterComponentBase):
         cmd = shlex.split(token)
         if role == NodeRole.CONTROL_PLANE:
             cmd.append("--control-plane")
-            if self._cert_key:
-                cmd.extend(["--certificate-key", self._cert_key])
+            if not self._cert_key:
+                raise ClusterError(
+                    "Certificate key is required to join a control-plane node "
+                    "but was not set. Ensure kubeadm init ran with --upload-certs."
+                )
+            cmd.extend(["--certificate-key", self._cert_key])
         self.unit.run(cmd, privileged=True, check=True)
 
     def bootstrap_hook(self) -> None:
