@@ -3,7 +3,7 @@
 import kube_galaxy.pkg.units.lxdvm as lxdvm
 import kube_galaxy.pkg.units.multipass as multipass
 import kube_galaxy.pkg.units.ssh as ssh
-from kube_galaxy.pkg.manifest.models import Manifest, ProviderConfig, RoleCounts
+from kube_galaxy.pkg.manifest.models import Manifest, NodesConfig, ProviderConfig
 from kube_galaxy.pkg.units._base import UnitProvider
 from kube_galaxy.pkg.units.local import LocalUnitProvider
 
@@ -15,7 +15,7 @@ def provider_factory(manifest: Manifest) -> UnitProvider:
     (``provider.type`` defaults to ``"lxd"``).
     """
     cfg: ProviderConfig = manifest.provider
-    nodes: RoleCounts = manifest.provider.nodes
+    nodes: NodesConfig = manifest.provider.nodes
     match cfg.type:
         case "local":
             return LocalUnitProvider(nodes, image=cfg.image)

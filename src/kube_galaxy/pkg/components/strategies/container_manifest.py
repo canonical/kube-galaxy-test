@@ -36,8 +36,6 @@ def _download(comp: ComponentBase) -> None:
 @skip_if_not_control_plane
 def _bootstrap(comp: ComponentBase) -> None:
     comp_name = comp.config.name
-    if (comp.unit.role, comp.unit.index) != (NodeRole.CONTROL_PLANE, 0):
-        return  # Only bootstrap on the first control-plane unit
     if not comp.manifest_path or not comp.manifest_path.exists():
         raise ComponentError(f"{comp_name} manifest not downloaded. Run download hook first.")
     try:

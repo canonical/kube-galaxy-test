@@ -28,7 +28,7 @@ from kube_galaxy.pkg.manifest.models import RegistryConfig
 from kube_galaxy.pkg.utils import shell
 from kube_galaxy.pkg.utils.detector import detect_ip
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.logging import info, success
+from kube_galaxy.pkg.utils.logging import info, success, warning
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CONTAINER_NAME = "registry-cache"
@@ -120,13 +120,16 @@ class RegistryMirror:
         url = f"http://localhost:{self._cfg.port}/v2/"
         deadline = time.monotonic() + timeout
         info("Waiting for registry to become ready...")
+        start_time = time.monotonic()
         while time.monotonic() < deadline:
             try:
                 response = requests.get(url, timeout=2)
                 if response.ok:
                     success("Registry is ready")
                     return
-            except requests.ConnectionError:
+            except requests.RequestException:
+                total_time_waited = time.monotonic() - start_time
+                warning(f"Registry not ready after {total_time_waited:.1f}s, retrying...")
                 pass
             time.sleep(interval)
         raise ClusterError(f"Registry did not become ready within {timeout}s")

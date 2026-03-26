@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit
-from kube_galaxy.pkg.units.local import LocalUnit
+from kube_galaxy.pkg.units.local import LocalUnit, LocalUnitProvider
 from kube_galaxy.pkg.units.lxdvm import LXDUnit
+from kube_galaxy.pkg.units.ssh import SSHUnit, SSHUnitProvider
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
 # ---------------------------------------------------------------------------
@@ -297,3 +298,76 @@ def test_lxd_unit_enlist_raises_on_timeout(monkeypatch):
     unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
     with pytest.raises(ClusterError, match="Timed out waiting for unit 'test-vm'"):
         unit.enlist(timeout=120)
+
+
+# ---------------------------------------------------------------------------
+# UnitProvider.locate_all / provision_all — base class auto-tracking
+# ---------------------------------------------------------------------------
+
+
+def test_local_provider_locate_all_populates_units():
+    """locate_all() on LocalUnitProvider must produce a non-empty unit list."""
+    p = LocalUnitProvider(NodesConfig(control_plane=1, worker=0), image="")
+    units = p.locate_all()
+    assert len(units) == 1
+    assert isinstance(units[0], LocalUnit)
+
+
+def test_local_provider_provision_all_populates_units():
+    """provision_all() on LocalUnitProvider must produce a non-empty unit list."""
+    p = LocalUnitProvider(NodesConfig(control_plane=1, worker=0), image="")
+    units = p.provision_all()
+    assert len(units) == 1
+    assert isinstance(units[0], LocalUnit)
+
+
+def test_local_provider_provision_all_no_duplicate_tracking():
+    """provision_all() must not add duplicate units even if called twice."""
+    p = LocalUnitProvider(NodesConfig(control_plane=1, worker=0), image="")
+    p.provision_all()
+    p.provision_all()
+    assert len(p._units) == 1
+
+
+def test_ssh_provider_locate_all_populates_units():
+    """locate_all() on SSHUnitProvider must populate _units for each host."""
+    counts = NodesConfig(control_plane=1, worker=1)
+    p = SSHUnitProvider(counts, image="", hosts=["host-cp", "host-w0"])
+    units = p.locate_all()
+    assert len(units) == 2
+    assert all(isinstance(u, SSHUnit) for u in units)
+
+
+def test_ssh_provider_provision_all_populates_units():
+    """provision_all() on SSHUnitProvider must populate _units for each host."""
+    counts = NodesConfig(control_plane=1, worker=1)
+    p = SSHUnitProvider(counts, image="", hosts=["host-cp", "host-w0"])
+    units = p.provision_all()
+    assert len(units) == 2
+    assert all(isinstance(u, SSHUnit) for u in units)
+
+
+def test_ssh_provider_provision_all_no_extra_locate_calls():
+    """provision_all() must call provision once per slot (no extra locate call)."""
+    counts = NodesConfig(control_plane=1, worker=0)
+    p = SSHUnitProvider(counts, image="", hosts=["host-cp"])
+    provision_calls: list[tuple[NodeRole, int]] = []
+    locate_calls: list[tuple[NodeRole, int]] = []
+    original_provision = p.provision
+    original_locate = p.locate
+
+    def spy_provision(role: NodeRole, index: int) -> SSHUnit:
+        provision_calls.append((role, index))
+        return original_provision(role, index)
+
+    def spy_locate(role: NodeRole, index: int) -> SSHUnit:
+        locate_calls.append((role, index))
+        return original_locate(role, index)
+
+    p.provision = spy_provision  # type: ignore[method-assign]
+    p.locate = spy_locate  # type: ignore[method-assign]
+
+    p.provision_all()
+
+    assert len(provision_calls) == 1
+    assert len(locate_calls) == 0

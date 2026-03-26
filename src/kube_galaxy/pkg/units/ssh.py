@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-from kube_galaxy.pkg.manifest.models import NodeRole, RoleCounts
+from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
@@ -112,7 +112,7 @@ class SSHUnit(Unit):
 class SSHUnitProvider(UnitProvider):
     """Returns SSHUnit instances for pre-existing hosts; no-op deprovision."""
 
-    def __init__(self, counts: RoleCounts, image: str, hosts: list[str]) -> None:
+    def __init__(self, counts: NodesConfig, image: str, hosts: list[str]) -> None:
         super().__init__(counts, image)
         if len(hosts) < counts.control_plane + counts.worker:
             raise ValueError("Not enough hosts provided for the specified role counts.")
@@ -124,14 +124,21 @@ class SSHUnitProvider(UnitProvider):
     def is_ephemeral(self) -> bool:
         return False
 
+    def _host_index(self, role: NodeRole, index: int) -> int:
+        if role == NodeRole.CONTROL_PLANE:
+            return index
+        elif role == NodeRole.WORKER:
+            return self._counts.control_plane + index
+        else:
+            raise ValueError(f"Unknown role: {role}")
+
     def provision(self, role: NodeRole, index: int) -> Unit:
-        host = self._hosts[index]
-        info(f"Provisioning SSH unit '{role.value}-{index}' at host '{host}'...")
+        host = self._hosts[self._host_index(role, index)]
+        info(f"SSH unit '{role.value}-{index}' at host '{host}'...")
         return SSHUnit(host=host, role=role, index=index)
 
-    def locate(self, role: NodeRole, index: int) -> Unit:
-        host = self._hosts[index]
-        return SSHUnit(host=host, role=role, index=index)
+    # For SSHUnit, provisioning and locating are the same since units are pre-existing
+    locate = provision
 
     def deprovision(self, unit: Unit) -> None:
         info(f"SSH host '{unit.name}' is pre-existing; skipping deprovision.")

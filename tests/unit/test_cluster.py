@@ -15,8 +15,8 @@ from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.manifest.models import (
     Manifest,
     NodeRole,
+    NodesConfig,
     ProviderConfig,
-    RoleCounts,
 )
 from kube_galaxy.pkg.units._base import UnitProvider
 from kube_galaxy.pkg.units.local import LocalUnit, LocalUnitProvider
@@ -88,13 +88,13 @@ def test_provider_factory_default_is_lxd():
 
 
 def test_local_provider_locate_returns_local_unit():
-    p = LocalUnitProvider(RoleCounts(), "")
+    p = LocalUnitProvider(NodesConfig(), "")
     u = p.locate(NodeRole.CONTROL_PLANE, 0)
     assert isinstance(u, LocalUnit)
 
 
 def test_local_provider_provision_returns_local_unit():
-    p = LocalUnitProvider(RoleCounts(), "")
+    p = LocalUnitProvider(NodesConfig(), "")
     u = p.provision(NodeRole.CONTROL_PLANE, 0)
     assert isinstance(u, LocalUnit)
 
@@ -105,23 +105,23 @@ def test_local_provider_provision_returns_local_unit():
 
 
 def test_lxd_provider_locate_deterministic_name():
-    p = LXDUnitProvider(RoleCounts(), image="ubuntu:24.04")
+    p = LXDUnitProvider(NodesConfig(), image="ubuntu:24.04")
     u = p.locate(NodeRole.CONTROL_PLANE, 0)
     assert isinstance(u, LXDUnit)
     assert u.name == "kube-galaxy-control-plane-0"
 
 
 def test_lxd_provider_locate_dedup():
-    """Calling locate twice for the same role/index adds only one entry."""
-    p = LXDUnitProvider(RoleCounts(), image="ubuntu:24.04")
-    u1 = p.locate(NodeRole.CONTROL_PLANE, 0)
-    u2 = p.locate(NodeRole.CONTROL_PLANE, 0)
+    """locate_all called twice for the same counts adds only one entry per slot."""
+    p = LXDUnitProvider(NodesConfig(), image="ubuntu:24.04")
+    u1 = p.locate_all()[0]
+    u2 = p.locate_all()[0]
     assert u1.name == u2.name
     assert len(p._units) == 1
 
 
 def test_lxd_provider_locate_populates_units_for_deprovision_all(monkeypatch):
-    """After locate, deprovision_all should call lxc delete for the located unit."""
+    """After locate_all, deprovision_all should call lxc delete for the located unit."""
     calls: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):  # type: ignore[misc]
@@ -130,8 +130,8 @@ def test_lxd_provider_locate_populates_units_for_deprovision_all(monkeypatch):
 
     monkeypatch.setattr("subprocess.run", fake_run)
 
-    p = LXDUnitProvider(RoleCounts(), image="ubuntu:24.04")
-    p.locate(NodeRole.CONTROL_PLANE, 0)
+    p = LXDUnitProvider(NodesConfig(), image="ubuntu:24.04")
+    p.locate_all()
     p.deprovision_all()
 
     assert any("kube-galaxy-control-plane-0" in " ".join(c) for c in calls)
@@ -142,19 +142,17 @@ def test_lxd_provider_locate_populates_units_for_deprovision_all(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_multipass_provider_locate_deterministic_name(monkeypatch):
-    monkeypatch.setattr("kube_galaxy.pkg.units.multipass.check_version", lambda _cmd: None)
-    p = MultipassUnitProvider(RoleCounts(), image="ubuntu:24.04")
+def test_multipass_provider_locate_deterministic_name():
+    p = MultipassUnitProvider(NodesConfig(), image="ubuntu:24.04")
     u = p.locate(NodeRole.WORKER, 1)
     assert isinstance(u, MultipassUnit)
     assert u.name == "kube-galaxy-worker-1"
 
 
-def test_multipass_provider_locate_dedup(monkeypatch):
-    monkeypatch.setattr("kube_galaxy.pkg.units.multipass.check_version", lambda _cmd: None)
-    p = MultipassUnitProvider(RoleCounts(), image="ubuntu:24.04")
-    p.locate(NodeRole.WORKER, 0)
-    p.locate(NodeRole.WORKER, 0)
+def test_multipass_provider_locate_dedup():
+    p = MultipassUnitProvider(NodesConfig(), image="ubuntu:24.04")
+    p.locate_all()
+    p.locate_all()
     assert len(p._units) == 1
 
 

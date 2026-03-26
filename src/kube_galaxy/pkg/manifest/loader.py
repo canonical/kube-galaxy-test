@@ -18,7 +18,6 @@ from kube_galaxy.pkg.manifest.models import (
     ProviderConfig,
     RegistryConfig,
     RepoInfo,
-    RoleCounts,
     TestConfig,
     TestMethod,
 )
@@ -205,20 +204,11 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     provider = ProviderConfig(
         type=provider_data.get("type", "lxd"),
         image=provider_data.get("image", "ubuntu:24.04"),
-        nodes=RoleCounts(
-            control_plane=nodes_data.get("control-plane", 1),
-            worker=nodes_data.get("worker", 0),
+        nodes=NodesConfig(
+            control_plane=int(nodes_data.get("control-plane", 1)),
+            worker=int(nodes_data.get("worker", 0)),
         ),
         hosts=provider_data.get("hosts", []),
-    )
-
-    # Parse nodes (optional; defaults to control-plane: 1, worker: 0)
-    nodes_data = data.get("nodes", {})
-    if not isinstance(nodes_data, dict):
-        raise ValueError("'nodes' must be a dictionary")
-    nodes = NodesConfig(
-        control_plane=nodes_data.get("control-plane", 1),
-        worker=nodes_data.get("worker", 0),
     )
 
     return Manifest(
@@ -229,6 +219,5 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
         components=components,
         networking=networking,
         provider=provider,
-        nodes=nodes,
         artifact=_parse_artifact(data.get("artifact")),
     )

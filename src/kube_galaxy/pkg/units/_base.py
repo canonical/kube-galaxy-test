@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from kube_galaxy.pkg.literals import SystemPaths, Timeouts, URLs
-from kube_galaxy.pkg.manifest.models import NodeRole, RoleCounts
+from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.utils.detector import ArchInfo, detect_ip, map_to_image_arch, map_to_k8s_arch
 from kube_galaxy.pkg.utils.errors import ClusterError
 
@@ -230,7 +230,7 @@ class Unit(ABC):
 class UnitProvider(ABC):
     """Owns the machine lifecycle  provisioning and deprovisioning."""
 
-    def __init__(self, counts: RoleCounts, image: str) -> None:
+    def __init__(self, counts: NodesConfig, image: str) -> None:
         self._image = image
         self._units: list[Unit] = []
         self._counts = counts
@@ -286,7 +286,7 @@ class UnitProvider(ABC):
         }
         for role in NodeRole:
             for index in range(ranges[role]):
-                self.locate(role, index)
+                self._track(self.locate(role, index))
         return self._units
 
     def provision_all(self) -> list[Unit]:
@@ -297,8 +297,7 @@ class UnitProvider(ABC):
         }
         for role in NodeRole:
             for index in range(ranges[role]):
-                self.provision(role, index)
-                self.locate(role, index)
+                self._track(self.provision(role, index))
         return self._units
 
     def deprovision_all(self) -> None:

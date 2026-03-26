@@ -145,13 +145,11 @@ class Kubeadm(ClusterComponentBase):
         )
         # Parse the certificate key so additional control-plane nodes can join.
         # kubeadm may write the key to stdout or stderr depending on version.
-        match = re.search(
-            r"--certificate-key\s+([a-f0-9]{64})", result.stdout + result.stderr
-        )
+        match = re.search(r"--certificate-key\s+([a-f0-9]{64})", result.stdout + result.stderr)
         if match:
             self._cert_key = match.group(1)
         else:
-            raise ClusterError(
+            raise ComponentError(
                 "Could not extract certificate key from kubeadm init output. "
                 "Additional control-plane nodes will not be able to join."
             )
@@ -180,7 +178,7 @@ class Kubeadm(ClusterComponentBase):
         if role == NodeRole.CONTROL_PLANE:
             cmd.append("--control-plane")
             if not self._cert_key:
-                raise ClusterError(
+                raise ComponentError(
                     "Certificate key is required to join a control-plane node "
                     "but was not set. Ensure kubeadm init ran with --upload-certs."
                 )
