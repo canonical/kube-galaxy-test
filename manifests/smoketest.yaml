@@ -169,32 +169,32 @@ components:
         base-url: https://github.com/projectcalico/calico
       source-format: "https://api.github.com/repos/projectcalico/calico/contents/manifests/calico.yaml?ref=v{{ release }}"
 
-  # - name: calico-cni
-  #   category: projectcalico/calico
-  #   release: *calico-version
-  #   installation:
-  #     method: container-image
-  #     repo:
-  #       base-url: https://github.com/projectcalico/calico
-  #     source-format: "docker.io/calico/cni:v{{ release }}"
+  - name: calico-cni
+    category: projectcalico/calico
+    release: *calico-version
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/projectcalico/calico
+      source-format: "docker.io/calico/cni:v{{ release }}"
 
-  # - name: calico-node
-  #   category: projectcalico/calico
-  #   release: *calico-version
-  #   installation:
-  #     method: container-image
-  #     repo:
-  #       base-url: https://github.com/projectcalico/calico
-  #     source-format: "docker.io/calico/cni:v{{ release }}"
+  - name: calico-node
+    category: projectcalico/calico
+    release: *calico-version
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/projectcalico/calico
+      source-format: "docker.io/calico/cni:v{{ release }}"
 
-  # - name: calico-kube-controllers
-  #   category: projectcalico/calico
-  #   release: *calico-version
-  #   installation:
-  #     method: container-image
-  #     repo:
-  #       base-url: https://github.com/projectcalico/calico
-  #     source-format: "docker.io/calico/kube-controllers:v{{ release }}"
+  - name: calico-kube-controllers
+    category: projectcalico/calico
+    release: *calico-version
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/projectcalico/calico
+      source-format: "docker.io/calico/kube-controllers:v{{ release }}"
 
   # Test only component, nothing installed in the cluster
   - name: sonobuoy

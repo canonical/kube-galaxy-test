@@ -498,7 +498,9 @@ class TestContainerImageDownload:
         mirror_ref.endswith(expected_mirror_path)
 
     @mock.patch("kube_galaxy.pkg.components.strategies.container_image.info")
-    def test_download_skips_mirror_when_no_mirror(self, mock_info, monkeypatch, tmp_path, arch_info):
+    def test_download_skips_mirror_when_no_mirror(
+        self, mock_info, monkeypatch, tmp_path, arch_info
+    ):
         """_download does not call mirror when registry_mirror is None."""
         ctx = ClusterContext(registry_mirror=None)
         comp = _make_component(
@@ -512,7 +514,9 @@ class TestContainerImageDownload:
         )
         # No registry_mirror set on ClusterContext — should not raise
         comp.download_hook()
-        mock_info.assert_called_with("  No registry mirror configured; skipping preload for registry.k8s.io/pause:3.9")
+        mock_info.assert_called_with(
+            "  No registry mirror configured; skipping preload for registry.k8s.io/pause:3.9"
+        )
 
 
 # ===========================================================================
@@ -563,6 +567,7 @@ def _patch_logging_info(monkeypatch) -> list:
         fake_info,
     )
     return calls
+
 
 class TestContainerImageArchiveDownload:
     def test_download_plain_tar(self, monkeypatch, tmp_path, arch_info):
