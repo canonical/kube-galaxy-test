@@ -114,7 +114,7 @@ components:
 
   - name: pause
     category: kubernetes/kubernetes
-    release: "3.10.0"
+    release: "3.10"
     installation:
       method: container-image
       repo:
@@ -136,7 +136,7 @@ components:
   # CoreDNS
   - name: coredns
     category: coredns
-    release: "1.12.1"
+    release: "1.12.0"
     installation:
       method: container-image
       repo:
