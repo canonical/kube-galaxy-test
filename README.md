@@ -29,6 +29,7 @@ custom-built Kubernetes components using the canonical
 
 - Python 3.12+ with `uv` or `pip`
 - Git
+- skopeo
 
 ### Development Setup
 
