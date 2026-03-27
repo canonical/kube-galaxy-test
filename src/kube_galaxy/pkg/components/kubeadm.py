@@ -144,9 +144,11 @@ class Kubeadm(ClusterComponentBase):
             check=True,
         )
         # Parse the certificate key so additional control-plane nodes can join.
-        # kubeadm may write the key to stdout or stderr depending on version.
-        match = re.search(r"--certificate-key\s+([a-f0-9]{64})", result.stdout + result.stderr)
-        if match:
+        # kubeadm writes the key to stdout
+        # https://github.com/kubernetes/kubernetes/blob/e2e64ef58da04369882d6187fc6612d1d090d133/
+        #         cmd/kubeadm/app/cmd/phases/init/uploadcerts.go#L75
+        upload_certs_regex = r"\[upload-certs\] Using certificate key:\s*([a-f0-9]{64})"
+        if match := re.search(upload_certs_regex, result.stdout):
             self._cert_key = match.group(1)
         else:
             raise ComponentError(
@@ -175,6 +177,7 @@ class Kubeadm(ClusterComponentBase):
         # token is the full join command returned by kubeadm token create --print-join-command
         # shlex.split() safely parses the command string into a list for subprocess execution
         cmd = shlex.split(token)
+        cmd.append(f"--node-name={self.unit.hostname()}")
         if role == NodeRole.CONTROL_PLANE:
             cmd.append("--control-plane")
             if not self._cert_key:
