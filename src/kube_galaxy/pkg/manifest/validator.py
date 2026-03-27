@@ -37,12 +37,12 @@ def validate_manifest(manifest: Manifest) -> None:
     if provider_type == "ssh" and not manifest.provider.hosts:
         raise ValueError("Provider type 'ssh' requires at least one host in 'provider.hosts'")
 
-    # Validate nodes block
-    if manifest.nodes.control_plane < 1:
-        raise ValueError("'nodes.control-plane' must be at least 1")
+    # Validate provider.nodes block
+    if manifest.provider.nodes.control_plane < 1:
+        raise ValueError("'provider.nodes.control-plane' must be at least 1")
 
-    if manifest.nodes.worker < 0:
-        raise ValueError("'nodes.worker' must be non-negative")
+    if manifest.provider.nodes.worker < 0:
+        raise ValueError("'provider.nodes.worker' must be non-negative")
 
     # Validate artifact.registry block
     registry = manifest.artifact.registry

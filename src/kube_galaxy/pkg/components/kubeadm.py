@@ -5,11 +5,10 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 """
 
 import shlex
-import shutil
 from pathlib import Path
 from typing import Any
-from urllib.request import urlopen
 
+import requests
 import yaml
 
 from kube_galaxy.pkg.components import ClusterComponentBase, register_component
@@ -37,6 +36,7 @@ class Kubeadm(ClusterComponentBase):
     # Timeout configuration (in seconds)
 
     _cluster_config: Path | None = None
+    _join_command: str | None = None
 
     def _system_settings(self) -> None:
         """
@@ -76,6 +76,11 @@ class Kubeadm(ClusterComponentBase):
             config["dns"].update({"imageRepository": registry_address})
             config["etcd"].update({"imageRepository": registry_address})
 
+        if len(self._ctx.control_plane_units) > 1:
+            ## TODO: Support multiple control-plane nodes with a VIP
+            config["controlPlaneEndpoint"] = "kube-galaxy:6443"
+            raise ComponentError("Multiple control-plane units not supported")
+
     def _update_init_config(self, config: dict[str, Any]) -> None:
         """
         Update kubeadm InitConfiguration with necessary settings.
@@ -87,33 +92,7 @@ class Kubeadm(ClusterComponentBase):
         config["nodeRegistration"]["name"] = self.unit.hostname()
         config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
 
-    def configure_hook(self) -> None:
-        """
-        Configure system for kubeadm.
-
-        Disables swap which is required for kubelet/kubeadm to work properly.
-        """
-        self._system_settings()
-
-        # Configure kubeadm.service based on Kubernetes release repository
-        info("  Installing kubelet configs")
-        service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
-        with urlopen(service_url) as response:
-            service_content = response.read().decode("utf-8")
-
-        # Write kubelet configuration for kubeadm (10-kubeadm.conf)
-        service_content = service_content.replace(
-            "/usr/bin/kubelet", f"{SystemPaths.USR_LOCAL_BIN}/kubelet"
-        )
-
-        # Use base method to write config file
-        self.write_config_file(
-            service_content, "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
-        )
-
-        if not self.manifest:
-            raise ComponentError("Manifest required for kubeadm bootstrap")
-
+    def _kubeadm_config(self) -> None:
         result = self.unit.run(["kubeadm", "config", "print", "init-defaults"], check=True)
         configs = list(yaml.safe_load_all(result.stdout))
         for config in configs:
@@ -128,6 +107,51 @@ class Kubeadm(ClusterComponentBase):
         config_content = yaml.safe_dump_all(configs)
         self.write_config_file(config_content, self._cluster_config)
 
+    def download_hook(self) -> None:
+        """Download kubeadm binary and prepare configuration.
+
+        As this is the first hook, lets fail early if we have an unsupported
+        cluster configuration (e.g. multiple control-plane nodes).
+        Once supported HA clusters is supported with multiple control-plane nodes,
+        remove this method entirely.
+        """
+        if len(self._ctx.control_plane_units) > 1:
+            ## TODO: Support multiple control-plane nodes with a VIP
+            # config["controlPlaneEndpoint"] must be set for HA clusters to ensure
+            # kubelets can reach the API server via a stable endpoint.
+            # In a production HA setup, this would typically be a load balancer
+            # address perhaps provided by Kube-VIP or similar.
+
+            raise ComponentError("Multiple control-plane units not supported")
+        super().download_hook()
+
+    def configure_hook(self) -> None:
+        """
+        Configure system for kubeadm.
+
+        Disables swap which is required for kubelet/kubeadm to work properly.
+        """
+        self._system_settings()
+
+        # Configure kubeadm.service based on Kubernetes release repository
+        info("  Installing kubelet configs")
+        service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubeadm/10-kubeadm.conf"
+        resp = requests.get(service_url, timeout=30)
+        resp.raise_for_status()
+        service_content = resp.text
+
+        # Write kubelet configuration for kubeadm (10-kubeadm.conf)
+        service_content = service_content.replace(
+            "/usr/bin/kubelet", f"{SystemPaths.USR_LOCAL_BIN}/kubelet"
+        )
+
+        # Use base method to write config file
+        self.write_config_file(
+            service_content, "/usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
+        )
+
+        self._kubeadm_config()
+
     # ------------------------------------------------------------------
     # ClusterComponentBase implementation
     # ------------------------------------------------------------------
@@ -139,6 +163,7 @@ class Kubeadm(ClusterComponentBase):
         self.unit.run(
             ["kubeadm", "init", f"--config={self._cluster_config}"],
             privileged=True,
+            check=True,
         )
 
     def pull_kubeconfig(self) -> None:
@@ -161,7 +186,12 @@ class Kubeadm(ClusterComponentBase):
         """Join this unit to the cluster using the token from generate_join_token()."""
         # token is the full join command returned by kubeadm token create --print-join-command
         # shlex.split() safely parses the command string into a list for subprocess execution
-        self.unit.run(shlex.split(token), privileged=True, check=True)
+        cmd = shlex.split(token)
+        cmd.append(f"--node-name={self.unit.hostname()}")
+        if role == NodeRole.CONTROL_PLANE:
+            ## TODO: Support multiple control-plane nodes with a VIP
+            cmd.append("--control-plane")
+        self.unit.run(cmd, privileged=True, check=True)
 
     def bootstrap_hook(self) -> None:
         """
@@ -169,8 +199,21 @@ class Kubeadm(ClusterComponentBase):
 
         This is where the cluster is actually created.
         """
-        self.init_cluster()
-        self.pull_kubeconfig()
+        if (self.unit.role, self.unit.index) == (NodeRole.CONTROL_PLANE, 0):
+            self.init_cluster()
+            self.pull_kubeconfig()
+            self._join_command = self.generate_join_token(NodeRole.WORKER)
+        elif not self._join_command:
+            raise ComponentError(
+                "Join command not generated. "
+                "Ensure control-plane node bootstraps before joining other nodes."
+            )
+        elif self.unit.role == NodeRole.CONTROL_PLANE:
+            ## TODO: Support multiple control-plane nodes with a VIP
+            self.join_cluster(self._join_command, NodeRole.CONTROL_PLANE)
+            self.pull_kubeconfig()
+        elif self.unit.role == NodeRole.WORKER:
+            self.join_cluster(self._join_command, NodeRole.WORKER)
 
     def verify_hook(self) -> None:
         """
@@ -178,9 +221,10 @@ class Kubeadm(ClusterComponentBase):
 
         Checks cluster connectivity and waits for nodes/pods to be ready.
         """
-        verify_connectivity(self.unit)
-        wait_for_nodes(self.unit, timeout=300)
-        get_api_server_status(self.unit, timeout=300)
+        if self.unit.role == NodeRole.CONTROL_PLANE:
+            verify_connectivity(self.unit)
+            wait_for_nodes(self.unit, timeout=300)
+            get_api_server_status(self.unit, timeout=300)
 
     def stop_hook(self) -> None:
         """
@@ -189,10 +233,6 @@ class Kubeadm(ClusterComponentBase):
         This performs a kubeadm reset to cleanly shut down the cluster,
         removing the node from the cluster and cleaning up cluster state.
         """
-        if not shutil.which("kubeadm"):
-            info("kubeadm not found in PATH, skipping cluster reset")
-            return
-
         info("Performing kubeadm reset to stop cluster")
         self.unit.run(["kubeadm", "reset", "--force"], privileged=True)
         info("Kubeadm reset completed successfully")

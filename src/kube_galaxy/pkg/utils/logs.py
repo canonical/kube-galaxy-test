@@ -17,6 +17,13 @@ from kube_galaxy.pkg.utils.client import (
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import info, section, success, warning
 from kube_galaxy.pkg.utils.paths import ensure_dir
+from kube_galaxy.pkg.utils.shell import check_version
+
+
+def _print_dependency_status() -> None:
+    """Print required command dependency status."""
+    info("Dependencies:")
+    check_version("kubectl")
 
 
 def collect_kubernetes_logs(unit: Unit) -> str:
@@ -32,6 +39,7 @@ def collect_kubernetes_logs(unit: Unit) -> str:
     Raises:
         ClusterError: If log collection fails
     """
+    _print_dependency_status()
     output_path = Path(TestDirectories.DEBUG_LOGS)
     ensure_dir(output_path)
 

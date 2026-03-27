@@ -18,14 +18,17 @@ Typical flow::
 
 import json
 import os
+import time
 from pathlib import Path
+
+import requests
 
 from kube_galaxy.pkg.literals import SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import RegistryConfig
 from kube_galaxy.pkg.utils import shell
 from kube_galaxy.pkg.utils.detector import detect_ip
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.logging import info, success
+from kube_galaxy.pkg.utils.logging import info, success, warning
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CONTAINER_NAME = "registry-cache"
@@ -33,7 +36,7 @@ _REGISTRY_IMAGE = "registry:3"
 _REQUIRED_TOOLS = ("docker", "skopeo")
 
 
-def verify_prerequisites() -> None:
+def _print_dependency_status() -> None:
     """Verify that ``docker`` and ``skopeo`` are available on PATH.
 
     Raises:
@@ -42,8 +45,7 @@ def verify_prerequisites() -> None:
     for tool in _REQUIRED_TOOLS:
         try:
             info(f"Verifying {tool}...")
-            result = shell.run(["which", tool], check=True, capture_output=True)
-            success(f"Found {tool} at {result.stdout.strip()}")
+            shell.check_version(tool)
         except ShellError as exc:
             raise ClusterError(f"Registry mirror prerequisite not met: '{tool}' not found") from exc
 
@@ -79,12 +81,13 @@ class RegistryMirror:
         return SystemPaths.staging_root() / "registry" / "data"
 
     def start(self) -> None:
-        """Start the registry container.
+        """Start the registry container and wait until it is ready.
 
-        Creates :attr:`data_dir` if it does not already exist, then launches
-        the Docker container in the background.
+        Creates :attr:`data_dir` if it does not already exist, launches the
+        Docker container in the background, then blocks until the registry
+        HTTP API responds.
         """
-        verify_prerequisites()
+        _print_dependency_status()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         shell.run(
             [
@@ -102,6 +105,34 @@ class RegistryMirror:
                 _REGISTRY_IMAGE,
             ]
         )
+        self._wait_for_registry()
+
+    def _wait_for_registry(self, timeout: int = 30, interval: float = 0.5) -> None:
+        """Poll the registry ``/v2/`` endpoint until it responds or timeout.
+
+        Args:
+            timeout: Maximum seconds to wait before raising an error.
+            interval: Seconds to sleep between attempts.
+
+        Raises:
+            ClusterError: If the registry does not respond within *timeout* seconds.
+        """
+        url = f"http://localhost:{self._cfg.port}/v2/"
+        deadline = time.monotonic() + timeout
+        info("Waiting for registry to become ready...")
+        start_time = time.monotonic()
+        while time.monotonic() < deadline:
+            try:
+                response = requests.get(url, timeout=2)
+                if response.ok:
+                    success("Registry is ready")
+                    return
+            except requests.RequestException:
+                total_time_waited = time.monotonic() - start_time
+                warning(f"Registry not ready after {total_time_waited:.1f}s, retrying...")
+                pass
+            time.sleep(interval)
+        raise ClusterError(f"Registry did not become ready within {timeout}s")
 
     def stop(self, force: bool = False) -> None:
         """Stop and remove the registry container.

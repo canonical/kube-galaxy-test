@@ -4,7 +4,7 @@ Kubelet component installation and management.
 Kubelet is the primary node agent running on each node.
 """
 
-from urllib.request import urlopen
+import requests
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.literals import URLs
@@ -39,9 +39,11 @@ class Kubelet(ComponentBase):
 
         # Download kubelet.service from Kubernetes release repository
         service_url = f"{URLs.K8S_RELEASE_BASE}/cmd/krel/templates/latest/kubelet/kubelet.service"
-        with urlopen(service_url) as response:
-            service_content = response.read().decode("utf-8")
-        service_content = service_content.replace("/usr/bin/kubelet", self.install_path)
+        resp = requests.get(service_url, timeout=30)
+        resp.raise_for_status()
+        service_content = resp.text
+        install_path = self.install_path or "/usr/local/bin/kubelet"
+        service_content = service_content.replace("/usr/bin/kubelet", install_path)
 
         self.create_systemd_service("kubelet", service_content)
 

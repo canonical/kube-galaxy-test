@@ -167,6 +167,7 @@ class ComponentBase:
         hook_method = getattr(self, f"{hook_name}_hook", None)
         if not hook_method:
             raise ComponentError(f"{hook_name_caps} hook not implemented for {self.name}")
+        info(f"  {self.name}: {hook_name_caps} on {self.unit.hostname()}...")
         hook_method()
 
     def download_hook(self) -> None:
@@ -515,15 +516,3 @@ class ClusterComponentBase(ComponentBase):
     @abstractmethod
     def pull_kubeconfig(self) -> None:
         """Pull kubeconfig from this unit to the orchestrator's ~/.kube/config."""
-
-    def find_image_retag(self, image: str) -> str:
-        """
-        Find the retagged image name for a given image.
-
-        Args:
-            image: Original image name
-
-        Returns:
-            Retagged image name
-        """
-        return ""

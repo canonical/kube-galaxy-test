@@ -15,9 +15,10 @@ from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.manifest.models import (
     Manifest,
     NodeRole,
+    NodesConfig,
     ProviderConfig,
 )
-from kube_galaxy.pkg.units._base import Unit, UnitProvider
+from kube_galaxy.pkg.units._base import UnitProvider
 from kube_galaxy.pkg.units.local import LocalUnit, LocalUnitProvider
 from kube_galaxy.pkg.units.lxdvm import LXDUnit, LXDUnitProvider
 from kube_galaxy.pkg.units.multipass import MultipassUnit, MultipassUnitProvider
@@ -52,7 +53,8 @@ def test_provider_factory_lxd():
     assert p.is_ephemeral
 
 
-def test_provider_factory_multipass():
+def test_provider_factory_multipass(monkeypatch):
+    monkeypatch.setattr("kube_galaxy.pkg.units.multipass.check_version", lambda _cmd: None)
     m = _manifest_with_provider("multipass", image="ubuntu:24.04")
     p = provider_factory(m)
     assert isinstance(p, MultipassUnitProvider)
@@ -86,13 +88,13 @@ def test_provider_factory_default_is_lxd():
 
 
 def test_local_provider_locate_returns_local_unit():
-    p = LocalUnitProvider()
+    p = LocalUnitProvider(NodesConfig(), "")
     u = p.locate(NodeRole.CONTROL_PLANE, 0)
     assert isinstance(u, LocalUnit)
 
 
 def test_local_provider_provision_returns_local_unit():
-    p = LocalUnitProvider()
+    p = LocalUnitProvider(NodesConfig(), "")
     u = p.provision(NodeRole.CONTROL_PLANE, 0)
     assert isinstance(u, LocalUnit)
 
@@ -103,23 +105,23 @@ def test_local_provider_provision_returns_local_unit():
 
 
 def test_lxd_provider_locate_deterministic_name():
-    p = LXDUnitProvider(image="ubuntu:24.04")
+    p = LXDUnitProvider(NodesConfig(), image="ubuntu:24.04")
     u = p.locate(NodeRole.CONTROL_PLANE, 0)
     assert isinstance(u, LXDUnit)
     assert u.name == "kube-galaxy-control-plane-0"
 
 
 def test_lxd_provider_locate_dedup():
-    """Calling locate twice for the same role/index adds only one entry."""
-    p = LXDUnitProvider(image="ubuntu:24.04")
-    u1 = p.locate(NodeRole.CONTROL_PLANE, 0)
-    u2 = p.locate(NodeRole.CONTROL_PLANE, 0)
+    """locate_all called twice for the same counts adds only one entry per slot."""
+    p = LXDUnitProvider(NodesConfig(), image="ubuntu:24.04")
+    u1 = p.locate_all()[0]
+    u2 = p.locate_all()[0]
     assert u1.name == u2.name
     assert len(p._units) == 1
 
 
 def test_lxd_provider_locate_populates_units_for_deprovision_all(monkeypatch):
-    """After locate, deprovision_all should call lxc delete for the located unit."""
+    """After locate_all, deprovision_all should call lxc delete for the located unit."""
     calls: list[list[str]] = []
 
     def fake_run(cmd, **kwargs):  # type: ignore[misc]
@@ -128,8 +130,8 @@ def test_lxd_provider_locate_populates_units_for_deprovision_all(monkeypatch):
 
     monkeypatch.setattr("subprocess.run", fake_run)
 
-    p = LXDUnitProvider(image="ubuntu:24.04")
-    p.locate(NodeRole.CONTROL_PLANE, 0)
+    p = LXDUnitProvider(NodesConfig(), image="ubuntu:24.04")
+    p.locate_all()
     p.deprovision_all()
 
     assert any("kube-galaxy-control-plane-0" in " ".join(c) for c in calls)
@@ -141,16 +143,16 @@ def test_lxd_provider_locate_populates_units_for_deprovision_all(monkeypatch):
 
 
 def test_multipass_provider_locate_deterministic_name():
-    p = MultipassUnitProvider(image="ubuntu:24.04")
+    p = MultipassUnitProvider(NodesConfig(), image="ubuntu:24.04")
     u = p.locate(NodeRole.WORKER, 1)
     assert isinstance(u, MultipassUnit)
     assert u.name == "kube-galaxy-worker-1"
 
 
 def test_multipass_provider_locate_dedup():
-    p = MultipassUnitProvider(image="ubuntu:24.04")
-    p.locate(NodeRole.WORKER, 0)
-    p.locate(NodeRole.WORKER, 0)
+    p = MultipassUnitProvider(NodesConfig(), image="ubuntu:24.04")
+    p.locate_all()
+    p.locate_all()
     assert len(p._units) == 1
 
 
@@ -181,21 +183,15 @@ components:
     return p
 
 
-def test_setup_cluster_calls_provision(monkeypatch, tmp_path):
-    """setup_cluster must call provider.provision and pass the unit to each component."""
+def test_setup_cluster_calls_provision_all(monkeypatch, tmp_path):
+    """setup_cluster must call provider.provision_all."""
     manifest_path = _minimal_manifest(tmp_path, "local")
 
-    provisioned_unit = MockUnit(_name="prov-unit")
     mock_provider = MagicMock(spec=UnitProvider)
-    mock_provider.provision.return_value = provisioned_unit
-
-    captured_units: list[Unit] = []
 
     def capturing_component(ctx, manifest, config, arch_info, unit=None):  # type: ignore[misc]
-        captured_units.append(unit)
         obj = MagicMock()
         obj.is_cluster_manager = True
-        # Attach all expected hook attributes
         for hook in [
             "download_hook",
             "pre_install_hook",
@@ -216,22 +212,17 @@ def test_setup_cluster_calls_provision(monkeypatch, tmp_path):
     ):
         setup_cluster(str(manifest_path))
 
-    mock_provider.provision.assert_called_once_with(NodeRole.CONTROL_PLANE, 0)
+    mock_provider.provision_all.assert_called_once()
 
 
-def test_teardown_cluster_calls_locate_and_deprovision(monkeypatch, tmp_path):
-    """teardown_cluster must call provider.locate (not provision) and deprovision_all."""
+def test_teardown_cluster_calls_locate_all(monkeypatch, tmp_path):
+    """teardown_cluster must call provider.locate_all (not provision_all)."""
     manifest_path = _minimal_manifest(tmp_path, "local")
 
-    located_unit = MockUnit(_name="loc-unit")
     mock_provider = MagicMock(spec=UnitProvider)
-    mock_provider.locate.return_value = located_unit
     mock_provider.is_ephemeral = False
 
-    captured_units: list[Unit] = []
-
     def capturing_component(ctx, manifest, config, arch_info, unit=None):  # type: ignore[misc]
-        captured_units.append(unit)
         obj = MagicMock()
         for hook in ["stop_hook", "delete_hook", "post_delete_hook"]:
             setattr(obj, hook, MagicMock())
@@ -247,9 +238,9 @@ def test_teardown_cluster_calls_locate_and_deprovision(monkeypatch, tmp_path):
     ):
         teardown_cluster(str(manifest_path))
 
-    # locate (not provision) is called once for the orchestrator
-    mock_provider.locate.assert_called_once_with(NodeRole.CONTROL_PLANE, 0)
-    mock_provider.provision.assert_not_called()
+    # locate_all (not provision_all) is called for teardown
+    mock_provider.locate_all.assert_called_once()
+    mock_provider.provision_all.assert_not_called()
 
 
 def test_teardown_cluster_deprovisions_ephemeral(tmp_path):
@@ -446,7 +437,5 @@ def test_setup_cluster_wires_ctx_services(tmp_path):
 
     assert len(captured_ctxs) == 1
     ctx = captured_ctxs[0]
-    # registry_mirror is set after mirror.start() and persists beyond setup
     assert ctx.registry_mirror is mock_mirror_instance
-    # artifact_server is cleared after the ArtifactServer context exits
     assert ctx.artifact_server is None

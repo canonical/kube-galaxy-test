@@ -254,9 +254,6 @@ def test_load_manifest_remote_install_repo_not_local(sample_manifest_file):
         assert comp.installation.repo.base_url != ""
 
 
-# --- test.environment tests ---
-
-
 def test_load_manifest_test_environment_loads_correctly(tmp_manifest_dir):
     """Test that test.environment key-value pairs are loaded correctly."""
     manifest_file = tmp_manifest_dir / "test.yaml"
@@ -452,3 +449,23 @@ components:
 
     with pytest.raises(ValueError, match="Component cncf-quick"):
         load_manifest(manifest_file)
+
+
+def test_load_manifest_provider_nodes_string_coerced_to_int(tmp_manifest_dir):
+    """String node counts in provider.nodes are coerced to int."""
+    manifest_file = tmp_manifest_dir / "provider-nodes.yaml"
+    manifest_file.write_text(
+        """
+name: coerce-test
+kubernetes-version: "1.35.0"
+provider:
+  nodes:
+    control-plane: "2"
+    worker: "3"
+"""
+    )
+    manifest = load_manifest(manifest_file)
+    assert manifest.provider.nodes.control_plane == 2
+    assert isinstance(manifest.provider.nodes.control_plane, int)
+    assert manifest.provider.nodes.worker == 3
+    assert isinstance(manifest.provider.nodes.worker, int)
