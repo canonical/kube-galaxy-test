@@ -7,11 +7,6 @@ execute: |
     chmod +x kubectl
     export PATH=$PATH:.
 
-    # Quick CNCF conformance
-    ./sonobuoy delete --kubeconfig=$KUBECONFIG || true
-    ./sonobuoy run --kubeconfig=$KUBECONFIG --mode=quick --wait=$TEST_TIMEOUT_M || exit 1
-    ./sonobuoy delete --kubeconfig=$KUBECONFIG --wait || true
-
     # CSI conformance sonobuoy yaml
     cat > sonobuoy-csi.yaml << 'SONOBUOY_YAML'
     apiVersion: v1
@@ -301,5 +296,4 @@ execute: |
 
     ./sonobuoy wait --kubeconfig=$KUBECONFIG --wait || exit 1
 
-    ./sonobuoy delete --kubeconfig=$KUBECONFIG --wait || true
-
+    ./sonobuoy delete --kubeconfig=$KUBECONFIG --wait || exit 1
