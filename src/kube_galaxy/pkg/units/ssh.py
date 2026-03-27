@@ -128,7 +128,7 @@ class SSHUnitProvider(UnitProvider):
         if role == NodeRole.CONTROL_PLANE:
             return index
         elif role == NodeRole.WORKER:
-            return self._counts.control_plane + index
+            return self._node_cfg.control_plane + index
         else:
             raise ValueError(f"Unknown role: {role}")
 

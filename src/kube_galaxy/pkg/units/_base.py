@@ -230,10 +230,10 @@ class Unit(ABC):
 class UnitProvider(ABC):
     """Owns the machine lifecycle  provisioning and deprovisioning."""
 
-    def __init__(self, counts: NodesConfig, image: str) -> None:
+    def __init__(self, node_cfg: NodesConfig, image: str) -> None:
         self._image = image
         self._units: list[Unit] = []
-        self._counts = counts
+        self._node_cfg = node_cfg
 
     def _track(self, unit: Unit) -> None:
         """Add *unit* to the tracked set if not already present."""
@@ -281,8 +281,8 @@ class UnitProvider(ABC):
     def locate_all(self) -> list[Unit]:
         """Return Units for all machines defined in the manifest, without provisioning."""
         ranges = {
-            NodeRole.CONTROL_PLANE: self._counts.control_plane,
-            NodeRole.WORKER: self._counts.worker,
+            NodeRole.CONTROL_PLANE: self._node_cfg.control_plane,
+            NodeRole.WORKER: self._node_cfg.worker,
         }
         for role in NodeRole:
             for index in range(ranges[role]):
@@ -292,8 +292,8 @@ class UnitProvider(ABC):
     def provision_all(self) -> list[Unit]:
         """Provision machines for all roles and indices defined in the manifest."""
         ranges = {
-            NodeRole.CONTROL_PLANE: self._counts.control_plane,
-            NodeRole.WORKER: self._counts.worker,
+            NodeRole.CONTROL_PLANE: self._node_cfg.control_plane,
+            NodeRole.WORKER: self._node_cfg.worker,
         }
         for role in NodeRole:
             for index in range(ranges[role]):

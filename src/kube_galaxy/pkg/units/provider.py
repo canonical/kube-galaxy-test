@@ -15,18 +15,18 @@ def provider_factory(manifest: Manifest) -> UnitProvider:
     (``provider.type`` defaults to ``"lxd"``).
     """
     cfg: ProviderConfig = manifest.provider
-    nodes: NodesConfig = manifest.provider.nodes
+    node_cfg: NodesConfig = manifest.provider.nodes
     match cfg.type:
         case "local":
-            return LocalUnitProvider(nodes, image=cfg.image)
+            return LocalUnitProvider(node_cfg, image=cfg.image)
         case "lxd":
             lxdvm.print_dependency_status()
-            return lxdvm.LXDUnitProvider(nodes, image=cfg.image)
+            return lxdvm.LXDUnitProvider(node_cfg, image=cfg.image)
         case "multipass":
             multipass.print_dependency_status()
-            return multipass.MultipassUnitProvider(nodes, image=cfg.image)
+            return multipass.MultipassUnitProvider(node_cfg, image=cfg.image)
         case "ssh":
             ssh.print_dependency_status()
-            return ssh.SSHUnitProvider(nodes, image="", hosts=cfg.hosts)
+            return ssh.SSHUnitProvider(node_cfg, image="", hosts=cfg.hosts)
         case _:
             raise ValueError(f"Unknown provider type: {cfg.type!r}")

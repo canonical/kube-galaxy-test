@@ -121,8 +121,7 @@ class MultipassUnitProvider(UnitProvider):
         )
         if result.returncode != 0:
             raise ComponentError(f"Failed to launch Multipass VM '{name}': {result.stderr}")
-        unit: Unit = MultipassUnit(name, role, index)
-        return unit
+        return MultipassUnit(name, role, index)
 
     def locate(self, role: NodeRole, index: int) -> Unit:
         name = f"kube-galaxy-{role.value}-{index}"

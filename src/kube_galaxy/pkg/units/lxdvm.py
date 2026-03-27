@@ -147,8 +147,7 @@ class LXDUnitProvider(UnitProvider):
         )
         if result.returncode != 0:
             raise ComponentError(f"Failed to launch LXD VM '{name}': {result.stderr}")
-        unit: Unit = LXDUnit(name, role, index)
-        return unit
+        return LXDUnit(name, role, index)
 
     def locate(self, role: NodeRole, index: int) -> Unit:
         name = f"kube-galaxy-{role.value}-{index}"
