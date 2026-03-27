@@ -130,7 +130,7 @@ def _component_kill_timeout(component: ComponentConfig) -> str | None:
     return None
 
 
-def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> list[str]:
+def _generate_orchestration_spread_yaml(k8s_version: str, components: list[ComponentConfig]) -> list[str]:
     """
     Generate spread.yaml from template for component test orchestration.
 
@@ -182,6 +182,7 @@ def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> li
                     "SYSTEM_ARCH": arch_info.system,
                     "K8S_ARCH": arch_info.k8s,
                     "IMAGE_ARCH": arch_info.image,
+                    "K8S_VERSION": k8s_version,
                     **each.test.environment,
                 },
             }
@@ -286,7 +287,8 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
         raise ClusterError("Component validation failed")
 
     # Generate orchestration spread.yaml
-    component_suites = _generate_orchestration_spread_yaml(spread_components)
+    k8s_version = manifest.kubernetes_version
+    component_suites = _generate_orchestration_spread_yaml(k8s_version, spread_components)
 
     # Track test results
     test_results = []
