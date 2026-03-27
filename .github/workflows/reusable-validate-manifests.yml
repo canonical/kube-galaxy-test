@@ -1,0 +1,92 @@
+name: Reusable Validate Manifests
+
+on:
+  workflow_call:
+    inputs:
+      manifests-json:
+        description: >
+          JSON array of manifest objects, e.g.
+          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml"}]
+        type: string
+        required: true
+      manifests-repo:
+        description: >
+          Repository containing manifests (owner/repo). Leave empty when the
+          caller repository already contains the manifests.
+        type: string
+        default: ""
+      manifests-ref:
+        description: "Git ref to check out from manifests-repo"
+        type: string
+        default: "main"
+      kube-galaxy-ref:
+        description: "Git ref for kube-galaxy-test checkout"
+        type: string
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      # Internal call (manifests live in this repo): use the caller's own context.
+      - name: Checkout kube-galaxy-test (internal)
+        if: inputs.manifests-repo == ''
+        uses: actions/checkout@v6
+
+      # External call (manifests live in a separate repo): check out
+      # canonical/kube-galaxy-test at the caller-specified ref.
+      - name: Checkout kube-galaxy-test (external)
+        if: inputs.manifests-repo != ''
+        uses: actions/checkout@v6
+        with:
+          repository: canonical/kube-galaxy-test
+          ref: ${{ inputs.kube-galaxy-ref }}
+
+      - name: Checkout manifests repo
+        if: inputs.manifests-repo != ''
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.manifests-repo }}
+          ref: ${{ inputs.manifests-ref }}
+          path: _manifests
+
+      - name: Setup Astral UV
+        uses: astral-sh/setup-uv@v7.2.1
+        with:
+          python-version: "3.12"
+
+      - name: Install kube-galaxy
+        shell: bash
+        run: |
+          uv tool install -e .
+          kube-galaxy --version
+
+      - name: Validate manifests
+        shell: bash
+        run: |
+          MANIFESTS='${{ inputs.manifests-json }}'
+          FAILED=0
+
+          for row in $(echo "$MANIFESTS" | jq -r '.[] | ."manifest-file"'); do
+            if [ -n "${{ inputs.manifests-repo }}" ]; then
+              MANIFEST_PATH="_manifests/$row"
+            else
+              MANIFEST_PATH="$row"
+            fi
+
+            echo "--- Validating: $MANIFEST_PATH"
+            if ! kube-galaxy validate --manifest "$MANIFEST_PATH"; then
+              echo "FAILED: $MANIFEST_PATH"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 1 ]; then
+            echo "One or more manifests failed validation"
+            exit 1
+          fi
+
+          echo "All manifests validated successfully"
