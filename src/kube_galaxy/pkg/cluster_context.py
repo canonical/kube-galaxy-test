@@ -43,3 +43,19 @@ class ClusterContext:
     def units(self, value: Iterable[Unit]) -> None:
         """Set the list of Units in the cluster, indexed by (role, index)."""
         self._units = {(unit.role, unit.index): unit for unit in value}
+
+    @property
+    def control_plane_units(self) -> dict[int, Unit]:
+        """Lookup dict for control-plane Units, keyed by index."""
+        return {
+            index: unit
+            for (role, index), unit in self._units.items()
+            if role == NodeRole.CONTROL_PLANE
+        }
+
+    @property
+    def worker_units(self) -> dict[int, Unit]:
+        """Lookup dict for worker Units, keyed by index."""
+        return {
+            index: unit for (role, index), unit in self._units.items() if role == NodeRole.WORKER
+        }
