@@ -11,7 +11,7 @@ from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError, check_version
 
 
-def _print_dependency_status() -> None:
+def print_dependency_status() -> None:
     """Verify that ``multipass`` is available.
 
     Raises:
@@ -30,7 +30,8 @@ class MultipassUnit(Unit):
     All commands run as root inside the VM so ``privileged=True`` is ignored.
     """
 
-    def __init__(self, vm_name: str) -> None:
+    def __init__(self, vm_name: str, role: NodeRole, index: int) -> None:
+        super().__init__(role, index)
         self._name = vm_name
 
     @property
@@ -105,11 +106,6 @@ class MultipassUnit(Unit):
 class MultipassUnitProvider(UnitProvider):
     """Provisions and destroys Multipass VMs."""
 
-    def __init__(self, image: str = "ubuntu:24.04") -> None:
-        super().__init__()
-        _print_dependency_status()
-        self._image = image
-
     @property
     def is_ephemeral(self) -> bool:
         return True
@@ -125,15 +121,11 @@ class MultipassUnitProvider(UnitProvider):
         )
         if result.returncode != 0:
             raise ComponentError(f"Failed to launch Multipass VM '{name}': {result.stderr}")
-        unit: Unit = MultipassUnit(name)
-        self._track(unit)
-        return unit
+        return MultipassUnit(name, role, index)
 
     def locate(self, role: NodeRole, index: int) -> Unit:
         name = f"kube-galaxy-{role.value}-{index}"
-        unit: Unit = MultipassUnit(name)
-        self._track(unit)
-        return unit
+        return MultipassUnit(name, role, index)
 
     def deprovision(self, unit: Unit) -> None:
         info(f"Deprovisioning Multipass VM '{unit.name}'...")

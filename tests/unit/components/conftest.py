@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from kube_galaxy.pkg.cluster_context import ClusterContext
+from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.units._base import RunResult, Unit
 from kube_galaxy.pkg.utils.detector import ArchInfo, get_arch_info
 
@@ -68,6 +69,9 @@ class MockUnit(Unit):
 
     def enlist(self, timeout: float | None = None) -> None:  # type: ignore[override]
         pass
+
+    def __post_init__(self) -> None:
+        super().__init__(NodeRole.CONTROL_PLANE, 0)
 
 
 @pytest.fixture

@@ -12,6 +12,8 @@ from kube_galaxy.pkg.manifest.models import (
     InstallConfig,
     InstallMethod,
     Manifest,
+    NodesConfig,
+    ProviderConfig,
     RegistryConfig,
     RepoInfo,
 )
@@ -209,5 +211,40 @@ def test_validate_registry_disabled_skips_port_check():
     """Port validation is skipped when registry.enabled is False."""
     manifest = _minimal_manifest(
         artifact=ArtifactConfig(registry=RegistryConfig(enabled=False, port=0))
+    )
+    validate_manifest(manifest)  # should not raise
+
+
+def test_validate_provider_nodes_control_plane_zero_rejected():
+    """provider.nodes.control-plane: 0 must be rejected."""
+    manifest = _minimal_manifest(
+        provider=ProviderConfig(nodes=NodesConfig(control_plane=0, worker=0))
+    )
+    with pytest.raises(ValueError, match=r"provider\.nodes\.control-plane"):
+        validate_manifest(manifest)
+
+
+def test_validate_provider_nodes_control_plane_negative_rejected():
+    """Negative provider.nodes.control-plane must be rejected."""
+    manifest = _minimal_manifest(
+        provider=ProviderConfig(nodes=NodesConfig(control_plane=-1, worker=0))
+    )
+    with pytest.raises(ValueError, match=r"provider\.nodes\.control-plane"):
+        validate_manifest(manifest)
+
+
+def test_validate_provider_nodes_worker_negative_rejected():
+    """Negative provider.nodes.worker must be rejected."""
+    manifest = _minimal_manifest(
+        provider=ProviderConfig(nodes=NodesConfig(control_plane=1, worker=-1))
+    )
+    with pytest.raises(ValueError, match=r"provider\.nodes\.worker"):
+        validate_manifest(manifest)
+
+
+def test_validate_provider_nodes_valid_passes():
+    """Valid provider.nodes values should pass validation without error."""
+    manifest = _minimal_manifest(
+        provider=ProviderConfig(nodes=NodesConfig(control_plane=1, worker=0))
     )
     validate_manifest(manifest)  # should not raise

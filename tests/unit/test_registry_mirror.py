@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import requests
 
 import kube_galaxy.pkg.utils.registry_mirror as mirror_mod
 from kube_galaxy.pkg.literals import SystemPaths, URLs
@@ -25,6 +26,12 @@ def patched_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 def _noop_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+
+class _OkResponse:
+    """Minimal fake HTTP response with ``ok = True``."""
+
+    ok = True
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +85,7 @@ class TestVerifyPrerequisites:
         verified: list[bool] = []
         monkeypatch.setattr(mirror_mod, "_print_dependency_status", lambda: verified.append(True))
         monkeypatch.setattr(mirror_mod.shell, "run", _noop_run)
+        monkeypatch.setattr(mirror_mod.requests, "get", lambda *a, **kw: _OkResponse())
         RegistryMirror(RegistryConfig()).start()
         assert verified == [True]
 
@@ -115,6 +123,7 @@ class TestRegistryMirrorStart:
     ) -> None:
         """start() creates data_dir before launching the container."""
         monkeypatch.setattr(mirror_mod.shell, "run", _noop_run)
+        monkeypatch.setattr(mirror_mod.requests, "get", lambda *a, **kw: _OkResponse())
         RegistryMirror(RegistryConfig()).start()
         assert (tmp_path / "registry" / "data").is_dir()
 
@@ -126,6 +135,7 @@ class TestRegistryMirrorStart:
         monkeypatch.setattr(
             mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
         )
+        monkeypatch.setattr(mirror_mod.requests, "get", lambda *a, **kw: _OkResponse())
         cfg = RegistryConfig(remote_registry="registry.k8s.io", port=5000)
         RegistryMirror(cfg).start()
 
@@ -138,6 +148,74 @@ class TestRegistryMirrorStart:
         assert cmd[cmd.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
         assert not any("REGISTRY_PROXY_REMOTEURL" in arg for arg in cmd)
         assert cmd[-1] == "registry:3"
+
+
+# ---------------------------------------------------------------------------
+# RegistryMirror — _wait_for_registry
+# ---------------------------------------------------------------------------
+
+
+class TestWaitForRegistry:
+    def test_returns_immediately_when_ready(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_wait_for_registry() returns without error when /v2/ responds ok."""
+        monkeypatch.setattr(mirror_mod.requests, "get", lambda *a, **kw: _OkResponse())
+        RegistryMirror(RegistryConfig(port=5000))._wait_for_registry()  # must not raise
+
+    def test_polls_correct_url(self, patched_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """_wait_for_registry() polls http://localhost:{port}/v2/."""
+        polled: list[str] = []
+
+        def fake_get(url: str, **kw: object) -> _OkResponse:
+            polled.append(url)
+            return _OkResponse()
+
+        monkeypatch.setattr(mirror_mod.requests, "get", fake_get)
+        RegistryMirror(RegistryConfig(port=5000))._wait_for_registry()
+        assert polled == ["http://localhost:5000/v2/"]
+
+    def test_retries_after_connection_error_then_succeeds(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_wait_for_registry() retries on ConnectionError and succeeds when ready."""
+        attempts = [0]
+
+        def fake_get(url: str, **kw: object) -> _OkResponse:
+            attempts[0] += 1
+            if attempts[0] < 3:
+                raise requests.ConnectionError("connection refused")
+            return _OkResponse()
+
+        monkeypatch.setattr(mirror_mod.requests, "get", fake_get)
+        monkeypatch.setattr(mirror_mod.time, "sleep", lambda _: None)
+        RegistryMirror(RegistryConfig(port=5000))._wait_for_registry()
+        assert attempts[0] == 3
+
+    def test_raises_cluster_error_when_timeout_exceeded(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_wait_for_registry() raises ClusterError when the deadline passes."""
+        monkeypatch.setattr(
+            mirror_mod.requests,
+            "get",
+            lambda *a, **kw: (_ for _ in ()).throw(requests.ConnectionError("refused")),
+        )
+        monkeypatch.setattr(mirror_mod.time, "sleep", lambda _: None)
+        with pytest.raises(ClusterError, match="Registry did not become ready"):
+            RegistryMirror(RegistryConfig(port=5000))._wait_for_registry(timeout=0)
+
+    def test_start_calls_wait_for_registry(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """start() calls _wait_for_registry() after docker run."""
+        waited: list[bool] = []
+        monkeypatch.setattr(mirror_mod.shell, "run", _noop_run)
+        monkeypatch.setattr(
+            RegistryMirror, "_wait_for_registry", lambda self, **kw: waited.append(True)
+        )
+        RegistryMirror(RegistryConfig()).start()
+        assert waited == [True]
 
 
 # ---------------------------------------------------------------------------

@@ -7,16 +7,18 @@ from typing import TYPE_CHECKING
 from kube_galaxy.pkg.utils.client import apply_manifest, create, kubectl
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
-from ._base import _fetch_to_temp, _InstallStrategy
+from ._base import _fetch_to_temp, _InstallStrategy, only_lead_control_plane
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
 
 
+@only_lead_control_plane
 def _download(comp: ComponentBase) -> None:
     comp.manifest_path = _fetch_to_temp(comp)
 
 
+@only_lead_control_plane
 def _bootstrap(comp: ComponentBase) -> None:
     comp_name = comp.config.name
     if not comp.manifest_path or not comp.manifest_path.exists():
@@ -27,6 +29,7 @@ def _bootstrap(comp: ComponentBase) -> None:
         raise ComponentError(f"Failed to apply manifest for {comp_name}") from e
 
 
+@only_lead_control_plane
 def _verify(comp: ComponentBase) -> None:
     if not comp.manifest_path or not comp.manifest_path.exists():
         raise ComponentError(f"{comp.config.name} manifest not downloaded")

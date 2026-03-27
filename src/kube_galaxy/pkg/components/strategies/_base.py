@@ -8,10 +8,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
+from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.utils.components import download_file, format_component_pattern
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
+
+    CompCallable = Callable[[ComponentBase], None]
 
 
 def _noop(comp: ComponentBase) -> None:
@@ -54,3 +57,14 @@ class _TestStrategy:
     bootstrap: Callable[[ComponentBase], None] = _noop
     verify: Callable[[ComponentBase], None] = _noop
     remove: Callable[[ComponentBase], None] = _noop
+
+
+def only_lead_control_plane(func: CompCallable) -> CompCallable:
+    """Only execute the function for the lead control-plane unit."""
+
+    def wrapper(comp: ComponentBase) -> None:
+        if (comp.unit.role, comp.unit.index) != (NodeRole.CONTROL_PLANE, 0):
+            return  # Skip non-lead control-plane units
+        return func(comp)
+
+    return wrapper
