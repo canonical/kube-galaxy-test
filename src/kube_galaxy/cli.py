@@ -78,6 +78,11 @@ def cleanup_cmd(
     force: bool = typer.Option(
         False, "--force", "-f", help="Continue cleanup even if errors occur"
     ),
+    update_kubeconfig: bool = typer.Option(
+        False,
+        "--update-kubeconfig",
+        help="Remove the 'kube-galaxy' context from ~/.kube/config without prompting",
+    ),
 ) -> None:
     """Clean up temporary files and test clusters.
 
@@ -86,14 +91,19 @@ def cleanup_cmd(
         kube-galaxy cleanup cluster  # uses active manifest from last setup
         kube-galaxy cleanup cluster manifests/baseline-k8s-1.35.yaml
         kube-galaxy cleanup all --force
+        kube-galaxy cleanup all --update-kubeconfig
     """
     match target:
         case "files":
             cleanup.cleanup_files()
         case "cluster":
-            cleanup.cleanup_clusters(_resolve_manifest(manifest), force)
+            cleanup.cleanup_clusters(
+                _resolve_manifest(manifest), force, update_kubeconfig=update_kubeconfig
+            )
         case "all":
-            cleanup.cleanup_all(_resolve_manifest(manifest), force)
+            cleanup.cleanup_all(
+                _resolve_manifest(manifest), force, update_kubeconfig=update_kubeconfig
+            )
         case _:
             typer.echo(f"Unknown cleanup target: {target}")
             raise typer.Exit(code=1)
@@ -102,13 +112,19 @@ def cleanup_cmd(
 @app.command(name="setup")
 def setup_cmd(
     manifest: str = typer.Argument(..., help="Path to manifest file"),
+    update_kubeconfig: bool = typer.Option(
+        False,
+        "--update-kubeconfig",
+        help="Merge the 'kube-galaxy' context into ~/.kube/config without prompting",
+    ),
 ) -> None:
     """Provision a cluster from a manifest file.
 
     Example:
         kube-galaxy setup manifests/baseline-k8s-1.35.yaml
+        kube-galaxy setup manifests/baseline-k8s-1.35.yaml --update-kubeconfig
     """
-    setup.setup(manifest)
+    setup.setup(manifest, update_kubeconfig=update_kubeconfig)
 
 
 @app.command(name="status")
