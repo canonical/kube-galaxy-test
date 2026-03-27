@@ -2,38 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.utils.client import apply_manifest, create, kubectl
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
-from ._base import _fetch_to_temp, _InstallStrategy
+from ._base import _fetch_to_temp, _InstallStrategy, only_lead_control_plane
 
 if TYPE_CHECKING:
     from kube_galaxy.pkg.components._base import ComponentBase
 
-    CompCallable = Callable[[ComponentBase], None]
 
-
-def skip_if_not_control_plane(func: CompCallable) -> CompCallable:
-    """Skip install hooks for non-control-plane units since they won't have kubectl access."""
-
-    def wrapper(comp: ComponentBase) -> None:
-        if (comp.unit.role, comp.unit.index) != (NodeRole.CONTROL_PLANE, 0):
-            return  # Skip non-control-plane units
-        return func(comp)
-
-    return wrapper
-
-
-@skip_if_not_control_plane
+@only_lead_control_plane
 def _download(comp: ComponentBase) -> None:
     comp.manifest_path = _fetch_to_temp(comp)
 
 
-@skip_if_not_control_plane
+@only_lead_control_plane
 def _bootstrap(comp: ComponentBase) -> None:
     comp_name = comp.config.name
     if not comp.manifest_path or not comp.manifest_path.exists():
@@ -44,7 +29,7 @@ def _bootstrap(comp: ComponentBase) -> None:
         raise ComponentError(f"Failed to apply manifest for {comp_name}") from e
 
 
-@skip_if_not_control_plane
+@only_lead_control_plane
 def _verify(comp: ComponentBase) -> None:
     if not comp.manifest_path or not comp.manifest_path.exists():
         raise ComponentError(f"{comp.config.name} manifest not downloaded")
