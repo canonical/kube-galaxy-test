@@ -54,7 +54,7 @@ jobs:
           path: _manifests
 
       - name: Setup Astral UV
-        uses: astral-sh/setup-uv@v7.2.1
+        uses: astral-sh/setup-uv@v7.6.0
         with:
           python-version: "3.12"
 
