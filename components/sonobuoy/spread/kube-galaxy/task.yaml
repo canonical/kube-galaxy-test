@@ -6,7 +6,7 @@ execute: |
     curl -LO "https://dl.k8s.io/release/v${K8S_VERSION}/bin/linux/${K8S_ARCH}/kubectl" || exit 1
     chmod +x kubectl
     export PATH=$PATH:.
-  
+
     cat > driver.yaml << EOF
     StorageClass:
       FromExistingClassName: csi-hostpath
@@ -58,14 +58,6 @@ execute: |
       command:
       - /run_e2e.sh
       env:
-      - name: E2E_EXTRA_ARGS
-        value: --progress-report-url=http://localhost:8099/progress -storage.testdriver=/tmp/csi-cfg/driver.yaml
-      - name: E2E_FOCUS
-        value: External.Storage.*hostpath.csi.k8s.io
-      - name: E2E_PARALLEL
-        value: "true"
-      - name: E2E_SKIP
-        value: \[Feature:|\[Disruptive\]
       - name: E2E_USE_GO_RUNNER
         value: "true"
       image: registry.k8s.io/conformance:v${K8S_VERSION}
@@ -83,6 +75,7 @@ execute: |
     --plugin csi-plugin.yaml \
     --plugin-env=e2e.E2E_FOCUS="External.Storage.*hostpath.csi.k8s.io" \
     --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
+    --plugin-env=E2E_EXTRA_ARGS="--progress-report-url=http://localhost:8099/progress -storage.testdriver=/tmp/csi-cfg/driver.yaml"
     --plugin-env=e2e.E2E_PARALLEL="true" || exit 1
 
     kubectl wait --for=condition=Ready pod/sonobuoy -n sonobuoy \
