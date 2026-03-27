@@ -52,7 +52,8 @@ def test_provider_factory_lxd():
     assert p.is_ephemeral
 
 
-def test_provider_factory_multipass():
+def test_provider_factory_multipass(monkeypatch):
+    monkeypatch.setattr("kube_galaxy.pkg.units.multipass.check_version", lambda _cmd: None)
     m = _manifest_with_provider("multipass", image="ubuntu:24.04")
     p = provider_factory(m)
     assert isinstance(p, MultipassUnitProvider)
@@ -140,14 +141,16 @@ def test_lxd_provider_locate_populates_units_for_deprovision_all(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_multipass_provider_locate_deterministic_name():
+def test_multipass_provider_locate_deterministic_name(monkeypatch):
+    monkeypatch.setattr("kube_galaxy.pkg.units.multipass.check_version", lambda _cmd: None)
     p = MultipassUnitProvider(image="ubuntu:24.04")
     u = p.locate(NodeRole.WORKER, 1)
     assert isinstance(u, MultipassUnit)
     assert u.name == "kube-galaxy-worker-1"
 
 
-def test_multipass_provider_locate_dedup():
+def test_multipass_provider_locate_dedup(monkeypatch):
+    monkeypatch.setattr("kube_galaxy.pkg.units.multipass.check_version", lambda _cmd: None)
     p = MultipassUnitProvider(image="ubuntu:24.04")
     p.locate(NodeRole.WORKER, 0)
     p.locate(NodeRole.WORKER, 0)

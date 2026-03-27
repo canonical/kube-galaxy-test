@@ -8,7 +8,20 @@ from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
-from kube_galaxy.pkg.utils.shell import ShellError
+from kube_galaxy.pkg.utils.shell import ShellError, check_version
+
+
+def _print_dependency_status() -> None:
+    """Verify that ``multipass`` is available.
+
+    Raises:
+        ComponentError: If ``multipass`` is not found.
+    """
+    try:
+        info("Verifying multipass...")
+        check_version("multipass")
+    except ShellError as exc:
+        raise ComponentError("MultipassUnit prerequisite not met: 'multipass' not found") from exc
 
 
 class MultipassUnit(Unit):
@@ -94,6 +107,7 @@ class MultipassUnitProvider(UnitProvider):
 
     def __init__(self, image: str = "ubuntu:24.04") -> None:
         super().__init__()
+        _print_dependency_status()
         self._image = image
 
     @property
