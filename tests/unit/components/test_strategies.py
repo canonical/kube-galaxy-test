@@ -331,7 +331,7 @@ class TestBinaryArchiveInstall:
     def test_install_transfers_archive_extracts_and_installs(
         self, monkeypatch, tmp_path, arch_info, mock_unit
     ):
-        """_install transfers archive to node, extracts it, and installs matching binaries."""
+        """_install delegates to install_from_archive: transfers, extracts, installs."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
             "https://example.com/archive.tar.gz",
@@ -382,11 +382,9 @@ class TestBinaryArchiveInstall:
         assert len(alt_calls) == 1
         assert alt_calls[0][2] == f"{SystemPaths.USR_LOCAL_BIN}/mycomp"
 
-        # Temp files (archive + extracted dir) were cleaned up on node
+        # No cleanup — teardown handles removal of node temp files
         rm_calls = [cmd for cmd in all_run_cmds if cmd[0] == "rm"]
-        assert len(rm_calls) == 1
-        assert node_archive in rm_calls[0]
-        assert "/opt/kube-galaxy/mycomp/temp/extracted" in rm_calls[0]
+        assert len(rm_calls) == 0
 
         # install_path is set for the component-named binary
         assert comp.install_path == f"{SystemPaths.USR_LOCAL_BIN}/mycomp"
