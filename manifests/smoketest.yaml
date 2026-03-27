@@ -303,7 +303,7 @@ components:
     test:
       method: spread
       repo:
-        base-url: local://components/sonobuoy/
+        base-url: local://components/e2e-csi/
         subdir: spread/kube-galaxy
       source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
       environment:
