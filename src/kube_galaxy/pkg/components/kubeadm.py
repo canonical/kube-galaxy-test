@@ -89,7 +89,7 @@ class Kubeadm(ClusterComponentBase):
         control plane settings.
         """
         config["nodeRegistration"]["taints"] = []
-        config["nodeRegistration"]["name"] = self.unit.hostname()
+        config["nodeRegistration"]["name"] = self.unit.hostname
         config["localAPIEndpoint"]["advertiseAddress"] = "0.0.0.0"
 
     def _kubeadm_config(self) -> None:
@@ -187,7 +187,7 @@ class Kubeadm(ClusterComponentBase):
         # token is the full join command returned by kubeadm token create --print-join-command
         # shlex.split() safely parses the command string into a list for subprocess execution
         cmd = shlex.split(token)
-        cmd.append(f"--node-name={self.unit.hostname()}")
+        cmd.append(f"--node-name={self.unit.hostname}")
         if role == NodeRole.CONTROL_PLANE:
             ## TODO: Support multiple control-plane nodes with a VIP
             cmd.append("--control-plane")

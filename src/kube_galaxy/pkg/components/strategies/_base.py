@@ -45,7 +45,7 @@ class _InstallStrategy:
     configure: Callable[[ComponentBase], None] = _noop
     bootstrap: Callable[[ComponentBase], None] = _noop
     verify: Callable[[ComponentBase], None] = _noop
-    remove: Callable[[ComponentBase], None] = _noop
+    delete: Callable[[ComponentBase], None] = _noop
 
 
 @dataclass
@@ -56,7 +56,7 @@ class _TestStrategy:
     configure: Callable[[ComponentBase], None] = _noop
     bootstrap: Callable[[ComponentBase], None] = _noop
     verify: Callable[[ComponentBase], None] = _noop
-    remove: Callable[[ComponentBase], None] = _noop
+    delete: Callable[[ComponentBase], None] = _noop
 
 
 def only_lead_control_plane(func: CompCallable) -> CompCallable:
