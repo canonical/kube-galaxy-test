@@ -25,7 +25,7 @@ from kube_galaxy.pkg.manifest.models import RegistryConfig
 from kube_galaxy.pkg.utils import shell
 from kube_galaxy.pkg.utils.detector import detect_ip
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.logging import info, success
+from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.shell import ShellError
 
 _CONTAINER_NAME = "registry-cache"
@@ -33,7 +33,7 @@ _REGISTRY_IMAGE = "registry:3"
 _REQUIRED_TOOLS = ("docker", "skopeo")
 
 
-def verify_prerequisites() -> None:
+def _print_dependency_status() -> None:
     """Verify that ``docker`` and ``skopeo`` are available on PATH.
 
     Raises:
@@ -42,8 +42,7 @@ def verify_prerequisites() -> None:
     for tool in _REQUIRED_TOOLS:
         try:
             info(f"Verifying {tool}...")
-            result = shell.run(["which", tool], check=True, capture_output=True)
-            success(f"Found {tool} at {result.stdout.strip()}")
+            shell.check_version(tool)
         except ShellError as exc:
             raise ClusterError(f"Registry mirror prerequisite not met: '{tool}' not found") from exc
 
@@ -84,7 +83,7 @@ class RegistryMirror:
         Creates :attr:`data_dir` if it does not already exist, then launches
         the Docker container in the background.
         """
-        verify_prerequisites()
+        _print_dependency_status()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         shell.run(
             [

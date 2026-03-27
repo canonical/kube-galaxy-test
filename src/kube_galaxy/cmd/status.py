@@ -1,6 +1,5 @@
 """Status command handler."""
 
-import shutil
 from collections.abc import Callable
 from functools import partial
 
@@ -19,8 +18,8 @@ from kube_galaxy.pkg.utils.client import (
     wait_for_pods,
 )
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.logging import error, info, print_dict, section, success, warning
-from kube_galaxy.pkg.utils.shell import run
+from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
+from kube_galaxy.pkg.utils.shell import check_installed, check_version
 
 
 def status(manifest_path: str, wait: bool = False, timeout: int = 300) -> None:
@@ -45,10 +44,8 @@ def status(manifest_path: str, wait: bool = False, timeout: int = 300) -> None:
 def _print_dependency_status() -> None:
     """Print required command dependency status."""
     info("Dependencies:")
-    deps = {
-        "spread": _check_command("spread"),
-    }
-    print_dict(deps)
+    check_installed("spread")
+    check_version("kubectl")
 
 
 def _print_active_manifest(active: str) -> None:
@@ -61,10 +58,6 @@ def _print_active_manifest(active: str) -> None:
 
 def _print_cluster_context(unit: Unit) -> None:
     """Print active cluster context and current node table if available."""
-    if not shutil.which("kubectl"):
-        warning("kubectl not available; skipping cluster checks")
-        return
-
     info("")
     try:
         context = get_context(unit)
@@ -82,9 +75,6 @@ def _print_cluster_context(unit: Unit) -> None:
 
 def _verify_cluster_health(unit: Unit, timeout: int) -> None:
     """Wait for cluster readiness and print summary tables."""
-    if not shutil.which("kubectl"):
-        error("kubectl is required for --wait health checks", show_traceback=False)
-        raise typer.Exit(code=1)
 
     section("Cluster Health Verification")
     info("Waiting for nodes to be Ready...")
@@ -112,31 +102,3 @@ def _print_command_output(command: Callable[[], str], title: str) -> None:
     except ClusterError as exc:
         error(f"Failed to run: {title}", show_traceback=False)
         raise typer.Exit(code=1) from exc
-
-
-def _check_command(cmd: str) -> str:
-    """Check if a command is installed and return status."""
-    if shutil.which(cmd):
-        try:
-            if cmd == "kubectl":
-                result = run(
-                    [cmd, "version", "--client"],
-                    capture_output=True,
-                    check=False,
-                )
-            else:
-                result = run(
-                    [cmd, "--version"],
-                    capture_output=True,
-                    check=False,
-                )
-
-            if result.returncode == 0:
-                version = result.stdout.strip().split("\n")[0]
-                return f"✅ {version}"
-            else:
-                return "⚠️  installed (version check failed)"
-        except Exception:
-            return "⚠️  installed (version check error)"
-    else:
-        return "❌ not installed"

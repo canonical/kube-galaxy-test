@@ -8,7 +8,22 @@ from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
-from kube_galaxy.pkg.utils.shell import ShellError
+from kube_galaxy.pkg.utils.shell import ShellError, check_installed, check_version
+
+
+def _print_dependency_status() -> None:
+    """Verify that ``ssh`` and ``scp`` are available.
+
+    Raises:
+        ComponentError: If either ``ssh`` or ``scp`` is not found.
+    """
+    try:
+        check_version("ssh")
+        check_installed("scp")
+    except ShellError as exc:
+        raise ComponentError(
+            "SSHUnit prerequisites not met: 'ssh' and 'scp' must be installed"
+        ) from exc
 
 
 class SSHUnit(Unit):
@@ -97,6 +112,7 @@ class SSHUnitProvider(UnitProvider):
 
     def __init__(self, hosts: list[str]) -> None:
         super().__init__()
+        _print_dependency_status()
         self._hosts = hosts
 
     @property

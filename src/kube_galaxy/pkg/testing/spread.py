@@ -17,7 +17,7 @@ from kube_galaxy.pkg.units.local import LocalUnit
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
 from kube_galaxy.pkg.utils.paths import ensure_dir
-from kube_galaxy.pkg.utils.shell import ShellError, run
+from kube_galaxy.pkg.utils.shell import ShellError, check_installed
 
 
 def _TeeRun(cmd: list[str], cwd: Path, env: dict[str, str], log_file: Path) -> int:
@@ -82,7 +82,7 @@ def run_spread_tests(
         info(f"Work Dir: {work_dir}")
 
         # Verify test prerequisites (kubectl connectivity, spread availability)
-        _verify_test_prerequisites()
+        _print_dependency_status()
 
         # Run tests from components with spread enabled
         _run_component_tests(manifest, work_dir_path, test_type, debug)
@@ -94,20 +94,16 @@ def run_spread_tests(
         raise ClusterError(f"Test execution failed: {exc}") from exc
 
 
-def _verify_test_prerequisites() -> None:
+def _print_dependency_status() -> None:
     """Verify spread is available."""
     try:
         # Check for spread
         info("Verifying spread test framework...")
-        result = run(["which", "spread"], check=True, capture_output=True)
-        spread_path = result.stdout.strip()
-        success(f"Found spread at {spread_path}")
+        check_installed("spread")
 
         # Check for lxclient (required by spread)
         info("Verifying lxclient (required by spread)...")
-        result = run(["which", "lxc"], check=True, capture_output=True)
-        lxclient_path = result.stdout.strip()
-        success(f"Found lxclient at {lxclient_path}")
+        check_installed("lxc")
 
     except ShellError as exc:
         raise ClusterError("Test prerequisites not met") from exc

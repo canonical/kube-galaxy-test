@@ -29,6 +29,11 @@ custom-built Kubernetes components using the canonical
 
 - Python 3.12+ with `uv` or `pip`
 - Git
+- spread (`go install github.com/canonical/spread/cmd/spread@latest`)
+- docker
+- skopeo
+- lxc, multipass, or ssh
+- kubectl
 
 ### Development Setup
 
@@ -129,8 +134,7 @@ kube-galaxy validate --manifest manifests/smoketest.yaml
 kube-galaxy setup manifests/smoketest.yaml
 
 # Verify control plane is running
-kubectl get pods -n kube-system
-kubectl get nodes  # Will show NotReady status
+kube-galaxy logs manifests/smoketest.yaml
 
 # Clean up
 kube-galaxy cleanup all
