@@ -293,6 +293,21 @@ components:
       source-format: "https://api.github.com/repos/canonical/mx-kubernetes/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
       environment:
         SONOBUOY_EXTRA_ARGS: --mode=quick --plugin-env=e2e.E2E_EXTRA_ARGS="--ginkgo.fail-fast=false"
+  
+  # CSI conformance test component, using sonobuoy
+  - name: csi-tests
+    category: Conformance
+    release: "0.57.3"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: local://components/sonobuoy/
+        subdir: spread/kube-galaxy
+      source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
+      environment:
+        TEST_TIMEOUT_S: "1800"
 
 networking:
   - name: default
