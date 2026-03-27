@@ -27,7 +27,11 @@ def setup(manifest_path: str, update_kubeconfig: bool = False) -> None:
     """
     setup_cluster(manifest_path)
     set_active_manifest(manifest_path)
+    _handle_kubeconfig_adjustment(update_kubeconfig)
 
+
+def _handle_kubeconfig_adjustment(update_kubeconfig: bool) -> None:
+    """Optionally merge the kube-galaxy context into ~/.kube/config."""
     source = SystemPaths.local_kube_config()
     if not source.exists():
         return
