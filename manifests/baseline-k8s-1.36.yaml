@@ -29,9 +29,9 @@ components:
     release: "2.2.1"
     installation:
       method: binary-archive
+      bin-path: "./bin/*"
       repo:
         base-url: https://github.com/containerd/containerd
-      bin-path: "./bin/*"
       source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/containerd-{{ release }}-linux-{{ arch }}.tar.gz"
 
   # cni-plugins
@@ -81,6 +81,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-apiserver:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-apiserver:v{{ release }}"
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
@@ -90,6 +91,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-controller-manager:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-controller-manager:v{{ release }}"
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
@@ -99,6 +101,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-scheduler:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-scheduler:v{{ release }}"
 
   - name: kube-proxy
     category: kubernetes/kubernetes
@@ -108,6 +111,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-proxy:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-proxy:v{{ release }}"
 
   - name: pause
     category: kubernetes/kubernetes
@@ -116,7 +120,8 @@ components:
       method: container-image
       repo:
         base-url: https://github.com/kubernetes/kubernetes
-      source-format: "registry.k8s.io/pause:3.10"
+      source-format: "registry.k8s.io/pause:{{ release }}"
+      retag-format: "{{ mirror.base-url }}/pause:{{ release }}"
 
   # etcd
   - name: etcd
@@ -127,16 +132,18 @@ components:
       repo:
         base-url: https://github.com/etcd-io/etcd
       source-format: "registry.k8s.io/etcd:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/etcd:{{ release }}-0"
 
   # CoreDNS
   - name: coredns
     category: coredns
-    release: "1.13.1"
+    release: "1.14.1"
     installation:
       method: container-image
       repo:
         base-url: https://github.com/coredns/coredns
       source-format: "registry.k8s.io/coredns/coredns:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/coredns:v{{ release }}"
 
   - name: etcdctl
     category: etcd
@@ -166,6 +173,31 @@ components:
       repo:
         base-url: https://github.com/kubernetes/node-problem-detector
       source-format: "registry.k8s.io/node-problem-detector/node-problem-detector:v{{ release }}"
+
+
+  # Calico - required for cluster networking
+  - name: calico
+    category: projectcalico/calico
+    release:  &calico-version "3.30.6"
+    installation:
+      method: container-manifest
+      repo:
+        base-url: https://github.com/projectcalico/calico
+      source-format: "https://api.github.com/repos/projectcalico/calico/contents/manifests/calico.yaml?ref=v{{ release }}"
+  - name: cncf-quick
+    category: Conformance
+    release: "0.57.3"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: https://github.com/canonical/mx-kubernetes
+        subdir: spread/cncf-conformance
+        ref: canonical/test/kube-galaxy/cncf/test-definitions
+      source-format: "https://api.github.com/repos/canonical/mx-kubernetes/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
+      environment:
+        SONOBUOY_EXTRA_ARGS: --mode=quick --plugin-env=e2e.E2E_EXTRA_ARGS="--ginkgo.fail-fast=false"
 
 networking:
   - name: default

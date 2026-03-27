@@ -80,6 +80,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-apiserver:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-apiserver:v{{ release }}"
 
   - name: kube-controller-manager
     category: kubernetes/kubernetes
@@ -89,6 +90,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-controller-manager:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-controller-manager:v{{ release }}"
 
   - name: kube-scheduler
     category: kubernetes/kubernetes
@@ -98,6 +100,7 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-scheduler:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-scheduler:v{{ release }}"
 
   - name: kube-proxy
     category: kubernetes/kubernetes
@@ -107,15 +110,17 @@ components:
       repo:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "registry.k8s.io/kube-proxy:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kube-proxy:v{{ release }}"
 
   - name: pause
     category: kubernetes/kubernetes
-    release: "3.10.0"
+    release: "3.10"
     installation:
       method: container-image
       repo:
         base-url: https://github.com/kubernetes/kubernetes
-      source-format: "registry.k8s.io/pause:3.10"
+      source-format: "registry.k8s.io/pause:{{ release }}"
+      retag-format: "{{ mirror.base-url }}/pause:{{ release }}"
 
   # etcd
   - name: etcd
@@ -126,16 +131,18 @@ components:
       repo:
         base-url: https://github.com/etcd-io/etcd
       source-format: "registry.k8s.io/etcd:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/etcd:{{ release }}-0"
 
   # CoreDNS
   - name: coredns
     category: coredns
-    release: "1.12.1"
+    release: "1.12.0"
     installation:
       method: container-image
       repo:
         base-url: https://github.com/coredns/coredns
       source-format: "registry.k8s.io/coredns/coredns:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/coredns:v{{ release }}"
 
   - name: etcdctl
     category: etcd

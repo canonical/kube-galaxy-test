@@ -10,6 +10,7 @@ on:
       - 'components/**'
       - 'tests/**'
       - '.github/workflows/test-baseline-clusters.yml'
+      - '.github/workflows/reusable-cluster-test.yml'
       - 'pyproject.toml'
   pull_request:
     paths:
@@ -17,6 +18,8 @@ on:
       - 'manifests/*.yaml'
       - 'components/**'
       - 'tests/**'
+      - '.github/workflows/test-baseline-clusters.yml'
+      - '.github/workflows/reusable-cluster-test.yml'
       - 'pyproject.toml'
   workflow_dispatch:
     inputs:
@@ -97,176 +100,15 @@ jobs:
           echo "manifests=$manifests" >> $GITHUB_OUTPUT
           echo "Discovered manifests: $manifests"
 
-  # Matrix configuration for baseline cluster testing
-  test-matrix:
+  # Delegate to reusable workflow for actual testing
+  run-tests:
     needs: discover-manifests
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.discover-manifests.outputs.manifests) }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Astral UV
-        uses: astral-sh/setup-uv@v7.2.1
-        with:
-          python-version: "3.12"
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: ">=1.22"
-
-      - name: Install Spread
-        run: go install github.com/canonical/spread/cmd/spread@latest
-
-      - name: Setup LXD
-        uses: canonical/setup-lxd@main
-
-      - name: Setup Skopeo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y skopeo
-
-      - name: Install kube-galaxy
-        shell: bash
-        run: |
-          uv tool install -e .
-          kube-galaxy --version
-
-      - name: Display Cluster Configuration
-        shell: bash
-        run: |
-          echo "## Test Configuration"
-          echo "- **Manifest**: ${{ matrix.manifest-file }}"
-          echo "- **Runner**: ubuntu-latest"
-          echo "- **Timeout**: 90 minutes"
-
-      - name: Setup Cluster
-        id: setup-cluster
-        shell: bash
-        env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Create sanitized artifact name (replace / with -) before setup
-          ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
-          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
-
-          kube-galaxy setup ${{ matrix.manifest-file }}
-
-      - name: Verify Cluster Health
-        shell: bash
-        run: |
-          kube-galaxy status --wait --timeout 300
-
-      - name: Run Spread Tests
-        id: run-tests
-        shell: bash
-        run: |
-          kube-galaxy test ${{ matrix.manifest-file }}
-
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
-          path: logs/
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Collect Kubernetes Logs
-        if: failure()
-        shell: bash
-        run: |
-          mkdir -p debug-logs
-
-          echo "Collecting debug information..."
-
-          # Pods and their logs
-          kubectl get pods -A -o wide > debug-logs/pods.txt 2>&1 || true
-          for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
-            for pod in $(kubectl get pods -n $ns -o jsonpath='{.items[*].metadata.name}'); do
-              mkdir -p "debug-logs/$ns/$pod"
-              kubectl logs -n $ns $pod --all-containers=true > "debug-logs/$ns/$pod/logs.txt" 2>&1 || true
-              kubectl describe pod -n $ns $pod > "debug-logs/$ns/$pod/describe.txt" 2>&1 || true
-            done
-          done
-
-          # Node information
-          kubectl get nodes -o wide > debug-logs/nodes.txt 2>&1 || true
-          kubectl describe nodes > debug-logs/nodes-describe.txt 2>&1 || true
-
-          # Cluster events
-          kubectl get events -A --sort-by='.lastTimestamp' > debug-logs/events.txt 2>&1 || true
-
-          # System pod status
-          kubectl get pods -n kube-system -o wide > debug-logs/system-pods.txt 2>&1 || true
-
-          # API server logs
-          kubectl logs -n kube-system -l component=kube-apiserver --tail=500 > debug-logs/apiserver.txt 2>&1 || true
-
-          echo "✅ Debug logs collected"
-
-      - name: Upload Debug Logs
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || hashFiles(matrix.manifest-file) }}
-          path: debug-logs/
-          retention-days: 30
-
-      - name: Setup upterm session for debugging
-        if: failure() && github.event_name == 'pull_request'
-        uses: owenthereal/action-upterm@v1
-        timeout-minutes: 5
-        with:
-          limit-access-to-actor: true
-
-      - name: Create Issue on Failure
-        if: failure() && github.event_name != 'pull_request'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Create a simple issue on failure (without labels to avoid errors if labels don't exist)
-          gh issue create \
-            --title "[TEST FAILURE] Manifest ${{ matrix.manifest-file }} - Test #${{ github.run_number }}" \
-            --body "Cluster test failed for manifest: \`${{ matrix.manifest-file }}\`
-
-          Test Suite: ${{ inputs.test-suite || 'functional-basic' }}
-          Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-          Check test results and debug logs in the action artifacts." || echo "Failed to create issue, continuing..."
-
-      - name: Cleanup Cluster
-        if: always()
-        shell: bash
-        run: |
-          kube-galaxy cleanup all
-
-  # Summary job that reports overall test status
-  test-summary:
-    needs: test-matrix
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Check Test Results
-        shell: bash
-        run: |
-          echo "## Test Summary"
-          echo "- **Result**: ${{ needs.test-matrix.result }}"
-
-          if [ "${{ needs.test-matrix.result }}" == "failure" ]; then
-            echo ""
-            echo "⚠️ **Some tests failed**"
-            echo "Check individual job results above for details"
-            exit 1
-          else
-            echo ""
-            echo "✅ **All tests passed**"
-          fi
+    if: needs.discover-manifests.outputs.manifests != '[]'
+    uses: ./.github/workflows/reusable-cluster-test.yml
+    with:
+      manifests-json: ${{ needs.discover-manifests.outputs.manifests }}
+      create-issues-on-failure: ${{ github.event_name != 'pull_request' }}
+    secrets:
+      REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

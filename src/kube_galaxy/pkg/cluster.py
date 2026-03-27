@@ -7,7 +7,7 @@ from pathlib import Path
 
 from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components import ComponentBase, find_component
-from kube_galaxy.pkg.literals import Commands, Hooks, SetupHooks, TeardownHooks
+from kube_galaxy.pkg.literals import Commands, Hooks, SetupHooks, TeardownHooks, TestDirectories
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import Manifest, NodeRole
 from kube_galaxy.pkg.units import Unit
@@ -56,7 +56,7 @@ def setup_cluster(manifest_path: str) -> None:
         _log_cluster_info("Setup", manifest)
 
         # Create working directories
-        ensure_dir(Path() / "logs")
+        ensure_dir(Path() / TestDirectories.DEBUG_LOGS)
 
         # Get components in dependency order
         configs = manifest.components

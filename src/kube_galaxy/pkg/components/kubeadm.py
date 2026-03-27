@@ -5,7 +5,6 @@ Kubeadm is used to bootstrap Kubernetes clusters.
 """
 
 import shlex
-import shutil
 from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
@@ -189,10 +188,6 @@ class Kubeadm(ClusterComponentBase):
         This performs a kubeadm reset to cleanly shut down the cluster,
         removing the node from the cluster and cleaning up cluster state.
         """
-        if not shutil.which("kubeadm"):
-            info("kubeadm not found in PATH, skipping cluster reset")
-            return
-
         info("Performing kubeadm reset to stop cluster")
         self.unit.run(["kubeadm", "reset", "--force"], privileged=True)
         info("Kubeadm reset completed successfully")

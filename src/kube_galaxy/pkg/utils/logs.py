@@ -3,7 +3,8 @@
 from datetime import datetime
 from pathlib import Path
 
-from kube_galaxy.pkg.units.local import LocalUnit
+from kube_galaxy.pkg.literals import TestDirectories
+from kube_galaxy.pkg.units import Unit
 from kube_galaxy.pkg.utils.client import (
     describe_nodes,
     get_cluster_info,
@@ -16,11 +17,16 @@ from kube_galaxy.pkg.utils.client import (
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import info, section, success, warning
 from kube_galaxy.pkg.utils.paths import ensure_dir
+from kube_galaxy.pkg.utils.shell import check_version
 
-_LOCAL = LocalUnit()
+
+def _print_dependency_status() -> None:
+    """Print required command dependency status."""
+    info("Dependencies:")
+    check_version("kubectl")
 
 
-def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
+def collect_kubernetes_logs(unit: Unit) -> str:
     """
     Collect Kubernetes cluster logs for debugging.
 
@@ -33,26 +39,27 @@ def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
     Raises:
         ClusterError: If log collection fails
     """
-    output_path = Path(output_dir)
+    _print_dependency_status()
+    output_path = Path(TestDirectories.DEBUG_LOGS)
     ensure_dir(output_path)
 
     section("Collecting Kubernetes Logs")
 
     try:
         # Collect cluster info
-        _collect_cluster_info(output_path)
+        _collect_cluster_info(unit, output_path)
 
         # Collect node info
-        _collect_node_info(output_path)
+        _collect_node_info(unit, output_path)
 
         # Collect pod logs
-        _collect_pod_logs(output_path)
+        _collect_pod_logs(unit, output_path)
 
         # Collect events
-        _collect_events(output_path)
+        _collect_events(unit, output_path)
 
         # Collect system logs
-        _collect_system_logs(output_path)
+        _collect_system_logs(unit, output_path)
 
         section("Log Collection Complete")
         success(f"Logs collected to: {output_path.absolute()}")
@@ -62,29 +69,29 @@ def collect_kubernetes_logs(output_dir: str = "debug-logs") -> str:
         raise ClusterError(f"Failed to collect Kubernetes logs: {exc}") from exc
 
 
-def _collect_cluster_info(output_path: Path) -> None:
+def _collect_cluster_info(unit: Unit, output_path: Path) -> None:
     """Collect cluster information."""
     info("Collecting cluster information...")
 
     try:
-        cluster_info = get_cluster_info(_LOCAL)
+        cluster_info = get_cluster_info(unit)
         (output_path / "cluster-info.txt").write_text(cluster_info)
         success("  Cluster info saved")
     except ClusterError as exc:
         warning(f"  Failed to collect cluster info: {exc}")
 
 
-def _collect_node_info(output_path: Path) -> None:
+def _collect_node_info(unit: Unit, output_path: Path) -> None:
     """Collect node information."""
     info("Collecting node information...")
 
     try:
         # Get node descriptions
-        node_descriptions = describe_nodes(_LOCAL)
+        node_descriptions = describe_nodes(unit)
         (output_path / "nodes-describe.txt").write_text(node_descriptions)
 
         # Get node status
-        node_status = get_nodes(_LOCAL, wide=True)
+        node_status = get_nodes(unit, wide=True)
         (output_path / "nodes-status.txt").write_text(node_status)
 
         success("  Node info saved")
@@ -92,7 +99,7 @@ def _collect_node_info(output_path: Path) -> None:
         warning(f"  Failed to collect node info: {exc}")
 
 
-def _collect_pod_logs(output_path: Path) -> None:
+def _collect_pod_logs(unit: Unit, output_path: Path) -> None:
     """Collect pod logs from all namespaces."""
     info("Collecting pod logs...")
 
@@ -101,7 +108,7 @@ def _collect_pod_logs(output_path: Path) -> None:
 
     try:
         # Get all pods
-        pods_data = get_pod_data_json(_LOCAL)
+        pods_data = get_pod_data_json(unit)
         pod_count = 0
 
         for pod_item in pods_data:
@@ -109,7 +116,7 @@ def _collect_pod_logs(output_path: Path) -> None:
             pod_name = pod_item["metadata"]["name"]
 
             # Get pod logs
-            log_content = get_pod_logs(_LOCAL, namespace, pod_name, tail=100)
+            log_content = get_pod_logs(unit, namespace, pod_name, tail=100)
 
             log_dir = pods_dir / namespace / pod_name
             ensure_dir(log_dir)
@@ -123,25 +130,25 @@ def _collect_pod_logs(output_path: Path) -> None:
         warning(f"  Failed to collect pod logs: {exc}")
 
 
-def _collect_events(output_path: Path) -> None:
+def _collect_events(unit: Unit, output_path: Path) -> None:
     """Collect Kubernetes events."""
     info("Collecting events...")
 
     try:
-        events = get_events(_LOCAL, all_namespaces=True)
+        events = get_events(unit, all_namespaces=True)
         (output_path / "events.txt").write_text(events)
         success("  Events saved")
     except ClusterError as exc:
         warning(f"  Failed to collect events: {exc}")
 
 
-def _collect_system_logs(output_path: Path) -> None:
+def _collect_system_logs(unit: Unit, output_path: Path) -> None:
     """Collect system-level logs."""
     info("Collecting system logs...")
 
     try:
         # Get kube-system namespace pods
-        pods_str = get_pods(_LOCAL, namespace="kube-system", wide=True)
+        pods_str = get_pods(unit, namespace="kube-system", wide=True)
         (output_path / "kube-system-pods.txt").write_text(pods_str)
 
         # Events are now collected from all namespaces in _collect_events()

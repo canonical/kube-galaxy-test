@@ -10,8 +10,7 @@ import kube_galaxy.pkg.utils.registry_mirror as mirror_mod
 from kube_galaxy.pkg.literals import SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import RegistryConfig
 from kube_galaxy.pkg.utils.errors import ClusterError
-from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror, verify_prerequisites
-from kube_galaxy.pkg.utils.shell import ShellError
+from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror, _print_dependency_status
 
 _FAKE_IP = "10.0.0.1"
 
@@ -29,54 +28,55 @@ def _noop_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[s
 
 
 # ---------------------------------------------------------------------------
-# verify_prerequisites
+# _print_dependency_status
 # ---------------------------------------------------------------------------
 
 
 class TestVerifyPrerequisites:
     def test_passes_when_both_tools_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """verify_prerequisites() succeeds when docker and skopeo are on PATH."""
+        """_print_dependency_status() succeeds when docker and skopeo are on PATH."""
 
         def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(cmd, 0, stdout=f"/usr/bin/{cmd[1]}", stderr="")
 
         monkeypatch.setattr(mirror_mod.shell, "run", fake_run)
-        verify_prerequisites()  # must not raise
+        _print_dependency_status()  # must not raise
 
     def test_raises_cluster_error_when_docker_missing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """verify_prerequisites() raises ClusterError when docker is absent."""
+        """_print_dependency_status() raises ClusterError when docker is absent."""
 
-        def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-            if cmd[1] == "docker":
-                raise ShellError(cmd, 1, "not found")
-            return subprocess.CompletedProcess(cmd, 0, stdout=f"/usr/bin/{cmd[1]}", stderr="")
+        def fake_which(cmd: str) -> str | None:
+            if cmd == "docker":
+                return None
+            return f"/usr/bin/{cmd}"
 
-        monkeypatch.setattr(mirror_mod.shell, "run", fake_run)
+        monkeypatch.setattr(mirror_mod.shell.shutil, "which", fake_which)
         with pytest.raises(ClusterError, match="docker"):
-            verify_prerequisites()
+            _print_dependency_status()
 
     def test_raises_cluster_error_when_skopeo_missing(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """verify_prerequisites() raises ClusterError when skopeo is absent."""
+        """_print_dependency_status() raises ClusterError when skopeo is absent."""
 
-        def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-            if cmd[1] == "skopeo":
-                raise ShellError(cmd, 1, "not found")
-            return subprocess.CompletedProcess(cmd, 0, stdout=f"/usr/bin/{cmd[1]}", stderr="")
+        def fake_which(cmd: str) -> str | None:
+            if cmd == "skopeo":
+                return None
+            return f"/usr/bin/{cmd}"
 
-        monkeypatch.setattr(mirror_mod.shell, "run", fake_run)
+        monkeypatch.setattr(mirror_mod.shell.shutil, "which", fake_which)
+        monkeypatch.setattr(mirror_mod.shell, "run", _noop_run)
         with pytest.raises(ClusterError, match="skopeo"):
-            verify_prerequisites()
+            _print_dependency_status()
 
-    def test_start_calls_verify_prerequisites(
+    def test_start_calls_print_dependency_status(
         self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """start() delegates to verify_prerequisites before launching docker."""
+        """start() delegates to _print_dependency_status before launching docker."""
         verified: list[bool] = []
-        monkeypatch.setattr(mirror_mod, "verify_prerequisites", lambda: verified.append(True))
+        monkeypatch.setattr(mirror_mod, "_print_dependency_status", lambda: verified.append(True))
         monkeypatch.setattr(mirror_mod.shell, "run", _noop_run)
         RegistryMirror(RegistryConfig()).start()
         assert verified == [True]
