@@ -1,85 +1,85 @@
 summary: E2E CSI conformance test component using sonobuoy
 execute: |
-    wget --tries=3 https://github.com/vmware-tanzu/sonobuoy/releases/download/v${COMPONENT_VERSION}/sonobuoy_${COMPONENT_VERSION}_linux_${K8S_ARCH}.tar.gz -O sonobuoy.tar.gz || exit 1
-    tar -xvf sonobuoy.tar.gz
+  wget --tries=3 https://github.com/vmware-tanzu/sonobuoy/releases/download/v${COMPONENT_VERSION}/sonobuoy_${COMPONENT_VERSION}_linux_${K8S_ARCH}.tar.gz -O sonobuoy.tar.gz || exit 1
+  tar -xvf sonobuoy.tar.gz
 
-    curl -LO "https://dl.k8s.io/release/v${K8S_VERSION}/bin/linux/${K8S_ARCH}/kubectl" || exit 1
-    chmod +x kubectl
-    export PATH=$PATH:.
+  curl -LO "https://dl.k8s.io/release/v${K8S_VERSION}/bin/linux/${K8S_ARCH}/kubectl" || exit 1
+  chmod +x kubectl
+  export PATH=$PATH:.
 
-    cat > driver.yaml << EOF
-    StorageClass:
-      FromExistingClassName: ${STORAGE_CLASS_NAME}
-    DriverInfo:
-      Name: ${DRIVER_NAME}
-      SupportedSizeRange:
-        Min: 1Mi
-      Capabilities:
-        block: true
-        controllerExpansion: true
-        exec: true
-        multipods: true
-        nodeExpansion: true
-        persistence: true
-        singleNodeVolume: true
-        topology: true
-        FSResizeFromSourceNotSupported: true
-    InlineVolumes:
-    - shared: true
-    EOF
+  cat > driver.yaml << EOF
+  StorageClass:
+    FromExistingClassName: ${STORAGE_CLASS_NAME}
+  DriverInfo:
+    Name: ${DRIVER_NAME}
+    SupportedSizeRange:
+      Min: 1Mi
+    Capabilities:
+      block: true
+      controllerExpansion: true
+      exec: true
+      multipods: true
+      nodeExpansion: true
+      persistence: true
+      singleNodeVolume: true
+      topology: true
+      FSResizeFromSourceNotSupported: true
+  InlineVolumes:
+  - shared: true
+  EOF
 
-    cat > csi-plugin.yaml << EOF
-    podSpec:
-      volumes:
-        - name: hostpath-config-volume
-          configMap:
-            name: hostpath-config
-      containers: []
-      nodeSelector:
-        kubernetes.io/os: linux
-      restartPolicy: Never
-      serviceAccountName: sonobuoy-serviceaccount
-      tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
-        operator: Exists
-      - key: CriticalAddonsOnly
-        operator: Exists
-      - key: kubernetes.io/e2e-evict-taint-key
-        operator: Exists
-    sonobuoy-config:
-      driver: Job
-      plugin-name: e2e
-      result-format: junit
-    spec:
-      command:
-      - /run_e2e.sh
-      env:
-      - name: E2E_USE_GO_RUNNER
-        value: "true"
-      - name: E2E_EXTRA_ARGS
-        value: "--progress-report-url=http://localhost:8099/progress -storage.testdriver=/tmp/csi-cfg/driver.yaml"
-      image: registry.k8s.io/conformance:v${K8S_VERSION}
-      imagePullPolicy: IfNotPresent
-      name: e2e
-      volumeMounts:
-      - mountPath: /tmp/csi-cfg
-        name: hostpath-config-volume
-      - mountPath: /tmp/sonobuoy/results
-        name: results
-    EOF
+  cat > csi-plugin.yaml << EOF
+  podSpec:
+    volumes:
+      - name: hostpath-config-volume
+        configMap:
+          name: hostpath-config
+    containers: []
+    nodeSelector:
+      kubernetes.io/os: linux
+    restartPolicy: Never
+    serviceAccountName: sonobuoy-serviceaccount
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+      operator: Exists
+    - key: CriticalAddonsOnly
+      operator: Exists
+    - key: kubernetes.io/e2e-evict-taint-key
+      operator: Exists
+  sonobuoy-config:
+    driver: Job
+    plugin-name: e2e
+    result-format: junit
+  spec:
+    command:
+    - /run_e2e.sh
+    env:
+    - name: E2E_USE_GO_RUNNER
+      value: "true"
+    - name: E2E_EXTRA_ARGS
+      value: "--progress-report-url=http://localhost:8099/progress -storage.testdriver=/tmp/csi-cfg/driver.yaml"
+    image: registry.k8s.io/conformance:v${K8S_VERSION}
+    imagePullPolicy: IfNotPresent
+    name: e2e
+    volumeMounts:
+    - mountPath: /tmp/csi-cfg
+      name: hostpath-config-volume
+    - mountPath: /tmp/sonobuoy/results
+      name: results
+  EOF
 
-    ./sonobuoy run \
-    --kubeconfig=$KUBECONFIG \
-    --plugin csi-plugin.yaml \
-    --plugin-env=e2e.E2E_FOCUS="External.Storage.*hostpath.csi.k8s.io" \
-    --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
-    --plugin-env=e2e.E2E_PARALLEL="true" || exit 1
+  ./sonobuoy run \
+  --kubeconfig=$KUBECONFIG \
+  --plugin csi-plugin.yaml \
+  --plugin-env=e2e.E2E_FOCUS="External.Storage.*hostpath.csi.k8s.io" \
+  --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
+  --plugin-env=e2e.E2E_PARALLEL="true" || exit 1
 
-    kubectl wait --for=condition=Ready pod/sonobuoy -n sonobuoy \
-        --timeout=120s --kubeconfig=$KUBECONFIG
+  kubectl wait --for=condition=Ready pod/sonobuoy -n sonobuoy \
+      --timeout=120s --kubeconfig=$KUBECONFIG
 
-    kubectl create configmap hostpath-config --from-file=driver.yaml=driver.yaml \
-        -n sonobuoy --dry-run=client -o yaml | kubectl apply -f - --kubeconfig=$KUBECONFIG
+  kubectl create configmap hostpath-config --from-file=driver.yaml=driver.yaml \
+      -n sonobuoy --dry-run=client -o yaml | kubectl apply -f - --kubeconfig=$KUBECONFIG
 
-    ./sonobuoy wait --kubeconfig=$KUBECONFIG --wait || exit 1
+  ./sonobuoy wait --kubeconfig=$KUBECONFIG --wait || exit 1
