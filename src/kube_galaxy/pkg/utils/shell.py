@@ -71,7 +71,7 @@ def check_version(cmd: str) -> None:
                 capture_output=True,
                 check=False,
             )
-        if cmd == "ssh":
+        elif cmd == "ssh":
             result = run(
                 [cmd, "-V"],
                 capture_output=True,

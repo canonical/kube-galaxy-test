@@ -42,4 +42,14 @@ def _install(comp: ComponentBase) -> None:
         comp.install_path = installed[comp.name]
 
 
-_BinaryArchiveInstallStrategy = _InstallStrategy(download=_download, install=_install)
+def _delete(comp: ComponentBase) -> None:
+    # Remove update-alternatives entries for this component
+    comp.remove_component_alternatives()
+
+    # Remove component directory (binaries) on the unit
+    comp.cleanup_component_dir()
+
+
+_BinaryArchiveInstallStrategy = _InstallStrategy(
+    download=_download, install=_install, delete=_delete
+)

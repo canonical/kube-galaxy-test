@@ -56,6 +56,8 @@ class Unit(ABC):
     - ``MultipassUnit``  ``multipass exec`` / ``multipass transfer``; ephemeral
     """
 
+    ENLIST_TIMEOUT = Timeouts.UNIT_READY_TIMEOUT
+
     def __init__(self, role: NodeRole, index: int) -> None:
         self.role = role
         self.index = index
@@ -159,6 +161,7 @@ class Unit(ABC):
         if hosts_path == "/etc/hosts.new":
             self.run(["mv", hosts_path, "/etc/hosts"], privileged=True)
 
+    @cached_property
     def hostname(self) -> str:
         """Return the unit's hostname."""
         result = self.run(["hostname"], check=False)
