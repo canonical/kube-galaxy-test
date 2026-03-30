@@ -169,40 +169,28 @@ jobs:
         run: |
           kube-galaxy test ${{ steps.manifest.outputs.path }}
 
-      - name: Upload Test Results
+      - name: Collect Logs
         if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results-${{ steps.setup-cluster.outputs.artifact-name }}
-          path: logs/
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Collect Kubernetes Logs
-        if: failure()
         shell: bash
         run: |
+          kube-galaxy logs
+
+      - name: Rename log files for safe-upload
+        if: always()
+        shell: bash
+        run: |
+          # Avoid invalid characters in file names:
+          # Double quote ", Colon :, Less than <, Greater than >, Vertical bar |, Asterisk *, Question mark ?, Carriage return \r, Line feed \n
           mkdir -p debug-logs
-
-          echo "Collecting debug information..."
-
-          kubectl get pods -A -o wide > debug-logs/pods.txt 2>&1 || true
-          for ns in $(kubectl get ns -o jsonpath='{.items[*].metadata.name}'); do
-            for pod in $(kubectl get pods -n "$ns" -o jsonpath='{.items[*].metadata.name}'); do
-              mkdir -p "debug-logs/$ns/$pod"
-              kubectl logs -n "$ns" "$pod" --all-containers=true > "debug-logs/$ns/$pod/logs.txt" 2>&1 || true
-              kubectl describe pod -n "$ns" "$pod" > "debug-logs/$ns/$pod/describe.txt" 2>&1 || true
-            done
+          find debug-logs -depth -mindepth 1 | while read -r path; do
+            dir=$(dirname "$path")
+            base=$(basename "$path")
+            safe=$(echo "$base" | tr '":<>|*?\\' '--------')
+            if [ "$base" != "$safe" ]; then mv "$path" "$dir/$safe"; fi
           done
 
-          kubectl get nodes -o wide > debug-logs/nodes.txt 2>&1 || true
-          kubectl describe nodes > debug-logs/nodes-describe.txt 2>&1 || true
-          kubectl get events -A --sort-by='.lastTimestamp' > debug-logs/events.txt 2>&1 || true
-          kubectl get pods -n kube-system -o wide > debug-logs/system-pods.txt 2>&1 || true
-          kubectl logs -n kube-system -l component=kube-apiserver --tail=500 > debug-logs/apiserver.txt 2>&1 || true
-
       - name: Upload Debug Logs
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: debug-logs-${{ steps.setup-cluster.outputs.artifact-name || hashFiles(matrix.manifest-file) }}
