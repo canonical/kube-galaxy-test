@@ -106,6 +106,9 @@ jobs:
     if: needs.discover-manifests.outputs.manifests != '[]'
     uses: ./.github/workflows/reusable-cluster-test.yml
     with:
+      manifests-repo: ${{ github.repository }}
+      manifests-ref: ${{ github.head_ref || github.ref_name }}
+      kube-galaxy-ref: ${{ github.head_ref || github.ref_name }}
       manifests-json: ${{ needs.discover-manifests.outputs.manifests }}
       create-issues-on-failure: ${{ github.event_name != 'pull_request' }}
     secrets:
