@@ -130,6 +130,11 @@ jobs:
       - name: Setup LXD
         uses: canonical/setup-lxd@main
 
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v5
+        with:
+          version: "latest"
+
       - name: Setup Skopeo
         run: |
           sudo apt-get update
