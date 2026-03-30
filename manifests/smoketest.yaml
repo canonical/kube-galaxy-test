@@ -295,7 +295,7 @@ components:
         SONOBUOY_EXTRA_ARGS: --mode=quick --plugin-env=e2e.E2E_EXTRA_ARGS="--ginkgo.fail-fast=false"
   
   # CSI conformance test component, using sonobuoy
-  - name: csi-tests
+  - name: e2e-csi-tests
     category: Conformance
     release: "0.57.3"
     installation:
