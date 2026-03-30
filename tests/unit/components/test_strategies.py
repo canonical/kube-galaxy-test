@@ -76,7 +76,7 @@ def _make_component(
 
 class TestBinaryDownload:
     def test_download_remote_url(self, monkeypatch, tmp_path, arch_info):
-        """_download fetches a remote URL and sets binary_path."""
+        """_download fetches a remote URL and sets download_path."""
         comp = _make_component(
             InstallMethod.BINARY,
             "https://example.com/releases/v{{ release }}/bin-{{ arch }}",
@@ -101,7 +101,7 @@ class TestBinaryDownload:
         assert len(calls) == 1
         url, dest = calls[0]
         assert f"v{comp.config.release}" in url
-        assert comp.binary_path == dest
+        assert comp.download_path == dest
         assert dest.exists()
 
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
@@ -131,7 +131,7 @@ class TestBinaryDownload:
         assert len(calls) == 1
         url, _ = calls[0]
         assert url.startswith("local://")
-        assert comp.binary_path is not None
+        assert comp.download_path is not None
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
         """_download passes gh-artifact:// URL unchanged to download_file."""
@@ -160,12 +160,12 @@ class TestBinaryDownload:
         assert len(calls) == 1
         url, _ = calls[0]
         assert url.startswith("gh-artifact://")
-        assert comp.binary_path is not None
+        assert comp.download_path is not None
 
 
 class TestBinaryInstall:
     def test_install_raises_if_binary_not_downloaded(self, monkeypatch, tmp_path, arch_info):
-        """_install raises ComponentError when binary_path is not set."""
+        """_install raises ComponentError when download_path is not set."""
         comp = _make_component(
             InstallMethod.BINARY,
             "https://example.com/bin",
@@ -173,12 +173,12 @@ class TestBinaryInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        # Don't call download; binary_path remains None
+        # Don't call download; download_path remains None
         with pytest.raises(ComponentError, match="binary not downloaded"):
             comp.install_hook()
 
     def test_install_raises_if_binary_file_missing(self, monkeypatch, tmp_path, arch_info):
-        """_install raises ComponentError when binary_path points to non-existent file."""
+        """_install raises ComponentError when download_path points to non-existent file."""
         comp = _make_component(
             InstallMethod.BINARY,
             "https://example.com/bin",
@@ -186,7 +186,7 @@ class TestBinaryInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        comp.binary_path = tmp_path / "does-not-exist"
+        comp.download_path = tmp_path / "does-not-exist"
         with pytest.raises(ComponentError, match="binary not downloaded"):
             comp.install_hook()
 
@@ -202,7 +202,7 @@ class TestBinaryInstall:
         )
         binary = tmp_path / "mycomp"
         binary.write_bytes(b"binary")
-        comp.binary_path = binary
+        comp.download_path = binary
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components._base.install_binary",
@@ -259,8 +259,8 @@ class TestBinaryArchiveDownload:
         comp.download_hook()
 
         assert len(download_calls) == 1
-        assert comp.binary_path is not None
-        assert comp.binary_path.exists()
+        assert comp.download_path is not None
+        assert comp.download_path.exists()
 
     def test_download_local(self, monkeypatch, tmp_path, arch_info):
         """_download passes local:// base-url to download_file, which resolves it to file://."""
@@ -324,7 +324,7 @@ class TestBinaryArchiveInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        # binary_path is None; archive hasn't been downloaded yet
+        # download_path is None; archive hasn't been downloaded yet
         with pytest.raises(ComponentError, match="archive not downloaded"):
             comp.install_hook()
 
@@ -347,7 +347,7 @@ class TestBinaryArchiveInstall:
         archive = tmp_path / "opt" / "kube-galaxy" / "mycomp" / "temp" / "archive.tar.gz"
         archive.parent.mkdir(parents=True, exist_ok=True)
         archive.write_bytes(b"fake-archive")
-        comp.binary_path = archive
+        comp.download_path = archive
 
         # Queue: mkdir result, then sh result returning a binary path
         node_extracted = "/opt/kube-galaxy/mycomp/temp/extracted"
@@ -407,7 +407,7 @@ class TestBinaryArchiveInstall:
         archive = tmp_path / "opt" / "kube-galaxy" / "mycomp" / "temp" / "archive.tar.gz"
         archive.parent.mkdir(parents=True, exist_ok=True)
         archive.write_bytes(b"fake-archive")
-        comp.binary_path = archive
+        comp.download_path = archive
 
         # Queue sh result returning two binaries; only "mycomp" should set install_path
         node_extracted = "/opt/kube-galaxy/mycomp/temp/extracted"

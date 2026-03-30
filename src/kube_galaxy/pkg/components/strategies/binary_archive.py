@@ -25,15 +25,15 @@ def _bin_path(comp: ComponentBase) -> str:
 def _download(comp: ComponentBase) -> None:
     # Download archive to the orchestrator staging area only; no local extraction needed.
     # Extraction is deferred to the install phase and performed on each node.
-    comp.binary_path = _fetch_to_temp(comp)
+    comp.download_path = _fetch_to_temp(comp)
 
 
 def _install(comp: ComponentBase) -> None:
-    if not comp.binary_path or not comp.binary_path.exists():
+    if not comp.download_path or not comp.download_path.exists():
         raise ComponentError(f"{comp.name} archive not downloaded. Run download hook first.")
 
     installed = install_from_archive(
-        comp.binary_path,
+        comp.download_path,
         _bin_path(comp),
         comp.name,
         comp.unit,

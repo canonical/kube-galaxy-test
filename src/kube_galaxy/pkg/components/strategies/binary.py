@@ -13,13 +13,13 @@ if TYPE_CHECKING:
 
 
 def _download(comp: ComponentBase) -> None:
-    comp.binary_path = _fetch_to_temp(comp)
+    comp.download_path = _fetch_to_temp(comp)
 
 
 def _install(comp: ComponentBase) -> None:
-    if not comp.binary_path or not comp.binary_path.exists():
+    if not comp.download_path or not comp.download_path.exists():
         raise ComponentError(f"{comp.name} binary not downloaded. Run download hook first.")
-    comp.install_path = comp.install_downloaded_binary(comp.binary_path)
+    comp.install_path = comp.install_downloaded_binary(comp.download_path)
 
 
 _BinaryInstallStrategy = _InstallStrategy(download=_download, install=_install)

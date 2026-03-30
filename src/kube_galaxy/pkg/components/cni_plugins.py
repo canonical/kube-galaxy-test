@@ -36,7 +36,7 @@ class CNIPlugins(ComponentBase):
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY_ARCHIVE:
-                if not self.binary_path or not self.binary_path.exists():
+                if not self.download_path or not self.download_path.exists():
                     raise ComponentError(
                         f"{comp_name} binary archive not found. Run download hook first."
                     )
@@ -47,7 +47,7 @@ class CNIPlugins(ComponentBase):
                     self.config.installation.repo,
                 )
                 installed = install_from_archive(
-                    self.binary_path,
+                    self.download_path,
                     bin_pattern,
                     self.name,
                     self.unit,
