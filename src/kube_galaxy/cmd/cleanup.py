@@ -3,8 +3,16 @@
 import shutil
 from pathlib import Path
 
+import typer
+
 from kube_galaxy.pkg.cluster import teardown_cluster
 from kube_galaxy.pkg.literals import FilePatterns, SystemPaths, TestDirectories
+from kube_galaxy.pkg.utils.kubeconfig import (
+    KUBE_GALAXY_CONTEXT,
+    context_exists,
+    is_interactive,
+    remove_kube_galaxy_context,
+)
 from kube_galaxy.pkg.utils.logging import error, info, section, success
 
 
@@ -62,13 +70,55 @@ def cleanup_files() -> None:
     success("File cleanup completed!")
 
 
-def cleanup_clusters(manifest_path: str, force: bool = False) -> None:
-    """Clean up test clusters using component teardown hooks."""
+def cleanup_clusters(
+    manifest_path: str, force: bool = False, update_kubeconfig: bool = False
+) -> None:
+    """Clean up test clusters using component teardown hooks.
+
+    Args:
+        manifest_path: Path to the cluster manifest YAML.
+        force: Continue teardown even if errors occur.
+        update_kubeconfig: When ``True`` the ``kube-galaxy`` context is removed
+            from ``$HOME/.kube/config`` without prompting the user.  When
+            ``False`` (default) the user is asked interactively (if stdin is a
+            terminal).
+    """
     teardown_cluster(manifest_path, force=force)
+    _handle_kubeconfig_removal(update_kubeconfig)
 
 
-def cleanup_all(manifest_path: str, force: bool = False) -> None:
-    """Full cleanup: files and cluster teardown."""
+def cleanup_all(manifest_path: str, force: bool = False, update_kubeconfig: bool = False) -> None:
+    """Full cleanup: files and cluster teardown.
+
+    Args:
+        manifest_path: Path to the cluster manifest YAML.
+        force: Continue teardown even if errors occur.
+        update_kubeconfig: When ``True`` the ``kube-galaxy`` context is removed
+            from ``$HOME/.kube/config`` without prompting.
+    """
     cleanup_files()
     info("")
-    cleanup_clusters(manifest_path, force)
+    cleanup_clusters(manifest_path, force, update_kubeconfig=update_kubeconfig)
+
+
+def _handle_kubeconfig_removal(update_kubeconfig: bool) -> None:
+    """Optionally remove the kube-galaxy context from ~/.kube/config."""
+    if not context_exists():
+        return
+
+    if update_kubeconfig:
+        _remove_context()
+    elif is_interactive():
+        if typer.confirm(
+            f"\nRemove '{KUBE_GALAXY_CONTEXT}' context from ~/.kube/config?",
+            default=True,
+        ):
+            _remove_context()
+        else:
+            info(f"Skipped: '{KUBE_GALAXY_CONTEXT}' context left in ~/.kube/config")
+
+
+def _remove_context() -> None:
+    """Remove the kube-galaxy context and log the outcome."""
+    remove_kube_galaxy_context()
+    success(f"Removed '{KUBE_GALAXY_CONTEXT}' context from ~/.kube/config.")
