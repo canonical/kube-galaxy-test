@@ -14,7 +14,8 @@ from kube_galaxy.pkg.manifest.models import (
 from kube_galaxy.pkg.manifest.models import (
     TestMethod as ComponentTestMethod,
 )
-from kube_galaxy.pkg.utils.components import format_component_pattern
+from kube_galaxy.pkg.units._base import RunResult
+from kube_galaxy.pkg.utils.components import format_component_pattern, install_from_archive
 from tests.unit.components.conftest import MockUnit
 
 
@@ -362,3 +363,74 @@ def test_remove_directories_and_files_and_remove_installed_binary(arch_info, tmp
         "rm" in cmd and "-f" in cmd and "/usr/local/bin/example" in cmd
         for cmd in [c[0] for c in mock_unit.run_calls]
     ), "expected unit.run(rm -f ...) for remove_installed_binary"
+
+
+# ---------------------------------------------------------------------------
+# install_from_archive unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_install_from_archive_transfers_extracts_and_installs(tmp_path):
+    """install_from_archive transfers archive to node, extracts it, and installs binaries."""
+    mock_unit = MockUnit()
+
+    archive = tmp_path / "archive.tar.gz"
+    archive.write_bytes(b"fake-archive")
+
+    node_extracted = "/opt/kube-galaxy/mycomp/temp/extracted"
+    mock_unit.set_run_results(
+        RunResult(0, "", ""),  # mkdir -p node_bin_dir
+        RunResult(0, f"{node_extracted}/mycomp\n", ""),  # sh for-loop listing
+    )
+
+    result = install_from_archive(archive, "*", "mycomp", mock_unit)
+
+    # Archive was transferred and extracted on the node
+    assert len(mock_unit.download_calls) == 1
+    assert mock_unit.download_calls[0][1] == "/opt/kube-galaxy/mycomp/temp/archive.tar.gz"
+
+    # Binary was moved, chmod'd, and registered via update-alternatives
+    all_run_cmds = [call[0] for call in mock_unit.run_calls]
+    assert any(cmd[0] == "mv" for cmd in all_run_cmds)
+    assert any(cmd[0] == "chmod" and "755" in cmd for cmd in all_run_cmds)
+    assert any(cmd[0] == "update-alternatives" for cmd in all_run_cmds)
+
+    # Return value maps binary name to its alternative path
+    assert result == {"mycomp": f"{SystemPaths.USR_LOCAL_BIN}/mycomp"}
+
+
+def test_install_from_archive_returns_all_matching_binaries(tmp_path):
+    """install_from_archive returns entries for every binary matched by bin_pattern."""
+    mock_unit = MockUnit()
+
+    archive = tmp_path / "archive.tar.gz"
+    archive.write_bytes(b"fake-archive")
+
+    node_extracted = "/opt/kube-galaxy/mytool/temp/extracted"
+    mock_unit.set_run_results(
+        RunResult(0, "", ""),  # mkdir -p
+        RunResult(0, f"{node_extracted}/bin-a\n{node_extracted}/bin-b\n", ""),  # sh listing
+    )
+
+    result = install_from_archive(archive, "bin-*", "mytool", mock_unit)
+
+    assert set(result.keys()) == {"bin-a", "bin-b"}
+    assert result["bin-a"] == f"{SystemPaths.USR_LOCAL_BIN}/bin-a"
+    assert result["bin-b"] == f"{SystemPaths.USR_LOCAL_BIN}/bin-b"
+
+
+def test_install_from_archive_no_match_returns_empty(tmp_path):
+    """install_from_archive returns an empty dict when no binaries match the pattern."""
+    mock_unit = MockUnit()
+
+    archive = tmp_path / "archive.tar.gz"
+    archive.write_bytes(b"fake-archive")
+
+    mock_unit.set_run_results(
+        RunResult(0, "", ""),  # mkdir -p
+        RunResult(0, "", ""),  # sh listing — no output
+    )
+
+    result = install_from_archive(archive, "nonexistent-*", "mytool", mock_unit)
+
+    assert result == {}

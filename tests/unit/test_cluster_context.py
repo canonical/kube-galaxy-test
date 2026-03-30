@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock
 
 from kube_galaxy.pkg.cluster_context import ClusterContext
+from kube_galaxy.pkg.manifest.models import NodeRole
 
 
 class TestClusterContextDefaults:
@@ -62,3 +63,12 @@ class TestClusterContextMutations:
         assert ctx.components["kubeadm"] is comp
         assert ctx.artifact_server is None
         assert ctx.registry_mirror is None
+
+    def test_units_setter_indexes_by_role_and_index(self) -> None:
+        ctx = ClusterContext()
+        u1, u2 = MagicMock(), MagicMock()
+        u1.role, u1.index = NodeRole.CONTROL_PLANE, 0
+        u2.role, u2.index = NodeRole.WORKER, 0
+        ctx.units = [u1, u2]
+        assert ctx.units[(NodeRole.CONTROL_PLANE, 0)] is u1
+        assert ctx.units[(NodeRole.WORKER, 0)] is u2

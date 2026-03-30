@@ -63,16 +63,17 @@ def setup_cluster(manifest_path: str) -> None:
 
         # Provision the orchestrator unit via the manifest's provider
         provider = provider_factory(manifest)
-        lead_unit = provider.provision(NodeRole.CONTROL_PLANE, 0)
-        info("Waiting for Lead Control-Plane unit to become ready...")
-        lead_unit.enlist()
-        info(f"Lead Control-Plane unit '{lead_unit.name}' is ready")
+        units = provider.provision_all()
+        info("Waiting for Units to become ready...")
+        for unit in units:
+            unit.enlist()
 
-        # TODO: Support multiple units based on manifest
-        units = [lead_unit]
+        lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
+        info(f"Lead Control-Plane unit '{lead_unit.name}' is ready")
 
         # Create all component resources
         ctx = ClusterContext(components={})
+        ctx.units = units
         for config in configs:
             component_class = find_component(config.name)
             resource = component_class(ctx, manifest, config, lead_unit.arch)
@@ -106,8 +107,8 @@ def setup_cluster(manifest_path: str) -> None:
 
             remaining_hooks = [h for h in SetupHooks if h != SetupHooks.DOWNLOAD]
             for idx, hook in enumerate(remaining_hooks, 2):
+                section(f"Stage {idx}/{len(SetupHooks)}: {hook.value.capitalize()} Components")
                 for unit in units:
-                    section(f"Stage {idx}/{len(SetupHooks)}: {hook.value.capitalize()} Components")
                     _run_hook(unit, ctx, hook)
         ctx.artifact_server = None
 
@@ -145,13 +146,11 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
 
         # Locate the orchestrator unit via the manifest's provider (no new provisioning)
         provider = provider_factory(manifest)
-        lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
-
-        # TODO: Support multiple units based on manifest
-        units = [lead_unit]
+        units = list(reversed(provider.locate_all()))
 
         # Create all component resources
         ctx = ClusterContext(components={})
+        ctx.units = units
         for config in configs:
             for unit in units:
                 component_class = find_component(config.name)
@@ -161,8 +160,8 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         # Execute 3-stage teardown lifecycle in reverse dependency order
         num_hooks = len(TeardownHooks)
         for idx, hook in enumerate(TeardownHooks):
+            section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
             for unit in units:
-                section(f"Stage {idx + 1}/{num_hooks}: {hook.value.capitalize()} Components")
                 _run_hook(unit, ctx, hook, force)
 
         # Stop the registry mirror now that all component hooks are done.
@@ -222,7 +221,6 @@ def _run_hook(unit: Unit, ctx: ClusterContext, hook: Hooks, force: bool = False)
 
         # Submit all tasks in component order
         for name, resource in ctx.components.items():
-            info(f"  {name}: {hook_name_caps}...")
             future = executor.submit(resource.run_hook, hook.value)
             futures_list.append((name, future))
 

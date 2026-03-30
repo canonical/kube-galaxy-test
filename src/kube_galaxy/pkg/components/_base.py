@@ -5,7 +5,6 @@ All component implementations should inherit from ComponentBase and
 override the lifecycle hooks they need.
 """
 
-import shutil
 from abc import abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
@@ -95,7 +94,7 @@ class ComponentBase:
         # Allow tests and callers to omit arch_info; default to detected arch
         self.arch_info = arch_info
         # for InstallMethod Binary or BinaryArchive
-        self.binary_path: Path | None = None  # path to downloaded binary (before installation)
+        self.download_path: Path | None = None  # path to downloaded binary/archive (pre-install)
         self.install_path: str | None = None  # path to root installed bin
         # for InstallMethod ContainerManifest
         self.manifest_path: Path | None = None  # path to downloaded manifest file
@@ -167,6 +166,7 @@ class ComponentBase:
         hook_method = getattr(self, f"{hook_name}_hook", None)
         if not hook_method:
             raise ComponentError(f"{hook_name_caps} hook not implemented for {self.name}")
+        info(f"  {self.name}: {hook_name_caps} on {self.unit.hostname}...")
         hook_method()
 
     def download_hook(self) -> None:
@@ -233,16 +233,6 @@ class ComponentBase:
         """
         self._install_strategy.verify(self)
         self._test_strategy.verify(self)
-
-    def remove_hook(self) -> None:
-        """
-        Remove/uninstall the component.
-
-        This hook runs during component removal.
-        Override to implement cleanup logic.
-        """
-        self._install_strategy.remove(self)
-        self._test_strategy.remove(self)
 
     # Component directory and alternatives management methods
     @property
@@ -311,20 +301,13 @@ class ComponentBase:
 
     def delete_hook(self) -> None:
         """
-        Delete component binaries and configuration files.
+        Remove/uninstall the component.
 
-        This hook runs in the DELETE stage of teardown (sequential, reverse dependency order).
-        Override to implement binary/config removal logic.
+        This hook runs during component removal.
+        Override to implement cleanup logic.
         """
-        # Remove update-alternatives entries for this component
-        self.remove_component_alternatives()
-
-        # extracted_dir is a local staging directory — clean it up locally
-        if self.extracted_dir and self.extracted_dir.exists():
-            shutil.rmtree(self.extracted_dir, ignore_errors=True)
-
-        # Remove component directory (binaries) on the unit
-        self.cleanup_component_dir()
+        self._install_strategy.delete(self)
+        self._test_strategy.delete(self)
 
     def post_delete_hook(self) -> None:
         """
@@ -515,15 +498,3 @@ class ClusterComponentBase(ComponentBase):
     @abstractmethod
     def pull_kubeconfig(self) -> None:
         """Pull kubeconfig from this unit to the orchestrator's ~/.kube/config."""
-
-    def find_image_retag(self, image: str) -> str:
-        """
-        Find the retagged image name for a given image.
-
-        Args:
-            image: Original image name
-
-        Returns:
-            Retagged image name
-        """
-        return ""

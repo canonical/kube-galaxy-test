@@ -84,6 +84,10 @@ custom-built Kubernetes components using the canonical
    kube-galaxy setup manifests/baseline-k8s-1.35.yaml
    ```
 
+   > **Note**: After a successful setup you will be asked whether to add a
+   > `kube-galaxy` context to `~/.kube/config`.  Pass `--update-kubeconfig` to
+   > skip the prompt and always update automatically.
+
 3. **Check project status**:
 
    ```bash
@@ -133,11 +137,17 @@ kube-galaxy validate --manifest manifests/smoketest.yaml
 # Setup the cluster
 kube-galaxy setup manifests/smoketest.yaml
 
+# Setup and automatically update ~/.kube/config
+kube-galaxy setup manifests/smoketest.yaml --update-kubeconfig
+
 # Verify control plane is running
 kube-galaxy logs manifests/smoketest.yaml
 
-# Clean up
+# Clean up (prompts to remove the kube-galaxy context from ~/.kube/config)
 kube-galaxy cleanup all
+
+# Clean up without any prompts
+kube-galaxy cleanup all --update-kubeconfig
 ```
 
 ## 📋 Cluster Manifest Format

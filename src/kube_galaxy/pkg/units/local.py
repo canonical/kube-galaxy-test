@@ -13,7 +13,7 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
@@ -28,6 +28,9 @@ class LocalUnit(Unit):
     - Running as root: all commands execute as-is.
     - Running as non-root: ``privileged=True`` prepends ``sudo``.
     """
+
+    def __init__(self) -> None:
+        super().__init__(NodeRole.CONTROL_PLANE, 0)
 
     @property
     def name(self) -> str:
@@ -103,6 +106,13 @@ class LocalUnit(Unit):
 
 class LocalUnitProvider(UnitProvider):
     """Returns a single LocalUnit; no machines are provisioned or destroyed."""
+
+    def __init__(self, counts: NodesConfig, image: str) -> None:
+        super().__init__(counts, image)
+        if counts.control_plane > 1:
+            raise ValueError("LocalUnitProvider supports only a single control plane node.")
+        if counts.worker > 0:
+            raise ValueError("LocalUnitProvider does not support worker nodes.")
 
     @property
     def is_ephemeral(self) -> bool:

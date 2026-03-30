@@ -5,19 +5,24 @@ uniform interface for running commands, transferring files, and managing
 per-hostname credentials.
 """
 
+from __future__ import annotations
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.literals import SystemPaths, Timeouts, URLs
-from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.utils.detector import ArchInfo, detect_ip, map_to_image_arch, map_to_k8s_arch
 from kube_galaxy.pkg.utils.errors import ClusterError
 
 _CREDENTIALS_DIR = "/opt/kube-galaxy/credentials"
+
+if TYPE_CHECKING:
+    from kube_galaxy.pkg.cluster_context import ClusterContext
 
 
 @dataclass
@@ -50,6 +55,13 @@ class Unit(ABC):
     - ``SSHUnit``        ``ssh``/``scp``; pre-existing host
     - ``MultipassUnit``  ``multipass exec`` / ``multipass transfer``; ephemeral
     """
+
+    ENLIST_TIMEOUT = Timeouts.UNIT_READY_TIMEOUT
+
+    def __init__(self, role: NodeRole, index: int) -> None:
+        self.role = role
+        self.index = index
+        self._ctx: ClusterContext | None = None
 
     @property
     @abstractmethod
@@ -149,6 +161,7 @@ class Unit(ABC):
         if hosts_path == "/etc/hosts.new":
             self.run(["mv", hosts_path, "/etc/hosts"], privileged=True)
 
+    @cached_property
     def hostname(self) -> str:
         """Return the unit's hostname."""
         result = self.run(["hostname"], check=False)
@@ -178,14 +191,6 @@ class Unit(ABC):
                 )
             time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
         self.update_etc_hosts()
-
-    # ------------------------------------------------------------------
-    # Cluster context integration
-    # ------------------------------------------------------------------
-
-    #: Cluster context for this unit, set by the cluster orchestration logic.
-    #: ``None`` until :meth:`set_cluster_context` is called.
-    _ctx: ClusterContext | None = None
 
     def set_cluster_context(self, cxt: ClusterContext) -> None:
         """Configure the artifact server URL for this unit.
@@ -228,8 +233,10 @@ class Unit(ABC):
 class UnitProvider(ABC):
     """Owns the machine lifecycle  provisioning and deprovisioning."""
 
-    def __init__(self) -> None:
+    def __init__(self, node_cfg: NodesConfig, image: str) -> None:
+        self._image = image
         self._units: list[Unit] = []
+        self._node_cfg = node_cfg
 
     def _track(self, unit: Unit) -> None:
         """Add *unit* to the tracked set if not already present."""
@@ -273,6 +280,28 @@ class UnitProvider(ABC):
     @abstractmethod
     def deprovision(self, unit: Unit) -> None:
         """Deprovision a single unit (destroy VM or no-op for pre-existing hosts)."""
+
+    def locate_all(self) -> list[Unit]:
+        """Return Units for all machines defined in the manifest, without provisioning."""
+        ranges = {
+            NodeRole.CONTROL_PLANE: self._node_cfg.control_plane,
+            NodeRole.WORKER: self._node_cfg.worker,
+        }
+        for role in NodeRole:
+            for index in range(ranges[role]):
+                self._track(self.locate(role, index))
+        return self._units
+
+    def provision_all(self) -> list[Unit]:
+        """Provision machines for all roles and indices defined in the manifest."""
+        ranges = {
+            NodeRole.CONTROL_PLANE: self._node_cfg.control_plane,
+            NodeRole.WORKER: self._node_cfg.worker,
+        }
+        for role in NodeRole:
+            for index in range(ranges[role]):
+                self._track(self.provision(role, index))
+        return self._units
 
     def deprovision_all(self) -> None:
         """Deprovision all tracked units."""
