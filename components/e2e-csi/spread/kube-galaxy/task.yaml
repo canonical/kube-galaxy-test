@@ -72,7 +72,7 @@ execute: |
   ./sonobuoy run \
   --kubeconfig=$KUBECONFIG \
   --plugin csi-plugin.yaml \
-  --plugin-env=e2e.E2E_FOCUS="External.Storage.*hostpath.csi.k8s.io" \
+  --plugin-env=e2e.E2E_FOCUS="External.Storage.*${DRIVER_NAME}" \
   --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
   --plugin-env=e2e.E2E_PARALLEL="true" || exit 1
 
