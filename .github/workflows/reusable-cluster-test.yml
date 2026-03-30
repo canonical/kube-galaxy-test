@@ -116,7 +116,7 @@ jobs:
         shell: bash
         run: |
           echo "## Test Configuration"
-          echo "- **Manifest**: ${{ steps.manifest.outputs.path }}"
+          echo "- **Manifest**: ${{ matrix.manifest-file }}"
           echo "- **Runner**: ubuntu-latest"
           echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes"
 
@@ -131,7 +131,7 @@ jobs:
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
 
-          kube-galaxy setup ${{ steps.manifest.outputs.path }}
+          kube-galaxy setup ${{ matrix.manifest-file }}
 
       - name: Verify Cluster Health
         shell: bash
@@ -142,7 +142,7 @@ jobs:
         id: run-tests
         shell: bash
         run: |
-          kube-galaxy test ${{ steps.manifest.outputs.path }}
+          kube-galaxy test ${{ matrix.manifest-file }}
 
       - name: Collect Logs
         if: always()
