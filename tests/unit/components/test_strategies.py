@@ -30,6 +30,7 @@ from kube_galaxy.pkg.manifest.models import (
 from kube_galaxy.pkg.manifest.models import (
     TestMethod as ComponentTestMethod,
 )
+from kube_galaxy.pkg.units._base import RunResult
 from kube_galaxy.pkg.utils.detector import get_arch_info
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 
@@ -75,7 +76,7 @@ def _make_component(
 
 class TestBinaryDownload:
     def test_download_remote_url(self, monkeypatch, tmp_path, arch_info):
-        """_download fetches a remote URL and sets binary_path."""
+        """_download fetches a remote URL and sets download_path."""
         comp = _make_component(
             InstallMethod.BINARY,
             "https://example.com/releases/v{{ release }}/bin-{{ arch }}",
@@ -100,7 +101,7 @@ class TestBinaryDownload:
         assert len(calls) == 1
         url, dest = calls[0]
         assert f"v{comp.config.release}" in url
-        assert comp.binary_path == dest
+        assert comp.download_path == dest
         assert dest.exists()
 
     def test_download_local_source(self, monkeypatch, tmp_path, arch_info):
@@ -130,7 +131,7 @@ class TestBinaryDownload:
         assert len(calls) == 1
         url, _ = calls[0]
         assert url.startswith("local://")
-        assert comp.binary_path is not None
+        assert comp.download_path is not None
 
     def test_download_gh_artifact(self, monkeypatch, tmp_path, arch_info):
         """_download passes gh-artifact:// URL unchanged to download_file."""
@@ -159,12 +160,12 @@ class TestBinaryDownload:
         assert len(calls) == 1
         url, _ = calls[0]
         assert url.startswith("gh-artifact://")
-        assert comp.binary_path is not None
+        assert comp.download_path is not None
 
 
 class TestBinaryInstall:
     def test_install_raises_if_binary_not_downloaded(self, monkeypatch, tmp_path, arch_info):
-        """_install raises ComponentError when binary_path is not set."""
+        """_install raises ComponentError when download_path is not set."""
         comp = _make_component(
             InstallMethod.BINARY,
             "https://example.com/bin",
@@ -172,12 +173,12 @@ class TestBinaryInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        # Don't call download; binary_path remains None
+        # Don't call download; download_path remains None
         with pytest.raises(ComponentError, match="binary not downloaded"):
             comp.install_hook()
 
     def test_install_raises_if_binary_file_missing(self, monkeypatch, tmp_path, arch_info):
-        """_install raises ComponentError when binary_path points to non-existent file."""
+        """_install raises ComponentError when download_path points to non-existent file."""
         comp = _make_component(
             InstallMethod.BINARY,
             "https://example.com/bin",
@@ -185,7 +186,7 @@ class TestBinaryInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        comp.binary_path = tmp_path / "does-not-exist"
+        comp.download_path = tmp_path / "does-not-exist"
         with pytest.raises(ComponentError, match="binary not downloaded"):
             comp.install_hook()
 
@@ -201,7 +202,7 @@ class TestBinaryInstall:
         )
         binary = tmp_path / "mycomp"
         binary.write_bytes(b"binary")
-        comp.binary_path = binary
+        comp.download_path = binary
 
         monkeypatch.setattr(
             "kube_galaxy.pkg.components._base.install_binary",
@@ -235,7 +236,7 @@ class TestBinaryArchiveBinPath:
 
 class TestBinaryArchiveDownload:
     def test_download_remote(self, monkeypatch, tmp_path, arch_info):
-        """_download fetches archive from remote URL and extracts it."""
+        """_download fetches archive from remote URL without local extraction."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
             "https://example.com/archive-{{ arch }}.tar.gz",
@@ -251,23 +252,15 @@ class TestBinaryArchiveDownload:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"fake-archive")
 
-        extract_calls: list = []
-
-        def fake_extract(archive: Path, dest_dir: Path) -> None:
-            extract_calls.append((archive, dest_dir))
-            dest_dir.mkdir(parents=True, exist_ok=True)
-
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
-        )
-        monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
         )
 
         comp.download_hook()
 
         assert len(download_calls) == 1
-        assert len(extract_calls) == 1
+        assert comp.download_path is not None
+        assert comp.download_path.exists()
 
     def test_download_local(self, monkeypatch, tmp_path, arch_info):
         """_download passes local:// base-url to download_file, which resolves it to file://."""
@@ -287,14 +280,8 @@ class TestBinaryArchiveDownload:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"fake-archive")
 
-        def fake_extract(archive: Path, dest_dir: Path) -> None:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
-        )
-        monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
         )
 
         comp.download_hook()
@@ -310,21 +297,15 @@ class TestBinaryArchiveDownload:
             arch_info=arch_info,
         )
 
-        calls: list = []
+        calls = []
 
         def fake_download(url: str, dest: Path) -> None:
             calls.append(url)
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"fake-archive")
 
-        def fake_extract(archive: Path, dest_dir: Path) -> None:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-
         monkeypatch.setattr(
             "kube_galaxy.pkg.components.strategies._base.download_file", fake_download
-        )
-        monkeypatch.setattr(
-            "kube_galaxy.pkg.components.strategies.binary_archive.extract_archive", fake_extract
         )
 
         comp.download_hook()
@@ -335,7 +316,7 @@ class TestBinaryArchiveDownload:
 
 class TestBinaryArchiveInstall:
     def test_install_raises_if_not_downloaded(self, monkeypatch, tmp_path, arch_info):
-        """_install raises ComponentError when extracted_dir does not exist."""
+        """_install raises ComponentError when archive has not been downloaded."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
             "https://example.com/archive.tar.gz",
@@ -343,12 +324,14 @@ class TestBinaryArchiveInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        # extracted_dir is under component_tmp_dir/extracted; it doesn't exist yet
+        # download_path is None; archive hasn't been downloaded yet
         with pytest.raises(ComponentError, match="archive not downloaded"):
             comp.install_hook()
 
-    def test_install_installs_matching_binaries(self, monkeypatch, tmp_path, arch_info):
-        """_install globs the extracted_dir and installs matching files."""
+    def test_install_transfers_archive_extracts_and_installs(
+        self, monkeypatch, tmp_path, arch_info, mock_unit
+    ):
+        """_install delegates to install_from_archive: transfers, extracts, installs."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
             "https://example.com/archive.tar.gz",
@@ -358,29 +341,57 @@ class TestBinaryArchiveInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        # Create the extracted directory with a matching binary
-        extracted = comp.component_tmp_dir / "extracted"
-        extracted.mkdir(parents=True, exist_ok=True)
-        binary = extracted / "mycomp"
-        binary.write_bytes(b"binary")
+        comp.unit = mock_unit
 
-        installed: list[str] = []
+        # Simulate a downloaded archive in the orchestrator staging area
+        archive = tmp_path / "opt" / "kube-galaxy" / "mycomp" / "temp" / "archive.tar.gz"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_bytes(b"fake-archive")
+        comp.download_path = archive
 
-        def fake_install_binary(path: Path, name: str, comp_name: str, unit: object) -> str:
-            installed.append(name)
-            return f"/usr/local/bin/{name}"
-
-        monkeypatch.setattr(
-            "kube_galaxy.pkg.components._base.install_binary",
-            fake_install_binary,
+        # Queue: mkdir result, then sh result returning a binary path
+        node_extracted = "/opt/kube-galaxy/mycomp/temp/extracted"
+        mock_unit.set_run_results(
+            RunResult(0, "", ""),  # mkdir -p node_bin_dir
+            RunResult(0, f"{node_extracted}/mycomp\n", ""),  # sh for-loop listing
         )
 
         comp.install_hook()
 
-        assert "mycomp" in installed
-        assert comp.install_path == "/usr/local/bin/mycomp"
+        # Archive was transferred to the node
+        assert len(mock_unit.download_calls) == 1
+        node_archive = "/opt/kube-galaxy/mycomp/temp/archive.tar.gz"
+        assert mock_unit.download_calls[0][1] == node_archive
 
-    def test_install_sets_install_path_for_named_binary(self, monkeypatch, tmp_path, arch_info):
+        # Find the run calls for each operation
+        all_run_cmds = [call[0] for call in mock_unit.run_calls]
+
+        # Binary was moved from extracted location to component bin dir
+        mv_calls = [cmd for cmd in all_run_cmds if cmd[0] == "mv"]
+        assert len(mv_calls) == 1
+        assert mv_calls[0][1] == f"{node_extracted}/mycomp"
+        assert mv_calls[0][2] == "/opt/kube-galaxy/mycomp/bin/mycomp"
+
+        # Binary was made executable
+        chmod_calls = [cmd for cmd in all_run_cmds if cmd[0] == "chmod"]
+        assert len(chmod_calls) == 1
+        assert chmod_calls[0][1] == "755"
+
+        # Binary was registered with update-alternatives
+        alt_calls = [cmd for cmd in all_run_cmds if cmd[0] == "update-alternatives"]
+        assert len(alt_calls) == 1
+        assert alt_calls[0][2] == f"{SystemPaths.USR_LOCAL_BIN}/mycomp"
+
+        # No cleanup — teardown handles removal of node temp files
+        rm_calls = [cmd for cmd in all_run_cmds if cmd[0] == "rm"]
+        assert len(rm_calls) == 0
+
+        # install_path is set for the component-named binary
+        assert comp.install_path == f"{SystemPaths.USR_LOCAL_BIN}/mycomp"
+
+    def test_install_sets_install_path_for_named_binary(
+        self, monkeypatch, tmp_path, arch_info, mock_unit
+    ):
         """_install sets install_path only for the binary matching comp.name."""
         comp = _make_component(
             InstallMethod.BINARY_ARCHIVE,
@@ -391,20 +402,23 @@ class TestBinaryArchiveInstall:
             tmp_path=tmp_path,
             arch_info=arch_info,
         )
-        extracted = comp.component_tmp_dir / "extracted"
-        extracted.mkdir(parents=True, exist_ok=True)
-        # Create two binaries; only "mycomp" should set install_path
-        (extracted / "mycomp").write_bytes(b"binary1")
-        (extracted / "other").write_bytes(b"binary2")
+        comp.unit = mock_unit
 
-        monkeypatch.setattr(
-            "kube_galaxy.pkg.components._base.install_binary",
-            lambda path, name, comp_name, unit: f"/usr/local/bin/{name}",
+        archive = tmp_path / "opt" / "kube-galaxy" / "mycomp" / "temp" / "archive.tar.gz"
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_bytes(b"fake-archive")
+        comp.download_path = archive
+
+        # Queue sh result returning two binaries; only "mycomp" should set install_path
+        node_extracted = "/opt/kube-galaxy/mycomp/temp/extracted"
+        mock_unit.set_run_results(
+            RunResult(0, "", ""),  # mkdir -p node_bin_dir
+            RunResult(0, f"{node_extracted}/mycomp\n{node_extracted}/other\n", ""),  # sh listing
         )
 
         comp.install_hook()
 
-        assert comp.install_path == "/usr/local/bin/mycomp"
+        assert comp.install_path == f"{SystemPaths.USR_LOCAL_BIN}/mycomp"
 
 
 # ===========================================================================

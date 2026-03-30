@@ -169,6 +169,91 @@ def install_binary(
         raise ComponentError(f"Failed to install {binary_name} to {dest_dir}: {e}") from e
 
 
+def install_from_archive(
+    archive_path: Path,
+    bin_pattern: str,
+    component_name: str,
+    unit: "Unit",
+) -> dict[str, str]:
+    """Transfer an archive to the node, extract it, and install all matching binaries.
+
+    The archive is pulled from the orchestrator's staging area via
+    :meth:`~kube_galaxy.pkg.units._base.Unit.staging_url` and
+    :meth:`~kube_galaxy.pkg.units._base.Unit.download`, then extracted
+    on the node with :meth:`~kube_galaxy.pkg.units._base.Unit.extract`.
+    Each file matched by *bin_pattern* is moved to the component bin
+    directory, made executable, and registered with ``update-alternatives``.
+
+    Args:
+        archive_path: Local path to the archive in the orchestrator staging area.
+        bin_pattern: Shell glob pattern relative to the extraction root used to
+            locate binaries within the archive (e.g. ``*`` or ``./bin/*``).
+        component_name: Component name, used to derive target directories.
+        unit: Unit to install onto.
+
+    Returns:
+        Mapping from each installed binary name to its ``update-alternatives``
+        symlink path (e.g. ``{"containerd": "/usr/local/bin/containerd"}``).
+
+    Raises:
+        ComponentError: If the transfer, extraction, or any installation step fails.
+    """
+    node_temp_dir = SystemPaths.component_temp_dir(component_name)
+    node_archive = str(node_temp_dir / archive_path.name)
+    node_extracted_dir = str(node_temp_dir / "extracted")
+    node_bin_dir = SystemPaths.component_bin_dir(component_name)
+
+    try:
+        # Transfer the archive from the orchestrator staging area to the node.
+        archive_url = unit.staging_url(archive_path)
+        unit.download(archive_url, node_archive)
+        unit.extract(node_archive, node_extracted_dir)
+
+        # Find matching binaries via a shell for-loop and install each one.
+        unit.run(["mkdir", "-p", str(node_bin_dir)], privileged=True)
+
+        result = unit.run(
+            [
+                "sh",
+                "-c",
+                f"for f in {node_extracted_dir}/{bin_pattern}; "
+                f'do [ -f "$f" ] && printf \'%s\\n\' "$f"; done',
+            ],
+            check=False,
+        )
+
+        installed: dict[str, str] = {}
+        for binary_file in result.stdout.splitlines():
+            binary_file = binary_file.strip()
+            if not binary_file:
+                continue
+            binary_name = Path(binary_file).name
+            dest = str(node_bin_dir / binary_name)
+            unit.run(["mv", binary_file, dest], privileged=True)
+            unit.run(["chmod", "755", dest], privileged=True)
+            alternative_path = f"{SystemPaths.USR_LOCAL_BIN}/{binary_name}"
+            unit.run(
+                [
+                    "update-alternatives",
+                    "--install",
+                    alternative_path,
+                    binary_name,
+                    dest,
+                    Permissions.ALTERNATIVES_PRIORITY,
+                ],
+                privileged=True,
+            )
+            installed[binary_name] = alternative_path
+
+        return installed
+    except ComponentError:
+        raise
+    except Exception as e:
+        raise ComponentError(
+            f"Failed to install from archive {archive_path.name} to {node_bin_dir}: {e}"
+        ) from e
+
+
 def remove_binary(binary_path: Path, unit: "Unit") -> None:
     """
     Remove a binary and its update-alternatives entry from the unit.

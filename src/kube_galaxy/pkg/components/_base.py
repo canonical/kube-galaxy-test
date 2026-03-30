@@ -95,7 +95,7 @@ class ComponentBase:
         # Allow tests and callers to omit arch_info; default to detected arch
         self.arch_info = arch_info
         # for InstallMethod Binary or BinaryArchive
-        self.binary_path: Path | None = None  # path to downloaded binary (before installation)
+        self.download_path: Path | None = None  # path to downloaded binary/archive (pre-install)
         self.install_path: str | None = None  # path to root installed bin
         # for InstallMethod ContainerManifest
         self.manifest_path: Path | None = None  # path to downloaded manifest file

@@ -6,8 +6,9 @@ from pathlib import Path
 from textwrap import dedent
 
 from kube_galaxy.pkg.components import ComponentBase, register_component
-from kube_galaxy.pkg.literals import Permissions
+from kube_galaxy.pkg.literals import Permissions, SystemPaths
 from kube_galaxy.pkg.manifest.models import InstallMethod
+from kube_galaxy.pkg.utils.components import format_component_pattern, install_from_archive
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.logging import info
 
@@ -26,33 +27,40 @@ class CNIPlugins(ComponentBase):
 
     def install_hook(self) -> None:
         """
-        Install cni-plugins binary from extracted archive.
+        Install cni-plugins binaries from archive on the node.
 
         Requires download_hook to have completed first.
-
-        Args:
-            arch: Architecture (amd64, arm64, etc.)
+        Installs all extracted binaries to the component bin directory, then
+        creates symlinks in /opt/cni/bin/ for each binary.
         """
         comp_name = self.config.name
         match self.config.installation.method:
             case InstallMethod.BINARY_ARCHIVE:
-                if not self.extracted_dir or not self.extracted_dir.exists():
+                if not self.download_path or not self.download_path.exists():
                     raise ComponentError(
-                        f"{comp_name} archive not downloaded. Run download hook first."
+                        f"{comp_name} binary archive not found. Run download hook first."
                     )
+                bin_pattern = format_component_pattern(
+                    self.config.installation.bin_path,
+                    self.config,
+                    self.arch_info,
+                    self.config.installation.repo,
+                )
+                installed = install_from_archive(
+                    self.download_path,
+                    bin_pattern,
+                    self.name,
+                    self.unit,
+                )
                 self.unit.run(["mkdir", "-p", str(self.OPT_CNI_PLUGINS_DIR)], privileged=True)
-                for item in self.extracted_dir.iterdir():
-                    if item.is_file() and item.stat().st_mode & 0o111:
-                        info(f"    Symlink {comp_name} binary: {item.name}")
-                        self.unit.run(
-                            [
-                                "ln",
-                                "-s",
-                                str(item),
-                                str(self.OPT_CNI_PLUGINS_DIR / item.name),
-                            ],
-                            privileged=True,
-                        )
+                comp_bin_dir = SystemPaths.component_bin_dir(self.name)
+                for binary_name in installed:
+                    comp_bin = str(comp_bin_dir / binary_name)
+                    info(f"    Symlink {comp_name} binary: {binary_name}")
+                    self.unit.run(
+                        ["ln", "-sf", comp_bin, str(self.OPT_CNI_PLUGINS_DIR / binary_name)],
+                        privileged=True,
+                    )
                 self.install_path = str(self.OPT_CNI_PLUGINS_DIR)
             case _:
                 raise ComponentError(
@@ -77,15 +85,17 @@ class CNIPlugins(ComponentBase):
         """
         Remove cni-plugin binaries, symlinks, and configuration files.
         """
-        if self.extracted_dir and self.extracted_dir.exists():
-            for item in self.extracted_dir.iterdir():
-                if item.is_file() and item.stat().st_mode & 0o111:
-                    info(f"    Removed {self.name} binary: {item.name}")
-                    self.unit.run(
-                        ["rm", "-rf", str(self.OPT_CNI_PLUGINS_DIR / item.name)],
-                        privileged=True,
-                        check=False,
-                    )
+        # Remove symlinks from /opt/cni/bin/ for each binary in the component bin dir
+        comp_bin_dir = SystemPaths.component_bin_dir(self.name)
+        result = self.unit.run(["ls", str(comp_bin_dir)], privileged=True, check=False)
+        if result.returncode == 0:
+            for binary_name in result.stdout.splitlines():
+                info(f"    Removed {self.name} binary: {binary_name}")
+                self.unit.run(
+                    ["rm", "-rf", str(self.OPT_CNI_PLUGINS_DIR / binary_name)],
+                    privileged=True,
+                    check=False,
+                )
 
         # This will handle alternatives and binaries
         super().delete_hook()
