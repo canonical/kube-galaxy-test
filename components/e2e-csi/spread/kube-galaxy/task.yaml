@@ -9,11 +9,9 @@ execute: |
 
     cat > driver.yaml << EOF
     StorageClass:
-      FromExistingClassName: csi-hostpath
-    SnapshotClass:
-      FromExistingClassName: csi-hostpath-snapclass
+      FromExistingClassName: ${STORAGE_CLASS_NAME}
     DriverInfo:
-      Name: hostpath.csi.k8s.io
+      Name: ${DRIVER_NAME}
       SupportedSizeRange:
         Min: 1Mi
       Capabilities:
@@ -23,7 +21,6 @@ execute: |
         multipods: true
         nodeExpansion: true
         persistence: true
-        snapshotDataSource: true
         singleNodeVolume: true
         topology: true
         FSResizeFromSourceNotSupported: true
@@ -60,6 +57,8 @@ execute: |
       env:
       - name: E2E_USE_GO_RUNNER
         value: "true"
+      - name: E2E_EXTRA_ARGS
+        value: "--progress-report-url=http://localhost:8099/progress -storage.testdriver=/tmp/csi-cfg/driver.yaml"
       image: registry.k8s.io/conformance:v${K8S_VERSION}
       imagePullPolicy: IfNotPresent
       name: e2e
@@ -75,7 +74,6 @@ execute: |
     --plugin csi-plugin.yaml \
     --plugin-env=e2e.E2E_FOCUS="External.Storage.*hostpath.csi.k8s.io" \
     --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
-    --plugin-env=E2E_EXTRA_ARGS="--progress-report-url=http://localhost:8099/progress -storage.testdriver=/tmp/csi-cfg/driver.yaml"
     --plugin-env=e2e.E2E_PARALLEL="true" || exit 1
 
     kubectl wait --for=condition=Ready pod/sonobuoy -n sonobuoy \

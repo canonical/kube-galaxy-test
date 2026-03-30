@@ -308,6 +308,8 @@ components:
       source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
       environment:
         TEST_TIMEOUT_S: "1800"
+        STORAGE_CLASS_NAME: "csi-hostpath"
+        DRIVER_NAME: "hostpath.csi.k8s.io"
 
 networking:
   - name: default
