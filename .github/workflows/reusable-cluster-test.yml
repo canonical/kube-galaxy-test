@@ -19,8 +19,12 @@ on:
         description: "Git ref to check out from manifests-repo"
         type: string
         default: "main"
+      kube-galaxy-repo:
+        description: "Git repository for kube-galaxy-test (owner/repo)"
+        type: string
+        default: "canonical/kube-galaxy-test"
       kube-galaxy-ref:
-        description: "Git ref for kube-galaxy-test checkout"
+        description: "Git ref for installing kube-galaxy-test with uv"
         type: string
         default: "main"
       timeout-minutes:
@@ -60,41 +64,12 @@ jobs:
         include: ${{ fromJson(inputs.manifests-json) }}
 
     steps:
-      # ---- Checkout kube-galaxy-test (the CLI + components + spread tests) ----
-      # Internal call (manifests live in this repo): use the caller's own context so
-      # PR branches are tested as-is rather than always falling back to main.
-      - name: Checkout kube-galaxy-test (internal)
-        if: inputs.manifests-repo == ''
-        uses: actions/checkout@v6
-
-      # External call (manifests live in a separate repo): check out
-      # canonical/kube-galaxy-test at the caller-specified ref.
-      - name: Checkout kube-galaxy-test (external)
-        if: inputs.manifests-repo != ''
-        uses: actions/checkout@v6
-        with:
-          repository: canonical/kube-galaxy-test
-          ref: ${{ inputs.kube-galaxy-ref }}
-
-      # ---- Conditionally checkout external manifests repo ----
+      # ---- Checkout local directory for manifests and components ----
       - name: Checkout manifests repo
-        if: inputs.manifests-repo != ''
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.manifests-repo }}
           ref: ${{ inputs.manifests-ref }}
-          path: _manifests
-
-      # ---- Resolve the effective manifest path ----
-      - name: Resolve manifest path
-        id: manifest
-        shell: bash
-        run: |
-          if [ -n "${{ inputs.manifests-repo }}" ]; then
-            echo "path=_manifests/${{ matrix.manifest-file }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "path=${{ matrix.manifest-file }}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Setup Astral UV
         uses: astral-sh/setup-uv@v8.0.0
@@ -134,7 +109,7 @@ jobs:
       - name: Install kube-galaxy
         shell: bash
         run: |
-          uv tool install -e .
+          uv tool install "git+https://github.com/${{ inputs.kube-galaxy-repo }}.git@${{ inputs.kube-galaxy-ref }}"
           kube-galaxy --version
 
       - name: Display Cluster Configuration
