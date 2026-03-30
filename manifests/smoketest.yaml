@@ -294,8 +294,8 @@ components:
       environment:
         SONOBUOY_EXTRA_ARGS: --mode=quick --plugin-env=e2e.E2E_EXTRA_ARGS="--ginkgo.fail-fast=false"
   
-  # CSI conformance test component, using sonobuoy
-  - name: e2e-csi-tests
+  # CSI conformance test component (test on hostpath csidriver), using sonobuoy
+  - name: csi-quick-tests
     category: Conformance
     release: "0.57.3"
     installation:
@@ -303,9 +303,10 @@ components:
     test:
       method: spread
       repo:
-        base-url: local://components/e2e-csi/
-        subdir: spread/kube-galaxy
-      source-format: "{{ repo.base-url }}/{{ repo.subdir }}/task.yaml"
+        base-url: https://github.com/canonical/_mx-k8s-ci
+        subdir: components/e2e-csi
+        ref: KU-5567/e2e-csi-test/task-definition
+      source-format: "https://api.github.com/repos/canonical/_mx-k8s-ci/contents/{{ repo.subdir }}/task.yaml?ref={{ repo.ref }}"
       environment:
         TEST_TIMEOUT_S: "1800"
         STORAGE_CLASS_NAME: "csi-hostpath"
