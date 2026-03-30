@@ -148,7 +148,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          kube-galaxy logs
+          kube-galaxy logs ${{ matrix.manifest-file }}
 
       - name: Rename log files for safe-upload
         if: always()
