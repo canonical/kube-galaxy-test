@@ -7,6 +7,7 @@ execute: |
   chmod +x kubectl
   export PATH=$PATH:.
 
+  # The information about the CSI driver.
   cat > driver.yaml << EOF
   StorageClass:
     FromExistingClassName: ${STORAGE_CLASS_NAME}
@@ -28,6 +29,8 @@ execute: |
   - shared: true
   EOF
 
+  # Create the sonobuoy e2e plugin configuration. 
+  # It mounts the driver info configmap inside the container.
   cat > csi-plugin.yaml << EOF
   podSpec:
     volumes:
@@ -69,17 +72,24 @@ execute: |
       name: results
   EOF
 
-  ./sonobuoy run \
-  --kubeconfig=$KUBECONFIG \
-  --plugin csi-plugin.yaml \
-  --plugin-env=e2e.E2E_FOCUS="External.Storage.*${DRIVER_NAME}" \
-  --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
-  --plugin-env=e2e.E2E_PARALLEL="true" || exit 1
+  # Cleanup previous sonobuoy runs.
+  sonobuoy delete --wait --kubeconfig=$KUBECONFIG || exit 1
 
-  kubectl wait --for=condition=Ready pod/sonobuoy -n sonobuoy \
-      --timeout=120s --kubeconfig=$KUBECONFIG
+  # Create the sonobuoy namespace.
+  kubectl create ns sonobuoy --kubeconfig=$KUBECONFIG || exit 1
 
+  # Create the configmap for the CSI driver info.
   kubectl create configmap hostpath-config --from-file=driver.yaml=driver.yaml \
       -n sonobuoy --dry-run=client -o yaml | kubectl apply -f - --kubeconfig=$KUBECONFIG
 
-  ./sonobuoy wait --kubeconfig=$KUBECONFIG --wait || exit 1
+  # Run sonobuoy with our custom plugin and skip the namespace check.
+  ./sonobuoy run \
+  --kubeconfig=$KUBECONFIG \
+  --plugin csi-plugin.yaml \
+  --plugin systemd-logs \
+  --plugin-env=e2e.E2E_FOCUS="External.Storage.*${DRIVER_NAME}" \
+  --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
+  --plugin-env=e2e.E2E_PARALLEL="true" \
+  --skip-preflight=existingnamespace \
+  --wait || exit 1
+
