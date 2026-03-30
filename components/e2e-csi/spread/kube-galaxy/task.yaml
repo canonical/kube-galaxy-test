@@ -1,5 +1,10 @@
 summary: E2E CSI conformance test component using sonobuoy
+artifacts:
+- &results results
+environment:
+  RESULTS_DIR: *results
 execute: |
+  mkdir -p ${RESULTS_DIR}
   wget --tries=3 https://github.com/vmware-tanzu/sonobuoy/releases/download/v${COMPONENT_VERSION}/sonobuoy_${COMPONENT_VERSION}_linux_${K8S_ARCH}.tar.gz -O sonobuoy.tar.gz || exit 1
   tar -xvf sonobuoy.tar.gz
 
@@ -91,5 +96,7 @@ execute: |
   --plugin-env=e2e.E2E_SKIP="\[Feature:|\[Disruptive\]" \
   --plugin-env=e2e.E2E_PARALLEL="true" \
   --skip-preflight=existingnamespace \
-  --wait || exit 1
+  --wait \
+  2>&1 | tee ${RESULTS_DIR}/run.log
 
+  ./sonobuoy retrieve --kubeconfig=$KUBECONFIG ${RESULTS_DIR} || exit 1
