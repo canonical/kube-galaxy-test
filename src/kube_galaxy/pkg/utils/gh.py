@@ -7,9 +7,11 @@ environments using the GITHUB_OUTPUT mechanism for inter-step communication.
 import base64
 import io
 import os
+import re
 import typing
 import uuid
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -17,16 +19,31 @@ from github import Auth, Github, GithubException
 from github.Artifact import Artifact
 
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.logging import info
+from kube_galaxy.pkg.utils.logging import info, warning
 from kube_galaxy.pkg.utils.url import http_headers, register_headers_provider
 
 # GitHub Actions sets this environment variable pointing to the output file
+GITHUB_API = "https://api.github.com"
 GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS")
 GITHUB_OUTPUT = os.getenv("GITHUB_OUTPUT")
 GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_ACTOR = os.getenv("GITHUB_ACTOR")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
+GITHUB_RELEASE_ASSET = re.compile(
+    r"https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/(.+)$"
+)
+
+
+@dataclass
+class GHReleaseAssetInfo:
+    """Structured information parsed from a GitHub release asset URL."""
+
+    owner: str  # "owner"
+    repo: str  # "repo"
+    tag: str  # Release tag (e.g., "v1.2.3")
+    filename: str  # Asset filename (e.g., "my-binary-linux-amd64.tar.gz")
+
 
 if typing.TYPE_CHECKING:
     # Define a Reader protocol for type hinting (io.Reader is not yet in mypy stubs)
@@ -40,6 +57,25 @@ def _write_chunked(infile: "Reader", outfile: io.BufferedWriter) -> None:
     """Write data to a file in chunks to handle large content without loading it all into memory."""
     while chunk := infile.read(8192):
         outfile.write(chunk)
+
+
+def gh_match_release_asset(url: str) -> GHReleaseAssetInfo | None:
+    """Check if a URL matches the pattern of a GitHub release asset."""
+
+    # https://github.com/{owner}/{repo}/releases/download/{tag}/{filename}
+    match = GITHUB_RELEASE_ASSET.match(url)
+    if not match:
+        return None
+
+    if not GITHUB_TOKEN:
+        warning(
+            f"{url} is a GitHub release asset but GITHUB_TOKEN "
+            "is unset; cannot download private assets."
+        )
+        return None
+
+    owner, repo, tag, filename = match.groups()
+    return GHReleaseAssetInfo(owner=owner, repo=repo, tag=tag, filename=filename)
 
 
 def gh_auth_bearer() -> str:
@@ -80,9 +116,14 @@ def gh_http_headers(**kwargs: bool | str) -> dict[str, str]:
 
     For GitHub API requests, include the API version and authentication token if available.
     """
-    headers = {"X-GitHub-Api-Version": "2022-11-28", "Accept": "application/vnd.github+json"}
+    headers = {"X-GitHub-Api-Version": "2022-11-28"}
     if kwargs.get("raw"):
         headers["Accept"] = "application/vnd.github.raw+json"
+    elif accept := kwargs.get("accept"):
+        headers["Accept"] = str(accept)
+    else:
+        headers["Accept"] = "application/vnd.github+json"
+
     if bearer := gh_auth_bearer():
         headers["Authorization"] = bearer
     if kwargs.get("basic_auth") and (gh_auth := gh_auth_basic()):
@@ -151,6 +192,68 @@ def gh_list_artifacts_by_name(artifact_name: str) -> list[Artifact]:
     if not matching_artifacts:
         raise ComponentError(f"No artifact named '{artifact_name}' found in {GITHUB_REPOSITORY}")
     return matching_artifacts
+
+
+def gh_download_release_asset(src: GHReleaseAssetInfo, dest: Path) -> None:
+    """Download a GitHub release asset (works for private repos via token)."""
+    repo_full = f"{src.owner}/{src.repo}"
+    # ------------------------------------------------------------
+    # 1. Resolve release by tag (REST API, no PyGithub)
+    # ------------------------------------------------------------
+    try:
+        release_resp = requests.get(
+            f"{GITHUB_API}/repos/{repo_full}/releases/tags/{src.tag}",
+            headers=gh_http_headers(),
+            timeout=30,
+        )
+        release_resp.raise_for_status()
+        release = release_resp.json()
+    except requests.RequestException as exc:
+        raise ComponentError(
+            f"Failed to fetch release '{src.tag}' for '{repo_full}': {exc}"
+        ) from exc
+
+    # ------------------------------------------------------------
+    # 2. Find asset by name
+    # ------------------------------------------------------------
+    asset = next(
+        (a for a in release.get("assets", []) if a.get("name") == src.filename),
+        None,
+    )
+
+    if not asset:
+        available = ", ".join(a["name"] for a in release.get("assets", []))
+        raise ComponentError(
+            f"Asset '{src.filename}' not found in release '{src.tag}' of '{repo_full}'.\n"
+            f"Available: {available}"
+        )
+
+    asset_id = asset["id"]
+
+    # ------------------------------------------------------------
+    # 3. Download via asset API endpoint (DO NOT manually handle redirects)
+    # ------------------------------------------------------------
+    download_url = f"{GITHUB_API}/repos/{repo_full}/releases/assets/{asset_id}"
+
+    try:
+        with requests.get(
+            download_url,
+            headers=gh_http_headers(accept="application/octet-stream"),
+            stream=True,
+            timeout=300,
+            allow_redirects=True,
+        ) as resp:
+            resp.raise_for_status()
+
+            with open(dest, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+
+    except requests.RequestException as exc:
+        raise ComponentError(
+            f"Failed to download asset '{src.filename}' from '{repo_full}': {exc}"
+        ) from exc
 
 
 def gh_download_artifact(artifact: Artifact, dest: Path) -> Path:

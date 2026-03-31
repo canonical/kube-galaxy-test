@@ -13,9 +13,13 @@ from github import GithubException
 
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.gh import (
+    GHReleaseAssetInfo,
     gh_download_artifact,
+    gh_download_release_asset,
     gh_extract_artifact_file,
+    gh_http_headers,
     gh_list_artifacts_by_name,
+    gh_match_release_asset,
     gh_output,
 )
 
@@ -352,3 +356,187 @@ class TestGhExtractArtifactFile:
             gh_extract_artifact_file("gh-artifact://art/f.txt", dest)
 
         assert captured[0].id == 2  # newer artifact selected
+
+
+# ---------------------------------------------------------------------------
+# gh_http_headers
+# ---------------------------------------------------------------------------
+
+
+class TestGhHttpHeaders:
+    def test_default_accept_is_vnd_github_json(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", None):
+            headers = gh_http_headers()
+        assert headers["Accept"] == "application/vnd.github+json"
+
+    def test_raw_flag_sets_raw_accept(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", None):
+            headers = gh_http_headers(raw=True)
+        assert headers["Accept"] == "application/vnd.github.raw+json"
+
+    def test_custom_accept_kwarg(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", None):
+            headers = gh_http_headers(accept="application/octet-stream")
+        assert headers["Accept"] == "application/octet-stream"
+
+    def test_raw_takes_precedence_over_accept_kwarg(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", None):
+            headers = gh_http_headers(raw=True, accept="application/octet-stream")
+        assert headers["Accept"] == "application/vnd.github.raw+json"
+
+    def test_api_version_always_present(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", None):
+            headers = gh_http_headers()
+        assert headers["X-GitHub-Api-Version"] == "2022-11-28"
+
+
+# ---------------------------------------------------------------------------
+# gh_match_release_asset
+# ---------------------------------------------------------------------------
+
+
+class TestGhMatchReleaseAsset:
+    _VALID_URL = "https://github.com/owner/repo/releases/download/v1.2.3/binary-linux-amd64"
+
+    def test_returns_info_for_valid_url_with_token(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"):
+            result = gh_match_release_asset(self._VALID_URL)
+        assert result is not None
+        assert result.owner == "owner"
+        assert result.repo == "repo"
+        assert result.tag == "v1.2.3"
+        assert result.filename == "binary-linux-amd64"
+
+    def test_returns_none_for_non_github_url(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"):
+            result = gh_match_release_asset("https://example.com/file.tar.gz")
+        assert result is None
+
+    def test_returns_none_for_github_url_without_release_path(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"):
+            result = gh_match_release_asset("https://github.com/owner/repo/tags")
+        assert result is None
+
+    def test_returns_none_when_token_not_set(self) -> None:
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", None):
+            result = gh_match_release_asset(self._VALID_URL)
+        assert result is None
+
+    def test_parses_complex_filename_with_dots_and_dashes(self) -> None:
+        url = "https://github.com/org/project/releases/download/2.0.1/project-2.0.1-linux-arm64.tar.gz"
+        with patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"):
+            result = gh_match_release_asset(url)
+        assert result is not None
+        assert result.tag == "2.0.1"
+        assert result.filename == "project-2.0.1-linux-arm64.tar.gz"
+
+
+# ---------------------------------------------------------------------------
+# gh_download_release_asset
+# ---------------------------------------------------------------------------
+
+
+class TestGhDownloadReleaseAsset:
+    _SRC = GHReleaseAssetInfo(
+        owner="org", repo="project", tag="v1.0", filename="binary-linux-amd64"
+    )
+
+    def _make_release_resp(
+        self, asset_id: int = 99, filename: str = "binary-linux-amd64"
+    ) -> MagicMock:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {"assets": [{"id": asset_id, "name": filename}]}
+        return resp
+
+    def _make_download_resp(self, content: bytes = b"binary-content") -> MagicMock:
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.iter_content.return_value = [content]
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        return resp
+
+    def test_downloads_asset_to_dest(self, tmp_path: Path) -> None:
+        dest = tmp_path / "binary"
+        release_resp = self._make_release_resp(asset_id=99)
+        download_resp = self._make_download_resp(b"binary-content")
+
+        with patch(
+            "kube_galaxy.pkg.utils.gh.requests.get",
+            side_effect=[release_resp, download_resp],
+        ):
+            gh_download_release_asset(self._SRC, dest)
+
+        assert dest.read_bytes() == b"binary-content"
+
+    def test_uses_correct_api_urls(self, tmp_path: Path) -> None:
+        dest = tmp_path / "binary"
+        release_resp = self._make_release_resp(asset_id=7)
+        download_resp = self._make_download_resp()
+        calls: list[str] = []
+
+        def fake_get(url: str, **kwargs: object) -> MagicMock:
+            calls.append(url)
+            return release_resp if "releases/tags" in url else download_resp
+
+        with patch("kube_galaxy.pkg.utils.gh.requests.get", side_effect=fake_get):
+            gh_download_release_asset(self._SRC, dest)
+
+        assert calls[0] == "https://api.github.com/repos/org/project/releases/tags/v1.0"
+        assert calls[1] == "https://api.github.com/repos/org/project/releases/assets/7"
+
+    def test_raises_component_error_when_release_fetch_fails(self, tmp_path: Path) -> None:
+        dest = tmp_path / "binary"
+        with (
+            patch(
+                "kube_galaxy.pkg.utils.gh.requests.get",
+                side_effect=requests_lib.RequestException("network error"),
+            ),
+            pytest.raises(ComponentError, match=r"Failed to fetch release 'v1\.0'"),
+        ):
+            gh_download_release_asset(self._SRC, dest)
+
+    def test_raises_component_error_when_asset_not_found(self, tmp_path: Path) -> None:
+        dest = tmp_path / "binary"
+        release_resp = MagicMock()
+        release_resp.raise_for_status = MagicMock()
+        release_resp.json.return_value = {"assets": [{"id": 1, "name": "other-file.tar.gz"}]}
+
+        with (
+            patch("kube_galaxy.pkg.utils.gh.requests.get", return_value=release_resp),
+            pytest.raises(ComponentError, match="Asset 'binary-linux-amd64' not found"),
+        ):
+            gh_download_release_asset(self._SRC, dest)
+
+    def test_error_lists_available_assets(self, tmp_path: Path) -> None:
+        dest = tmp_path / "binary"
+        release_resp = MagicMock()
+        release_resp.raise_for_status = MagicMock()
+        release_resp.json.return_value = {
+            "assets": [
+                {"id": 1, "name": "binary-windows-amd64"},
+                {"id": 2, "name": "binary-darwin-arm64"},
+            ]
+        }
+
+        with (
+            patch("kube_galaxy.pkg.utils.gh.requests.get", return_value=release_resp),
+            pytest.raises(ComponentError, match="binary-windows-amd64"),
+        ):
+            gh_download_release_asset(self._SRC, dest)
+
+    def test_raises_component_error_when_download_fails(self, tmp_path: Path) -> None:
+        dest = tmp_path / "binary"
+        release_resp = self._make_release_resp(asset_id=5)
+
+        def fake_get(url: str, **kwargs: object) -> MagicMock:
+            if "releases/tags" in url:
+                return release_resp
+            raise requests_lib.RequestException("connection refused")
+
+        with (
+            patch("kube_galaxy.pkg.utils.gh.requests.get", side_effect=fake_get),
+            pytest.raises(ComponentError, match="Failed to download asset 'binary-linux-amd64'"),
+        ):
+            gh_download_release_asset(self._SRC, dest)
