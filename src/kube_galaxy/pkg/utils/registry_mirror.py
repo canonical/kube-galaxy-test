@@ -17,7 +17,6 @@ Typical flow::
 """
 
 import json
-import os
 import time
 from pathlib import Path
 
@@ -28,6 +27,7 @@ from kube_galaxy.pkg.manifest.models import RegistryConfig
 from kube_galaxy.pkg.utils import shell
 from kube_galaxy.pkg.utils.detector import detect_ip
 from kube_galaxy.pkg.utils.errors import ClusterError
+from kube_galaxy.pkg.utils.gh import GITHUB_ACTOR, GITHUB_TOKEN
 from kube_galaxy.pkg.utils.logging import info, success, warning
 from kube_galaxy.pkg.utils.shell import ShellError
 
@@ -98,8 +98,6 @@ class RegistryMirror:
                 f"{self._cfg.port}:5000",
                 "--name",
                 _CONTAINER_NAME,
-                "--user",
-                f"{os.getuid()}:{os.getgid()}",
                 "-v",
                 f"{self.data_dir}:/var/lib/registry",
                 _REGISTRY_IMAGE,
@@ -226,5 +224,10 @@ class RegistryMirror:
         cmd = ["skopeo", "copy", "--all", "--quiet"]
         if not src_tls_verify:
             cmd.append("--src-tls-verify=false")
+        # Pass GitHub credentials for ghcr.io sources when available.
+        # GITHUB_ACTOR and GITHUB_TOKEN are set in CI (GITHUB_TOKEN is the
+        # cross-org PAT from secrets.REPO_ACCESS_TOKEN).
+        if src.startswith("docker://ghcr.io/") and GITHUB_ACTOR and GITHUB_TOKEN:
+            cmd += ["--src-creds", f"{GITHUB_ACTOR}:{GITHUB_TOKEN}"]
         cmd += ["--dest-tls-verify=false", src, dst]
         shell.run(cmd)

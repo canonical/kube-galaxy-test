@@ -1,0 +1,11 @@
+server = "https://{host}"
+
+[host."http://{mirror_host}"]
+  capabilities = ["pull", "resolve"]
+  plain-http = true
+
+[host."https://{host}"]
+  capabilities = ["pull", "resolve"]
+
+  [host."https://{host}".header]
+    Authorization = "{authorization}"

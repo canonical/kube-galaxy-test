@@ -186,6 +186,93 @@ def gh_download_artifact(artifact: Artifact, dest: Path) -> Path:
     return archive
 
 
+def gh_download_release_asset(url: str, dest: Path) -> None:
+    """Download a GitHub release asset from a private repository.
+
+    Parses a ``https://github.com/{owner}/{repo}/releases/download/{tag}/{filename}``
+    URL, uses the GitHub API via PyGithub to locate the asset by tag and filename,
+    then downloads the asset via ``api.github.com`` with ``Accept: application/octet-stream``.
+
+    This is required for private repositories where the standard browser-download URL
+    does not support programmatic Bearer-token authentication.
+
+    Args:
+        url: Full GitHub release download URL
+            (``https://github.com/{owner}/{repo}/releases/download/{tag}/{filename}``).
+        dest: Local path to write the downloaded asset to.
+
+    Raises:
+        ComponentError: If GITHUB_TOKEN is not set, the release or asset is not found,
+            or the download fails.
+    """
+    import re
+
+    if not GITHUB_TOKEN:
+        raise ComponentError(
+            f"GITHUB_TOKEN is required to download release assets from private GitHub "
+            f"repositories. Set GITHUB_TOKEN to a PAT with 'repo' scope and retry.\n"
+            f"  URL: {url}"
+        )
+
+    # Parse https://github.com/{owner}/{repo}/releases/download/{tag}/{filename}
+    match = re.match(r"https://github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/(.+)$", url)
+    if not match:
+        raise ComponentError(
+            f"Unrecognised GitHub release download URL format: {url!r}\n"
+            f"Expected: https://github.com/{{owner}}/{{repo}}/releases/download/{{tag}}/{{filename}}"
+        )
+    repo_name, tag, filename = match.group(1), match.group(2), match.group(3)
+
+    try:
+        g = Github(auth=Auth.Token(GITHUB_TOKEN))
+        repo = g.get_repo(repo_name)
+        # Draft releases are not returned by /releases/tags/{tag} — we must
+        # list all releases and find the one whose tag_name matches.
+        release = None
+        for r in repo.get_releases():
+            if r.tag_name == tag:
+                release = r
+                break
+        if release is None:
+            raise ComponentError(
+                f"No release with tag '{tag}' found in '{repo_name}' "
+                f"(checked published and draft releases)"
+            )
+        assets = list(release.get_assets())
+    except GithubException as exc:
+        raise ComponentError(f"Failed to look up release '{tag}' in '{repo_name}': {exc}") from exc
+
+    asset = next((a for a in assets if a.name == filename), None)
+    if asset is None:
+        available = ", ".join(a.name for a in assets)
+        raise ComponentError(
+            f"Asset '{filename}' not found in release '{tag}' of '{repo_name}'.\n"
+            f"Available assets: {available}"
+        )
+
+    # Download via the GitHub API endpoint with Accept: application/octet-stream.
+    # This correctly handles redirects to signed storage URLs for private repos.
+    api_url = f"https://api.github.com/repos/{repo_name}/releases/assets/{asset.id}"
+    try:
+        with requests.get(
+            api_url,
+            headers={
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/octet-stream",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            stream=True,
+            timeout=300,
+        ) as resp:
+            resp.raise_for_status()
+            with open(dest, "wb") as dest_file:
+                _write_chunked(resp.raw, dest_file)
+    except requests.RequestException as exc:
+        raise ComponentError(
+            f"Failed to download asset '{filename}' from '{repo_name}': {exc}"
+        ) from exc
+
+
 def gh_extract_artifact_file(url: str, dest: Path) -> None:
     """Download a file from a GitHub Actions artifact.
 

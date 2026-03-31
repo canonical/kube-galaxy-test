@@ -39,19 +39,35 @@ def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
 
 def _registry_mirror(component: "ComponentBase") -> None:
     """
-    Configure containerd registry mirror
+    Configure containerd registry mirror.
 
-    This function sets up a registry mirror in containerd for the specified host,
+    Sets up a plain-HTTP mirror for the local registry, and configures
+    external registries that have credentials (e.g. ghcr.io) to check
+    the local mirror first before falling back to the upstream registry
+    with authentication.
 
     Args:
         component: Container component instance to use for writing config files
     """
     if mirror := component.registry_mirror:
-        hosts_tmpl = Path(__file__).parent / "templates/containerd/http-hosts.toml"
-        host = mirror.registry_address()
-        content = hosts_tmpl.read_text().format(host=host)
-        hosts_toml = HOSTS_D / host / "hosts.toml"
+        # Configure the local registry itself as a plain-HTTP host
+        http_hosts_tmpl = Path(__file__).parent / "templates/containerd/http-hosts.toml"
+        mirror_host = mirror.registry_address()
+        content = http_hosts_tmpl.read_text().format(host=mirror_host)
+        hosts_toml = HOSTS_D / mirror_host / "hosts.toml"
         component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
+
+        # For external registries with auth credentials, configure them to use the
+        # local mirror as a pull-through cache first, with fallback to upstream+auth.
+        mirror_auth_tmpl = (
+            Path(__file__).parent / "templates/containerd/mirror-with-auth-hosts.toml"
+        )
+        for host, auth in authentication_headers(basic_auth=True).items():
+            content = mirror_auth_tmpl.read_text().format(
+                host=host, mirror_host=mirror_host, authorization=auth
+            )
+            hosts_toml = HOSTS_D / host / "hosts.toml"
+            component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
 
 
 @register_component("containerd")
@@ -120,9 +136,14 @@ class Containerd(ComponentBase):
             config_content, "/etc/containerd/config.toml", mode=Permissions.READABLE
         )
 
-        for host, auth in authentication_headers(basic_auth=True).items():
-            _registry_auth(self, host, auth)
-        _registry_mirror(self)
+        if self.registry_mirror:
+            # Mirror configured: _registry_mirror writes both the plain-HTTP local
+            # mirror config AND the mirror-with-auth fallback for external registries.
+            _registry_mirror(self)
+        else:
+            # No mirror: configure direct auth-only for each known registry.
+            for host, auth in authentication_headers(basic_auth=True).items():
+                _registry_auth(self, host, auth)
 
         # Create systemd service unit
         systemd_unit = Path(__file__).parent / "templates/containerd/systemd_unit"

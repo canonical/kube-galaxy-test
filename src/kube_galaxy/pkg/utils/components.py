@@ -14,7 +14,7 @@ from kube_galaxy.pkg.literals import Permissions, SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.detector import ArchInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
+from kube_galaxy.pkg.utils.gh import gh_download_release_asset, gh_extract_artifact_file
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.url import http_headers
 
@@ -59,6 +59,19 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
                 f"Invalid local:// URL; path escapes working directory: {fragment!r}"
             )
         url = resolved.as_uri()
+
+    # GitHub release assets from private repositories cannot be downloaded via the
+    # standard browser URL with Bearer-token auth.  Use the GitHub API instead.
+    if "github.com" in url and "/releases/download/" in url:
+        gh_download_release_asset(url, dest)
+        if verify_sha256:
+            actual_sha256 = compute_sha256(dest)
+            if actual_sha256 != verify_sha256:
+                raise ComponentError(
+                    f"SHA256 mismatch for {dest.name}: "
+                    f"expected {verify_sha256}, got {actual_sha256}"
+                )
+        return
 
     try:
         req = urllib.request.Request(url, headers=http_headers(url, raw=True))
