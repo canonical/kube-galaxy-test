@@ -64,6 +64,30 @@ jobs:
         include: ${{ fromJson(inputs.manifests-json) }}
 
     steps:
+      - name: Validate Manifest File
+        shell: bash
+        run: |
+          test -n "${{ matrix.manifest-file }}" || {
+            echo "manifest-file is required"
+            exit 1
+          }
+
+      - name: Validate Manifest overlays
+        shell: bash
+        run: |
+          overlays='${{ toJson(matrix.overlays) }}'
+
+          echo "$overlays" | jq -e '
+            . == null
+            or (
+              type == "array"
+              and all(.[]; type == "string")
+            )
+          ' >/dev/null || {
+            echo "ERROR: matrix.overlays must be null or a list of strings"
+            exit 1
+          }
+
       # ---- Checkout local directory for manifests and components ----
       - name: Checkout manifests repo
         uses: actions/checkout@v6
