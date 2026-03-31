@@ -14,6 +14,7 @@ from github import GithubException
 from kube_galaxy.pkg.utils.errors import ComponentError
 from kube_galaxy.pkg.utils.gh import (
     gh_download_artifact,
+    gh_download_release_asset,
     gh_extract_artifact_file,
     gh_list_artifacts_by_name,
     gh_output,
@@ -352,3 +353,156 @@ class TestGhExtractArtifactFile:
             gh_extract_artifact_file("gh-artifact://art/f.txt", dest)
 
         assert captured[0].id == 2  # newer artifact selected
+
+
+# ---------------------------------------------------------------------------
+# gh_download_release_asset
+# ---------------------------------------------------------------------------
+
+
+def _make_release_asset(name: str = "binary.tar.gz", asset_id: int = 99) -> MagicMock:
+    """Return a mock GitRelease asset."""
+    a = MagicMock()
+    a.name = name
+    a.id = asset_id
+    return a
+
+
+class TestGhDownloadReleaseAsset:
+    _VALID_URL = "https://github.com/canonical/mx-tool/releases/download/v1.0.0/binary.tar.gz"
+
+    def test_raises_when_token_not_set(self, tmp_path: Path) -> None:
+        with (
+            patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", None),
+            pytest.raises(ComponentError, match="GITHUB_TOKEN"),
+        ):
+            gh_download_release_asset(self._VALID_URL, tmp_path / "out")
+
+    def test_raises_on_unrecognised_url_format(self, tmp_path: Path) -> None:
+        with (
+            patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"),
+            pytest.raises(ComponentError, match="Unrecognised GitHub release download URL"),
+        ):
+            gh_download_release_asset("https://github.com/not-a-release-url", tmp_path / "out")
+
+    def test_raises_when_asset_not_found(self, tmp_path: Path) -> None:
+        mock_asset = _make_release_asset("other-file.tar.gz")
+        mock_release = MagicMock()
+        mock_release.tag_name = "v1.0.0"
+        mock_release.get_assets.return_value = [mock_asset]
+        mock_repo = MagicMock()
+        mock_repo.get_releases.return_value = [mock_release]
+        mock_github = MagicMock()
+        mock_github.get_repo.return_value = mock_repo
+
+        with (
+            patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"),
+            patch("kube_galaxy.pkg.utils.gh.Github", return_value=mock_github),
+            pytest.raises(ComponentError, match=r"Asset 'binary\.tar\.gz' not found"),
+        ):
+            gh_download_release_asset(self._VALID_URL, tmp_path / "out")
+
+    def test_raises_when_release_not_found(self, tmp_path: Path) -> None:
+        mock_repo = MagicMock()
+        mock_repo.get_releases.return_value = []  # no releases
+        mock_github = MagicMock()
+        mock_github.get_repo.return_value = mock_repo
+
+        with (
+            patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"),
+            patch("kube_galaxy.pkg.utils.gh.Github", return_value=mock_github),
+            pytest.raises(ComponentError, match="No release with tag"),
+        ):
+            gh_download_release_asset(self._VALID_URL, tmp_path / "out")
+
+    def test_downloads_asset_via_two_step_redirect(self, tmp_path: Path) -> None:
+        """gh_download_release_asset uses allow_redirects=False then fetches Location."""
+        asset = _make_release_asset("binary.tar.gz", asset_id=99)
+        mock_release = MagicMock()
+        mock_release.tag_name = "v1.0.0"
+        mock_release.get_assets.return_value = [asset]
+        mock_repo = MagicMock()
+        mock_repo.get_releases.return_value = [mock_release]
+        mock_github = MagicMock()
+        mock_github.get_repo.return_value = mock_repo
+
+        file_content = b"binary-data"
+
+        # First call: redirect response (allow_redirects=False)
+        redirect_resp = MagicMock()
+        redirect_resp.headers = {"Location": "https://objects.example.com/signed-url"}
+        redirect_resp.raise_for_status = MagicMock()
+
+        # Second call: actual download (stream=True, no auth)
+        download_resp = MagicMock()
+        download_resp.raise_for_status = MagicMock()
+        download_resp.raw.read.side_effect = [file_content, b""]
+        download_resp.__enter__ = lambda s: s
+        download_resp.__exit__ = MagicMock(return_value=False)
+
+        get_calls: list[dict] = []
+
+        def fake_get(url: str, **kwargs: object) -> MagicMock:
+            get_calls.append({"url": url, "kwargs": kwargs})
+            if kwargs.get("allow_redirects") is False:
+                return redirect_resp
+            return download_resp
+
+        dest = tmp_path / "binary.tar.gz"
+        with (
+            patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"),
+            patch("kube_galaxy.pkg.utils.gh.Github", return_value=mock_github),
+            patch("kube_galaxy.pkg.utils.gh.requests.get", side_effect=fake_get),
+        ):
+            gh_download_release_asset(self._VALID_URL, dest)
+
+        # First call must use allow_redirects=False and include Authorization
+        assert get_calls[0]["kwargs"].get("allow_redirects") is False
+        assert "Authorization" in get_calls[0]["kwargs"].get("headers", {})
+
+        # Second call must use the redirected URL and NOT include Authorization header
+        assert get_calls[1]["url"] == "https://objects.example.com/signed-url"
+        assert "Authorization" not in get_calls[1].get("kwargs", {}).get("headers", {})
+
+        assert dest.read_bytes() == file_content
+
+    def test_falls_back_to_api_url_when_no_location_header(self, tmp_path: Path) -> None:
+        """When the redirect response has no Location header, falls back to api_url."""
+        asset = _make_release_asset("binary.tar.gz", asset_id=99)
+        mock_release = MagicMock()
+        mock_release.tag_name = "v1.0.0"
+        mock_release.get_assets.return_value = [asset]
+        mock_repo = MagicMock()
+        mock_repo.get_releases.return_value = [mock_release]
+        mock_github = MagicMock()
+        mock_github.get_repo.return_value = mock_repo
+
+        redirect_resp = MagicMock()
+        redirect_resp.headers = {}  # no Location
+        redirect_resp.raise_for_status = MagicMock()
+
+        download_resp = MagicMock()
+        download_resp.raise_for_status = MagicMock()
+        download_resp.raw.read.side_effect = [b"data", b""]
+        download_resp.__enter__ = lambda s: s
+        download_resp.__exit__ = MagicMock(return_value=False)
+
+        get_calls: list[str] = []
+
+        def fake_get(url: str, **kwargs: object) -> MagicMock:
+            get_calls.append(url)
+            if kwargs.get("allow_redirects") is False:
+                return redirect_resp
+            return download_resp
+
+        dest = tmp_path / "out"
+        with (
+            patch("kube_galaxy.pkg.utils.gh.GITHUB_TOKEN", "tok"),
+            patch("kube_galaxy.pkg.utils.gh.Github", return_value=mock_github),
+            patch("kube_galaxy.pkg.utils.gh.requests.get", side_effect=fake_get),
+        ):
+            gh_download_release_asset(self._VALID_URL, dest)
+
+        expected_api_url = "https://api.github.com/repos/canonical/mx-tool/releases/assets/99"
+        assert get_calls[0] == expected_api_url
+        assert get_calls[1] == expected_api_url  # fallback to same URL

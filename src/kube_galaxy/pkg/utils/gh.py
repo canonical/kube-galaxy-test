@@ -250,19 +250,20 @@ def gh_download_release_asset(url: str, dest: Path) -> None:
         )
 
     # Download via the GitHub API endpoint with Accept: application/octet-stream.
-    # This correctly handles redirects to signed storage URLs for private repos.
+    # Use allow_redirects=False to capture the redirect to the signed storage URL,
+    # then fetch that URL without auth headers to avoid token leakage to third-party
+    # storage (same two-step pattern as gh_download_artifact).
     api_url = f"https://api.github.com/repos/{repo_name}/releases/assets/{asset.id}"
+    api_headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/octet-stream",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     try:
-        with requests.get(
-            api_url,
-            headers={
-                "Authorization": f"Bearer {GITHUB_TOKEN}",
-                "Accept": "application/octet-stream",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            stream=True,
-            timeout=300,
-        ) as resp:
+        redirect = requests.get(api_url, headers=api_headers, allow_redirects=False, timeout=30)
+        redirect.raise_for_status()
+        download_url = redirect.headers.get("Location", api_url)
+        with requests.get(download_url, stream=True, timeout=300) as resp:
             resp.raise_for_status()
             with open(dest, "wb") as dest_file:
                 _write_chunked(resp.raw, dest_file)

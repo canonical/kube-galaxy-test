@@ -1,3 +1,6 @@
+from pathlib import Path
+from unittest.mock import patch
+
 from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
@@ -15,7 +18,11 @@ from kube_galaxy.pkg.manifest.models import (
     TestMethod as ComponentTestMethod,
 )
 from kube_galaxy.pkg.units._base import RunResult
-from kube_galaxy.pkg.utils.components import format_component_pattern, install_from_archive
+from kube_galaxy.pkg.utils.components import (
+    download_file,
+    format_component_pattern,
+    install_from_archive,
+)
 from tests.unit.components.conftest import MockUnit
 
 
@@ -434,3 +441,57 @@ def test_install_from_archive_no_match_returns_empty(tmp_path):
     result = install_from_archive(archive, "nonexistent-*", "mytool", mock_unit)
 
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# download_file — GitHub release URL handling
+# ---------------------------------------------------------------------------
+
+
+_GITHUB_RELEASE_URL = "https://github.com/canonical/mx-tool/releases/download/v1.0.0/binary.tar.gz"
+
+
+def test_download_file_uses_gh_download_when_token_set(tmp_path: Path) -> None:
+    """When GITHUB_TOKEN is set, download_file delegates to gh_download_release_asset."""
+    dest = tmp_path / "binary.tar.gz"
+    with (
+        patch("kube_galaxy.pkg.utils.components.GITHUB_TOKEN", "tok"),
+        patch("kube_galaxy.pkg.utils.components.gh_download_release_asset") as mock_gh,
+    ):
+        download_file(_GITHUB_RELEASE_URL, dest)
+
+    mock_gh.assert_called_once_with(_GITHUB_RELEASE_URL, dest)
+
+
+def test_download_file_falls_back_to_urllib_without_token(tmp_path: Path, monkeypatch) -> None:
+    """Without GITHUB_TOKEN, download_file falls back to urllib for public releases."""
+    dest = tmp_path / "binary.tar.gz"
+    dest.write_bytes(b"")  # pre-create so sha256 check is skipped
+
+    fake_content = b"public-release-content"
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def read(self, size: int = -1) -> bytes:
+            data, self._buf = self._buf[:size], self._buf[size:]
+            return data
+
+        _buf = fake_content
+
+    def fake_urlopen(req):
+        return FakeResponse()
+
+    with (
+        patch("kube_galaxy.pkg.utils.components.GITHUB_TOKEN", None),
+        patch("kube_galaxy.pkg.utils.components.gh_download_release_asset") as mock_gh,
+        patch("urllib.request.urlopen", side_effect=fake_urlopen),
+    ):
+        download_file(_GITHUB_RELEASE_URL, dest)
+
+    mock_gh.assert_not_called()
+    assert dest.read_bytes() == fake_content

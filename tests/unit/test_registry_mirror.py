@@ -489,3 +489,71 @@ class TestRegistryMirrorInspect:
         )
         RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
         assert calls == [["skopeo", "inspect", f"docker-archive:{tar}"]]
+
+
+# ---------------------------------------------------------------------------
+# RegistryMirror — _skopeo_copy (--src-creds for ghcr.io)
+# ---------------------------------------------------------------------------
+
+
+class TestSkopeoCopy:
+    def test_src_creds_added_for_ghcr_when_credentials_set(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_skopeo_copy includes --src-creds for ghcr.io sources when credentials are set."""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
+        )
+        monkeypatch.setattr(mirror_mod, "GITHUB_ACTOR", "testuser")
+        monkeypatch.setattr(mirror_mod, "GITHUB_TOKEN", "testtoken")
+
+        mirror = RegistryMirror(RegistryConfig(port=5000))
+        mirror._skopeo_copy(
+            "docker://ghcr.io/canonical/mx-tool:v1.0.0",
+            f"docker://{_FAKE_IP}:5000/canonical/mx-tool:v1.0.0",
+        )
+
+        assert len(calls) == 1
+        cmd = calls[0]
+        assert "--src-creds" in cmd
+        creds_idx = cmd.index("--src-creds")
+        assert cmd[creds_idx + 1] == "testuser:testtoken"
+
+    def test_src_creds_not_added_for_non_ghcr_source(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_skopeo_copy does NOT include --src-creds for non-ghcr.io sources."""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
+        )
+        monkeypatch.setattr(mirror_mod, "GITHUB_ACTOR", "testuser")
+        monkeypatch.setattr(mirror_mod, "GITHUB_TOKEN", "testtoken")
+
+        mirror = RegistryMirror(RegistryConfig(port=5000))
+        mirror._skopeo_copy(
+            "docker://registry.k8s.io/pause:3.10",
+            f"docker://{_FAKE_IP}:5000/pause:3.10",
+        )
+
+        assert "--src-creds" not in calls[0]
+
+    def test_src_creds_not_added_when_credentials_absent(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_skopeo_copy does NOT include --src-creds when GITHUB_ACTOR/TOKEN are unset."""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            mirror_mod.shell, "run", lambda cmd, **kw: calls.append(cmd) or _noop_run(cmd)
+        )
+        monkeypatch.setattr(mirror_mod, "GITHUB_ACTOR", None)
+        monkeypatch.setattr(mirror_mod, "GITHUB_TOKEN", None)
+
+        mirror = RegistryMirror(RegistryConfig(port=5000))
+        mirror._skopeo_copy(
+            "docker://ghcr.io/canonical/mx-tool:v1.0.0",
+            f"docker://{_FAKE_IP}:5000/canonical/mx-tool:v1.0.0",
+        )
+
+        assert "--src-creds" not in calls[0]

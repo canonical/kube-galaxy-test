@@ -14,7 +14,11 @@ from kube_galaxy.pkg.literals import Permissions, SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.detector import ArchInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.gh import gh_download_release_asset, gh_extract_artifact_file
+from kube_galaxy.pkg.utils.gh import (
+    GITHUB_TOKEN,
+    gh_download_release_asset,
+    gh_extract_artifact_file,
+)
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.url import http_headers
 
@@ -62,7 +66,9 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
 
     # GitHub release assets from private repositories cannot be downloaded via the
     # standard browser URL with Bearer-token auth.  Use the GitHub API instead.
-    if "github.com" in url and "/releases/download/" in url:
+    # Only do this when GITHUB_TOKEN is available; otherwise fall through to the
+    # standard urllib path (which works for public releases without authentication).
+    if "github.com" in url and "/releases/download/" in url and GITHUB_TOKEN:
         gh_download_release_asset(url, dest)
         if verify_sha256:
             actual_sha256 = compute_sha256(dest)

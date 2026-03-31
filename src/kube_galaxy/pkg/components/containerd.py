@@ -62,7 +62,7 @@ def _registry_mirror(component: "ComponentBase") -> None:
         mirror_auth_tmpl = (
             Path(__file__).parent / "templates/containerd/mirror-with-auth-hosts.toml"
         )
-        for host, auth in authentication_headers(basic_auth=True).items():
+        for host, auth in authentication_headers(**{"basic-auth": True}).items():
             content = mirror_auth_tmpl.read_text().format(
                 host=host, mirror_host=mirror_host, authorization=auth
             )
@@ -142,7 +142,7 @@ class Containerd(ComponentBase):
             _registry_mirror(self)
         else:
             # No mirror: configure direct auth-only for each known registry.
-            for host, auth in authentication_headers(basic_auth=True).items():
+            for host, auth in authentication_headers(**{"basic-auth": True}).items():
                 _registry_auth(self, host, auth)
 
         # Create systemd service unit
