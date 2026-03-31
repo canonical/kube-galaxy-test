@@ -1,3 +1,6 @@
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 from kube_galaxy.pkg.cluster_context import ClusterContext
 from kube_galaxy.pkg.components._base import ComponentBase
 from kube_galaxy.pkg.literals import SystemPaths
@@ -15,7 +18,12 @@ from kube_galaxy.pkg.manifest.models import (
     TestMethod as ComponentTestMethod,
 )
 from kube_galaxy.pkg.units._base import RunResult
-from kube_galaxy.pkg.utils.components import format_component_pattern, install_from_archive
+from kube_galaxy.pkg.utils.components import (
+    download_file,
+    format_component_pattern,
+    install_from_archive,
+)
+from kube_galaxy.pkg.utils.gh import GHReleaseAssetInfo
 from tests.unit.components.conftest import MockUnit
 
 
@@ -434,3 +442,48 @@ def test_install_from_archive_no_match_returns_empty(tmp_path):
     result = install_from_archive(archive, "nonexistent-*", "mytool", mock_unit)
 
     assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# download_file — GitHub release asset routing
+# ---------------------------------------------------------------------------
+
+
+def test_download_file_routes_gh_release_asset_url(tmp_path: Path) -> None:
+    """download_file calls gh_download_release_asset when URL matches GH release pattern."""
+    dest = tmp_path / "binary"
+    asset_info = GHReleaseAssetInfo(owner="org", repo="repo", tag="v1.0", filename="binary")
+    url = "https://github.com/org/repo/releases/download/v1.0/binary"
+
+    with (
+        patch(
+            "kube_galaxy.pkg.utils.components.gh_match_release_asset",
+            return_value=asset_info,
+        ) as mock_match,
+        patch("kube_galaxy.pkg.utils.components.gh_download_release_asset") as mock_dl,
+    ):
+        download_file(url, dest)
+
+    mock_match.assert_called_once_with(url)
+    mock_dl.assert_called_once_with(asset_info, dest)
+
+
+def test_download_file_falls_through_when_gh_release_asset_no_match(tmp_path: Path) -> None:
+    """download_file skips gh_download_release_asset when gh_match_release_asset returns None."""
+    dest = tmp_path / "output"
+    content = b"file content"
+    url = "https://github.com/org/repo/releases/download/v1.0/binary"
+
+    mock_resp = MagicMock()
+    mock_resp.read.side_effect = [content, b""]
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with (
+        patch("kube_galaxy.pkg.utils.components.gh_match_release_asset", return_value=None),
+        patch("kube_galaxy.pkg.utils.components.gh_download_release_asset") as mock_dl,
+        patch("kube_galaxy.pkg.utils.components.urllib.request.urlopen", return_value=mock_resp),
+    ):
+        download_file(url, dest)
+
+    mock_dl.assert_not_called()

@@ -14,7 +14,11 @@ from kube_galaxy.pkg.literals import Permissions, SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import ComponentConfig, RepoInfo
 from kube_galaxy.pkg.utils.detector import ArchInfo
 from kube_galaxy.pkg.utils.errors import ComponentError
-from kube_galaxy.pkg.utils.gh import gh_extract_artifact_file
+from kube_galaxy.pkg.utils.gh import (
+    gh_download_release_asset,
+    gh_extract_artifact_file,
+    gh_match_release_asset,
+)
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.url import http_headers
 
@@ -47,6 +51,10 @@ def download_file(url: str, dest: Path, verify_sha256: str | None = None) -> Non
     ensure_dir(dest.parent)
     if url.startswith("gh-artifact://"):
         gh_extract_artifact_file(url, dest)
+        return
+
+    if src := gh_match_release_asset(url):
+        gh_download_release_asset(src, dest)
         return
 
     if url.startswith("local://"):
