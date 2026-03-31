@@ -1,7 +1,7 @@
 server = "https://{host}"
 
-[host."https://{host}"]
+[host."https://{registry_host}"]
   capabilities = ["pull", "resolve"]
 
-  [host."https://{host}".header]
+  [host."https://{registry_host}".header]
     Authorization = "{authorization}"

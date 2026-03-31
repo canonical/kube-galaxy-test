@@ -7,6 +7,7 @@ Containerd is the container runtime used by Kubernetes clusters.
 import time
 from pathlib import Path
 
+import kube_galaxy.pkg.utils.dockerio  # noqa: F401  # register dockerhub auth provider
 from kube_galaxy.pkg.components import ComponentBase, register_component
 from kube_galaxy.pkg.literals import Permissions, URLs
 from kube_galaxy.pkg.manifest.models import InstallMethod
@@ -31,7 +32,14 @@ def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
         auth: Authentication string (e.g., "Basic <base64-encoded-credentials>")
     """
     hosts_tmpl = Path(__file__).parent / "templates/containerd/auth-hosts.toml"
-    content = hosts_tmpl.read_text().format(host=host, authorization=auth)
+    if host == "docker.io":
+        # Dockerhub uses registry-1.docker.io as the registry host
+        registry_host = "registry-1.docker.io"
+    else:
+        registry_host = host
+    content = hosts_tmpl.read_text().format(
+        host=host, registry_host=registry_host, authorization=auth
+    )
 
     hosts_toml = HOSTS_D / host / "hosts.toml"
     component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
