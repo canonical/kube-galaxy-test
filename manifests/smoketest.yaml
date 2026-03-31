@@ -256,7 +256,7 @@ components:
     category: Conformance
     release: "0.57.3"
     installation:
-      method: container-manifest
+      method: none
     test:
       method: spread
       repo:
