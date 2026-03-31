@@ -91,10 +91,10 @@ jobs:
             manifests=$(printf "%s\n%s\n" "$base_manifests" "$changed_manifests" \
               | sed '/^$/d' \
               | sort -u \
-              | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
+              | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": ., "overlays": []})')
           else
             echo "Non-PR context: Including all manifests"
-            manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
+            manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": ., "overlays": []})')
           fi
 
           echo "manifests=$manifests" >> $GITHUB_OUTPUT

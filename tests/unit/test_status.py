@@ -85,8 +85,10 @@ def test_status_wait_exits_non_zero_on_readiness_failure(monkeypatch):
     assert exc.value.exit_code == 1
 
 
-def test_cli_status_forwards_wait_and_timeout(monkeypatch):
+def test_cli_status_forwards_wait_and_timeout(monkeypatch, tmp_path):
     captured: dict[str, object] = {}
+    active = tmp_path / "active-manifest.yaml"
+    active.write_text("name: test\n")
 
     def fake_status(manifest_path: str, wait: bool = False, timeout: int = 300) -> None:
         captured["manifest_path"] = manifest_path
@@ -94,11 +96,11 @@ def test_cli_status_forwards_wait_and_timeout(monkeypatch):
         captured["timeout"] = timeout
 
     monkeypatch.setattr(cli.status, "status", fake_status)
-    monkeypatch.setattr(cli, "_resolve_manifest", lambda _m: "manifests/test.yaml")
+    monkeypatch.setattr(cli, "get_active_manifest", lambda: active)
 
     cli.status_cmd(wait=True, timeout=45)
 
-    assert captured["manifest_path"] == "manifests/test.yaml"
+    assert captured["manifest_path"] == str(active)
     assert captured["wait"] is True
     assert captured["timeout"] == 45
 
@@ -115,27 +117,21 @@ def test_status_shows_warning_when_no_active_manifest():
     status_cmd._print_active_manifest(None)
 
 
-def test_cli_resolve_manifest_uses_explicit_value():
-    """_resolve_manifest returns the explicit manifest string as-is."""
-    result = cli._resolve_manifest("manifests/my.yaml")
-    assert result == "manifests/my.yaml"
-
-
-def test_cli_resolve_manifest_falls_back_to_active(tmp_path, monkeypatch):
-    """_resolve_manifest falls back to the active manifest link when none given."""
+def test_cli_require_active_manifest_returns_path(tmp_path, monkeypatch):
+    """_require_active_manifest returns the active manifest path as a string."""
     active = tmp_path / "baseline.yaml"
     active.write_text("name: test\n")
     monkeypatch.setattr(cli, "get_active_manifest", lambda: active)
 
-    result = cli._resolve_manifest(None)
+    result = cli._require_active_manifest()
     assert result == str(active)
 
 
-def test_cli_resolve_manifest_exits_when_no_manifest(tmp_path, monkeypatch):
-    """_resolve_manifest exits with code 1 when no manifest and no active link."""
+def test_cli_require_active_manifest_exits_when_absent(monkeypatch):
+    """_require_active_manifest exits with code 1 when no active manifest."""
     monkeypatch.setattr(cli, "get_active_manifest", lambda: None)
 
     with pytest.raises(typer.Exit) as exc:
-        cli._resolve_manifest(None)
+        cli._require_active_manifest()
 
     assert exc.value.exit_code == 1

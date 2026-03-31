@@ -6,7 +6,7 @@ on:
       manifests-json:
         description: >
           JSON array of manifest objects, e.g.
-          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml"}]
+          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml", "overlays": []}]
         type: string
         required: true
       manifests-repo:
@@ -133,7 +133,12 @@ jobs:
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
 
-          kube-galaxy setup ${{ matrix.manifest-file }}
+          OVERLAY_FLAGS=""
+          for ov in $(echo '${{ toJson(matrix.overlays) }}' | jq -r '.[]? // empty'); do
+            OVERLAY_FLAGS="$OVERLAY_FLAGS --overlay $ov"
+          done
+
+          kube-galaxy setup ${{ matrix.manifest-file }} $OVERLAY_FLAGS
 
       - name: Verify Cluster Health
         shell: bash
@@ -144,13 +149,13 @@ jobs:
         id: run-tests
         shell: bash
         run: |
-          kube-galaxy test ${{ matrix.manifest-file }}
+          kube-galaxy test
 
       - name: Collect Logs
         if: always()
         shell: bash
         run: |
-          kube-galaxy logs ${{ matrix.manifest-file }}
+          kube-galaxy logs
 
       - name: Rename log files for safe-upload
         if: always()

@@ -14,18 +14,47 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+# Module-level OptionInfo objects avoid B008 (function call in default argument)
+# while preserving full Typer metadata for --help, shell completion, etc.
+_OVERLAY_OPTION = typer.Option(
+    None,
+    "--overlay",
+    help=(
+        "Path to an overlay YAML file to deep-merge on top of the base manifest. "
+        "Repeat to apply multiple overlays in order (later overlays win)."
+    ),
+)
+_MANIFEST_RECOVERY_OPTION = typer.Option(
+    None,
+    "--manifest",
+    help=(
+        "Path to a manifest file. Recovery option only — bypasses the active manifest. "
+        "Use when the active manifest was lost but the cluster is still running."
+    ),
+)
 
-def _resolve_manifest(manifest: str | None) -> str:
-    """Return *manifest* if given, otherwise fall back to the active manifest link."""
+
+def _require_active_manifest() -> str:
+    """Return the active manifest path, or exit with a clear error."""
+    active = get_active_manifest()
+    if active:
+        return str(active)
+    typer.echo("No active manifest found. Run 'kube-galaxy setup <manifest>' first.")
+    raise typer.Exit(code=1)
+
+
+def _resolve_cleanup_manifest(manifest: str | None) -> str:
+    """Resolve manifest for cleanup: explicit option (with warning) or active manifest."""
     if manifest:
+        typer.echo(
+            f"Warning: using explicit --manifest '{manifest}' instead of the active manifest.\n"
+            "This is a recovery option. The active manifest reflects what was actually provisioned."
+        )
         return manifest
     active = get_active_manifest()
     if active:
         return str(active)
-    typer.echo(
-        "No manifest specified and no active manifest found.\n"
-        "Run 'kube-galaxy setup <manifest>' first, or pass --manifest explicitly."
-    )
+    typer.echo("No active manifest found. Run 'kube-galaxy setup <manifest>' first.")
     raise typer.Exit(code=1)
 
 
@@ -40,18 +69,13 @@ def main_callback(
 
 
 @app.command(name="test")
-def test_cmd(
-    manifest: str | None = typer.Argument(
-        None, help="Path to manifest file (defaults to active manifest)"
-    ),
-) -> None:
-    """Run tests or manage test clusters.
+def test_cmd() -> None:
+    """Run tests against the active cluster.
 
     Examples:
-        kube-galaxy test manifests/baseline-k8s-1.35.yaml
-        kube-galaxy test  # uses active manifest from last setup
+        kube-galaxy test
     """
-    test.spread(_resolve_manifest(manifest))
+    test.spread(_require_active_manifest())
 
 
 @app.command(name="validate")
@@ -71,10 +95,7 @@ def validate_cmd(
 @app.command(name="cleanup")
 def cleanup_cmd(
     target: str = typer.Argument("all", help="What to cleanup: files, clusters, or all"),
-    manifest: str | None = typer.Argument(
-        None,
-        help="Path to manifest file for cluster cleanup (defaults to active manifest)",
-    ),
+    manifest: str | None = _MANIFEST_RECOVERY_OPTION,
     force: bool = typer.Option(
         False, "--force", "-f", help="Continue cleanup even if errors occur"
     ),
@@ -88,21 +109,21 @@ def cleanup_cmd(
 
     Examples:
         kube-galaxy cleanup files
-        kube-galaxy cleanup cluster  # uses active manifest from last setup
-        kube-galaxy cleanup cluster manifests/baseline-k8s-1.35.yaml
+        kube-galaxy cleanup cluster
         kube-galaxy cleanup all --force
         kube-galaxy cleanup all --update-kubeconfig
+        kube-galaxy cleanup cluster --manifest manifests/baseline-k8s-1.35.yaml  # recovery only
     """
     match target:
         case "files":
             cleanup.cleanup_files()
         case "cluster":
             cleanup.cleanup_clusters(
-                _resolve_manifest(manifest), force, update_kubeconfig=update_kubeconfig
+                _resolve_cleanup_manifest(manifest), force, update_kubeconfig=update_kubeconfig
             )
         case "all":
             cleanup.cleanup_all(
-                _resolve_manifest(manifest), force, update_kubeconfig=update_kubeconfig
+                _resolve_cleanup_manifest(manifest), force, update_kubeconfig=update_kubeconfig
             )
         case _:
             typer.echo(f"Unknown cleanup target: {target}")
@@ -117,22 +138,20 @@ def setup_cmd(
         "--update-kubeconfig",
         help="Merge the 'kube-galaxy' context into ~/.kube/config without prompting",
     ),
+    overlays: list[str] = _OVERLAY_OPTION,
 ) -> None:
     """Provision a cluster from a manifest file.
 
     Example:
         kube-galaxy setup manifests/baseline-k8s-1.35.yaml
         kube-galaxy setup manifests/baseline-k8s-1.35.yaml --update-kubeconfig
+        kube-galaxy setup manifests/baseline-k8s-1.35.yaml --overlay overlays/tweak.yaml
     """
-    setup.setup(manifest, update_kubeconfig=update_kubeconfig)
+    setup.setup(manifest, update_kubeconfig=update_kubeconfig, overlays=overlays or None)
 
 
 @app.command(name="status")
 def status_cmd(
-    manifest: str | None = typer.Argument(
-        None,
-        help="Path to manifest file for cluster cleanup (defaults to active manifest)",
-    ),
     wait: bool = typer.Option(
         False,
         "--wait",
@@ -146,18 +165,13 @@ def status_cmd(
     ),
 ) -> None:
     """Display project status and optional cluster health verification."""
-    status.status(_resolve_manifest(manifest), wait=wait, timeout=timeout)
+    status.status(_require_active_manifest(), wait=wait, timeout=timeout)
 
 
 @app.command(name="logs")
-def logs_cmd(
-    manifest: str | None = typer.Argument(
-        None,
-        help="Path to manifest file for cluster cleanup (defaults to active manifest)",
-    ),
-) -> None:
+def logs_cmd() -> None:
     """Display logs from the most recent test run."""
-    logs.logs(_resolve_manifest(manifest))
+    logs.logs(_require_active_manifest())
 
 
 def main() -> None:

@@ -38,7 +38,7 @@ def _log_cluster_info(task: str, manifest: Manifest, force: None | bool = None) 
     info(f"Kubernetes Version: {manifest.kubernetes_version}")
 
 
-def setup_cluster(manifest_path: str) -> None:
+def setup_cluster(manifest_path: Path | str) -> None:
     """
     Set up a Kubernetes cluster using 6-stage component lifecycle.
 

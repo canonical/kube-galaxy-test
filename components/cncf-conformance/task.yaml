@@ -1,0 +1,35 @@
+summary: Sonobuoy CNCF conformance execution
+artifacts:
+- &results results
+environment:
+  RESULTS_DIR: *results
+execute: |
+  mkdir -p ${RESULTS_DIR}
+  wget --tries=3 https://github.com/vmware-tanzu/sonobuoy/releases/download/v${COMPONENT_VERSION}/sonobuoy_${COMPONENT_VERSION}_linux_${K8S_ARCH}.tar.gz -O sonobuoy.tar.gz || exit 1
+  tar -xvf sonobuoy.tar.gz
+  ./sonobuoy delete --kubeconfig=$KUBECONFIG --all --wait
+
+  args=(
+    --kubeconfig="$KUBECONFIG"
+    --wait="$TEST_TIMEOUT_M"
+    --level=debug
+    --logtostderr
+    --v=4
+  )
+
+  # Add mode (default or overridden)
+  if [[ -n "${SONOBUOY_MODE:-}" ]]; then
+    args+=(--mode="$SONOBUOY_MODE")
+  else
+    args+=(--mode=quick)
+  fi
+
+  # Optional extra args (must already be properly formed flags)
+  if [[ -n "${SONOBUOY_EXTRA_ARGS:-}" ]]; then
+    # shellcheck disable=SC2206
+    args+=($SONOBUOY_EXTRA_ARGS)
+  fi
+
+  echo "Running sonobuoy with args: ${args[*]}" | tee "${RESULTS_DIR}/run.log"
+  ./sonobuoy run "${args[@]}" 2>&1 | tee -a "${RESULTS_DIR}/run.log"
+  ./sonobuoy retrieve --kubeconfig=$KUBECONFIG ${RESULTS_DIR} || exit 1

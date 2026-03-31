@@ -143,8 +143,8 @@ class SystemPaths:
         return cls._localize(Path(cls.KUBE_GALAXY_TESTS_SPREAD_YAML))
 
     @classmethod
-    def active_manifest_link(cls) -> Path:
-        """Path of the symlink that records the last-used manifest (in cwd)."""
+    def active_manifest_path(cls) -> Path:
+        """Path of the file that records the last-used (and possibly merged) manifest."""
         return cls._localize(Path(cls.KUBE_GALAXY_ROOT) / cls.ACTIVE_MANIFEST)
 
 

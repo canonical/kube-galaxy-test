@@ -12,10 +12,14 @@ from kube_galaxy.pkg.utils.kubeconfig import (
     merge_kube_galaxy_context,
 )
 from kube_galaxy.pkg.utils.logging import info, success
-from kube_galaxy.pkg.utils.paths import set_active_manifest
+from kube_galaxy.pkg.utils.paths import create_active_manifest
 
 
-def setup(manifest_path: str, update_kubeconfig: bool = False) -> None:
+def setup(
+    manifest_path: str,
+    update_kubeconfig: bool = False,
+    overlays: list[str] | None = None,
+) -> None:
     """Provision a Kubernetes cluster from a manifest file.
 
     Args:
@@ -24,9 +28,12 @@ def setup(manifest_path: str, update_kubeconfig: bool = False) -> None:
             into ``$HOME/.kube/config`` without prompting the user.  When
             ``False`` (default) the user is asked interactively (if stdin is a
             terminal).
+        overlays: Optional ordered list of overlay YAML file paths to
+            deep-merge on top of *manifest_path* before provisioning.  Later
+            overlays take precedence over earlier ones.
     """
-    setup_cluster(manifest_path)
-    set_active_manifest(manifest_path)
+    active = create_active_manifest(manifest_path, overlays)
+    setup_cluster(active)
     _handle_kubeconfig_adjustment(update_kubeconfig)
 
 
