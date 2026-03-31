@@ -7,6 +7,7 @@ environments using the GITHUB_OUTPUT mechanism for inter-step communication.
 import base64
 import io
 import os
+import re
 import typing
 import uuid
 import zipfile
@@ -205,8 +206,6 @@ def gh_download_release_asset(url: str, dest: Path) -> None:
         ComponentError: If GITHUB_TOKEN is not set, the release or asset is not found,
             or the download fails.
     """
-    import re
-
     if not GITHUB_TOKEN:
         raise ComponentError(
             f"GITHUB_TOKEN is required to download release assets from private GitHub "

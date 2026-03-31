@@ -1,6 +1,5 @@
 """Tests for RegistryMirror."""
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -145,7 +144,7 @@ class TestRegistryMirrorStart:
         assert "-d" in cmd
         assert cmd[cmd.index("-p") + 1] == "5000:5000"
         assert cmd[cmd.index("--name") + 1] == "registry-cache"
-        assert cmd[cmd.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
+        assert "--user" not in cmd  # registry container runs as root
         assert not any("REGISTRY_PROXY_REMOTEURL" in arg for arg in cmd)
         assert cmd[-1] == "registry:3"
 
