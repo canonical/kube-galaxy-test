@@ -63,9 +63,10 @@ class RegistryMirror:
     :meth:`~kube_galaxy.pkg.literals.SystemPaths.staging_root` — so they
     survive between runs and are cleaned up by the normal staging cleanup path.
 
-    Files written into :attr:`data_dir` are owned by the orchestrator user
-    because ``docker run`` is invoked with ``--user {uid}:{gid}``, avoiding
-    the need for root permissions during cleanup.
+    Files written into :attr:`data_dir` are owned by root because the
+    ``registry:3`` container must run as root (``--user`` is not supported by
+    the image; it fails with ``setgroups: invalid argument``).  Cleanup of
+    the data directory therefore requires elevated privileges.
 
     Args:
         cfg: Registry configuration from the manifest ``artifact.registry``
