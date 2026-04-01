@@ -146,7 +146,7 @@ components:
       repo:
         base-url: https://github.com/etcd-io/etcd
       source-format: "registry.k8s.io/etcd:v{{ release }}"
-      retag-format: "{{ mirror.base-url }}/etcd:{{ release }}-0"
+      retag-format: "{{ mirror.base-url }}/etcd:{{ release }}"
 
   # CoreDNS - required for cluster DNS
   - name: coredns
@@ -157,7 +157,7 @@ components:
       repo:
         base-url: https://github.com/coredns/coredns
       source-format: "registry.k8s.io/coredns/coredns:v{{ release }}"
-      retag-format: "{{ mirror.base-url }}/coredns:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/coredns:{{ release }}"
 
   # Calico - required for cluster networking
   - name: calico

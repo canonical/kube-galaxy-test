@@ -73,9 +73,14 @@ class Kubeadm(ClusterComponentBase):
         config["kubernetesVersion"] = self.manifest.kubernetes_version
         if registry_address:
             config["imageRepository"] = registry_address
-            config["dns"].update({"imageRepository": registry_address})
-            config["etcd"].update({"imageRepository": registry_address})
-
+        if etcd := self._ctx.components.get("etcd"):
+            release = etcd.config.release
+            info(f"  Setting etcd image tag to {release}")
+            config["etcd"]["local"].update({"imageTag": release})
+        if coredns := self._ctx.components.get("coredns"):
+            release = coredns.config.release
+            info(f"  Setting coredns image tag to {release}")
+            config["dns"].update({"imageTag": release})
         if len(self._ctx.control_plane_units) > 1:
             ## TODO: Support multiple control-plane nodes with a VIP
             config["controlPlaneEndpoint"] = "kube-galaxy:6443"
