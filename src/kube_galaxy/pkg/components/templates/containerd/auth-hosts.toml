@@ -1,7 +1,2 @@
-server = "https://{host}"
-
-[host."https://{registry_host}"]
-  capabilities = ["pull", "resolve"]
-
-  [host."https://{registry_host}".header]
-    Authorization = "{authorization}"
+[plugins."io.containerd.grpc.v1.cri".registry.configs."{host}".auth]
+  auth = "{authorization}"

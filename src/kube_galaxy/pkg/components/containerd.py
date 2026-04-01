@@ -16,6 +16,7 @@ from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.url import authentication_headers
 
 HOSTS_D = Path("/etc/containerd/hosts.d")
+CONF_D = Path("/etc/containerd/conf.d")
 
 
 def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
@@ -32,17 +33,12 @@ def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
         auth: Authentication string (e.g., "Basic <base64-encoded-credentials>")
     """
     hosts_tmpl = Path(__file__).parent / "templates/containerd/auth-hosts.toml"
-    if host == "docker.io":
-        # Dockerhub uses registry-1.docker.io as the registry host
-        registry_host = "registry-1.docker.io"
-    else:
-        registry_host = host
-    content = hosts_tmpl.read_text().format(
-        host=host, registry_host=registry_host, authorization=auth
-    )
-
-    hosts_toml = HOSTS_D / host / "hosts.toml"
-    component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
+    strip_basic = auth.split(" ", 1)[-1] if auth.startswith("Basic ") else None
+    if strip_basic:
+        info(f"  Found Basic auth for {host}, writing containerd hosts.toml with credentials")
+        content = hosts_tmpl.read_text().format(host=host, authorization=strip_basic)
+        host_auth_toml = CONF_D / f"{host}.toml"
+        component.write_config_file(content, host_auth_toml, mode=Permissions.PRIVATE)
 
 
 def _registry_mirror(component: "ComponentBase") -> None:
@@ -195,9 +191,10 @@ class Containerd(ComponentBase):
 
         # Remove containerd configuration files
         config_files = [
+            str(HOSTS_D),
+            str(CONF_D),
             "/etc/containerd/config.toml",
             "/etc/systemd/system/containerd.service",
-            "/etc/containerd/hosts.d/",
             "/etc/crictl.yaml",
         ]
         self.remove_config_files(config_files)
