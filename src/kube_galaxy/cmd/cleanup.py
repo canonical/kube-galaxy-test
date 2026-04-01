@@ -49,8 +49,8 @@ def cleanup_files() -> None:
         except Exception as e:
             error(f"Failed to remove {log_file}: {e}")
 
-    # Remove the active-manifest symlink so subsequent commands require an explicit manifest
-    active_link = SystemPaths.active_manifest_link()
+    # Remove the active-manifest file so subsequent commands require an explicit manifest
+    active_link = SystemPaths.active_manifest_path()
     if active_link.exists() or active_link.is_symlink():
         try:
             active_link.unlink()
@@ -96,9 +96,11 @@ def cleanup_all(manifest_path: str, force: bool = False, update_kubeconfig: bool
         update_kubeconfig: When ``True`` the ``kube-galaxy`` context is removed
             from ``$HOME/.kube/config`` without prompting.
     """
-    cleanup_files()
     info("")
-    cleanup_clusters(manifest_path, force, update_kubeconfig=update_kubeconfig)
+    try:
+        cleanup_clusters(manifest_path, force, update_kubeconfig=update_kubeconfig)
+    finally:
+        cleanup_files()
 
 
 def _handle_kubeconfig_removal(update_kubeconfig: bool) -> None:

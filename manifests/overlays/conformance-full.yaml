@@ -1,0 +1,7 @@
+components:
+  - name: cncf-conformance
+    test:
+      environment:
+        SONOBUOY_MODE: certified-conformance
+        SONOBUOY_EXTRA_ARGS: --plugin e2e
+        TEST_TIMEOUT_M: "180"

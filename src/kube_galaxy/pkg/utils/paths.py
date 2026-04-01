@@ -1,8 +1,15 @@
 """Path creation utilities shared across kube-galaxy modules."""
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from kube_galaxy.pkg.literals import SystemPaths
+from kube_galaxy.pkg.manifest.loader import deserialize_manifest
+from kube_galaxy.pkg.manifest.merger import merge_manifests
+from kube_galaxy.pkg.manifest.validator import validate_manifest
 
 
 def ensure_dir(path: Path) -> Path:
@@ -22,34 +29,53 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
-def set_active_manifest(manifest_path: str) -> None:
-    """Create or update the active-manifest symlink in the current directory.
+def create_active_manifest(manifest_path: str, overlays: Sequence[str] | None = None) -> Path:
+    """Write the active-manifest file, merging any overlays on top of the base.
 
-    The symlink always points to the absolute (resolved) path of
-    *manifest_path* so that it remains valid regardless of the working
-    directory from which subsequent commands are invoked.
+    When *overlays* are provided they are deep-merged onto *manifest_path* in
+    order (later overlays win).  The merged result is validated before writing.
+
+    Without overlays the base manifest is loaded, validated, and written
+    unchanged — so behaviour is consistent regardless of whether overlays are
+    used.
 
     Args:
-        manifest_path: Path (relative or absolute) to the manifest file.
+        manifest_path: Path (relative or absolute) to the base manifest file.
+        overlays: Optional ordered sequence of overlay YAML file paths.
+
+    Returns:
+        The :class:`~pathlib.Path` of the written active-manifest file.
     """
-    link = SystemPaths.active_manifest_link()
-    target = Path(manifest_path).resolve()
-    link.parent.mkdir(parents=True, exist_ok=True)
-    if link.exists() or link.is_symlink():
-        link.unlink()
-    link.symlink_to(target)
+    merged: dict[str, Any]
+    if overlays:
+        merged = merge_manifests(manifest_path, overlays)
+    else:
+        base = Path(manifest_path).resolve()
+        with base.open() as f:
+            merged = yaml.safe_load(f)
+        manifest = deserialize_manifest(merged, base)
+        validate_manifest(manifest)
+
+    active = SystemPaths.active_manifest_path()
+    active.parent.mkdir(parents=True, exist_ok=True)
+    if active.exists() or active.is_symlink():
+        active.unlink()
+    with active.open("w") as f:
+        yaml.dump(merged, f, sort_keys=False)
+    return active
 
 
 def get_active_manifest() -> Path | None:
-    """Return the resolved target of the active-manifest symlink, or *None*.
+    """Return the path of the active-manifest file, or *None*.
 
-    Returns *None* when the symlink does not exist or its target has been
-    removed (dangling symlink).
+    Returns *None* when the file does not exist.  Dangling legacy symlinks
+    (from pre-overlay-feature setups) also return *None* because
+    :meth:`~pathlib.Path.exists` is ``False`` for them.
 
     Returns:
-        Resolved :class:`~pathlib.Path` of the active manifest, or *None*.
+        :class:`~pathlib.Path` of the active manifest, or *None*.
     """
-    link = SystemPaths.active_manifest_link()
-    if link.is_symlink() and link.exists():
-        return link.resolve()
+    path = SystemPaths.active_manifest_path()
+    if path.exists():
+        return path.resolve()
     return None

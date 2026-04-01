@@ -46,7 +46,7 @@ def load_manifest(path: str | Path) -> Manifest:
     if not isinstance(data, dict):
         raise ValueError("Manifest must be a YAML dictionary")
 
-    return _deserialize_manifest(data, manifest_path)
+    return deserialize_manifest(data, manifest_path)
 
 
 def _parse_repo(repo_data: Any, comp_name: str) -> RepoInfo:
@@ -146,7 +146,7 @@ def _parse_environment(env_data: Any, comp_name: str) -> dict[str, str]:
     return result
 
 
-def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
+def deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
     """Deserialize manifest dictionary to Manifest dataclass."""
     # Parse components
     components: list[ComponentConfig] = []

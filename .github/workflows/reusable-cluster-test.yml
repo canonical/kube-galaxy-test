@@ -6,7 +6,7 @@ on:
       manifests-json:
         description: >
           JSON array of manifest objects, e.g.
-          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml"}]
+          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml", "overlays": []}]
         type: string
         required: true
       manifests-repo:
@@ -64,6 +64,30 @@ jobs:
         include: ${{ fromJson(inputs.manifests-json) }}
 
     steps:
+      - name: Validate Manifest File
+        shell: bash
+        run: |
+          test -n "${{ matrix.manifest-file }}" || {
+            echo "manifest-file is required"
+            exit 1
+          }
+
+      - name: Validate Manifest overlays
+        shell: bash
+        run: |
+          overlays='${{ toJson(matrix.overlays) }}'
+
+          echo "$overlays" | jq -e '
+            . == null
+            or (
+              type == "array"
+              and all(.[]; type == "string")
+            )
+          ' >/dev/null || {
+            echo "ERROR: matrix.overlays must be null or a list of strings"
+            exit 1
+          }
+
       # ---- Checkout local directory for manifests and components ----
       - name: Checkout manifests repo
         uses: actions/checkout@v6
@@ -133,7 +157,12 @@ jobs:
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
 
-          kube-galaxy setup ${{ matrix.manifest-file }}
+          OVERLAY_FLAGS=""
+          for ov in $(echo '${{ toJson(matrix.overlays) }}' | jq -r '.[]? // empty'); do
+            OVERLAY_FLAGS="$OVERLAY_FLAGS --overlay $ov"
+          done
+
+          kube-galaxy setup ${{ matrix.manifest-file }} $OVERLAY_FLAGS
 
       - name: Verify Cluster Health
         shell: bash
@@ -144,13 +173,13 @@ jobs:
         id: run-tests
         shell: bash
         run: |
-          kube-galaxy test ${{ matrix.manifest-file }}
+          kube-galaxy test
 
       - name: Collect Logs
         if: always()
         shell: bash
         run: |
-          kube-galaxy logs ${{ matrix.manifest-file }}
+          kube-galaxy logs
 
       - name: Rename log files for safe-upload
         if: always()

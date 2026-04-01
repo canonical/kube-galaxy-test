@@ -41,24 +41,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Discover manifests dynamically based on trigger and ci-skip flags
-  discover-manifests:
+  # Derive manifests dynamically based on trigger and ci-skip flags
+  derive-manifests:
     runs-on: ubuntu-latest
     outputs:
-      manifests: ${{ steps.discover.outputs.manifests }}
+      manifests: ${{ steps.derive.outputs.manifests }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Discover manifest files
-        id: discover
+      - name: Derive manifest files
+        id: derive
         shell: bash
         run: |
-          # Filter manifests based on event type and ci-skip-on-pr label
-          # On PRs (pull_request event OR push to PR branch): skip manifests with ci-skip-on-pr: "true"
-          # On other events: include all manifests
+          # Filter manifests based on event type
+          # On PRs (pull_request event OR push to PR branch): run standard tests
+          # On other events: run longer tests from the conformance-full overlay
 
           manifests="[]"
 
@@ -73,43 +68,25 @@ jobs:
           fi
 
           if [ "$IS_PR" = "true" ]; then
-            echo "PR context: Including manifests without ci-skip-on-pr: true plus any changed manifests"
-
-            # Base set: manifests that don't have ci-skip-on-pr: "true"
-            base_manifests=$(find manifests/ -name "*.yaml" -type f | while read -r file; do
-              if ! grep -q 'ci-skip-on-pr.*\:.*"true"' "$file" && ! grep -q "ci-skip-on-pr.*\:.*'true'" "$file"; then
-                echo "$file"
-              fi
-            done | sort)
-
-            # Changed manifests in this PR (always included)
-            changed_manifests=""
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              changed_manifests=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- 'manifests/*.yaml' | sort)
-            fi
-
-            manifests=$(printf "%s\n%s\n" "$base_manifests" "$changed_manifests" \
-              | sed '/^$/d' \
-              | sort -u \
-              | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
+            manifests='[{"manifest-file":"manifests/smoketest.yaml","overlays":[]}]'
           else
             echo "Non-PR context: Including all manifests"
-            manifests=$(find manifests/ -name "*.yaml" -type f | sort | jq -R -s -c 'split("\n")[:-1] | map({"manifest-file": .})')
+            manifests='[{"manifest-file":"manifests/smoketest.yaml","overlays":["manifests/overlays/conformance-full.yaml"]}]'
           fi
 
           echo "manifests=$manifests" >> $GITHUB_OUTPUT
-          echo "Discovered manifests: $manifests"
+          echo "Derived manifests: $manifests"
 
   # Delegate to reusable workflow for actual testing
   run-tests:
-    needs: discover-manifests
-    if: needs.discover-manifests.outputs.manifests != '[]'
+    needs: derive-manifests
+    if: needs.derive-manifests.outputs.manifests != '[]'
     uses: ./.github/workflows/reusable-cluster-test.yml
     with:
       manifests-repo: ${{ github.repository }}
       manifests-ref: ${{ github.head_ref || github.ref_name }}
       kube-galaxy-ref: ${{ github.head_ref || github.ref_name }}
-      manifests-json: ${{ needs.discover-manifests.outputs.manifests }}
+      manifests-json: ${{ needs.derive-manifests.outputs.manifests }}
       create-issues-on-failure: ${{ github.event_name != 'pull_request' }}
     secrets:
       REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}

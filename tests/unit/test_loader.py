@@ -1,10 +1,12 @@
 """Unit tests for manifest loader."""
 
+from pathlib import Path
+
 import pytest
 import yaml
 
 from kube_galaxy.pkg.literals import URLs
-from kube_galaxy.pkg.manifest.loader import load_manifest
+from kube_galaxy.pkg.manifest.loader import deserialize_manifest, load_manifest
 from kube_galaxy.pkg.manifest.models import TestMethod as ComponentTestMethod
 
 
@@ -469,3 +471,23 @@ provider:
     assert isinstance(manifest.provider.nodes.control_plane, int)
     assert manifest.provider.nodes.worker == 3
     assert isinstance(manifest.provider.nodes.worker, int)
+
+
+def test_deserialize_manifest_from_dict(tmp_manifest_dir):
+    """deserialize_manifest produces the same result as load_manifest for the same data."""
+    manifest_file = tmp_manifest_dir / "test.yaml"
+    manifest_file.write_text(
+        """\
+name: test-cluster
+kubernetes-version: "1.35.0"
+"""
+    )
+
+    via_load = load_manifest(manifest_file)
+
+    with manifest_file.open() as f:
+        data = yaml.safe_load(f)
+    via_deserialize = deserialize_manifest(data, Path(manifest_file))
+
+    assert via_deserialize.name == via_load.name
+    assert via_deserialize.kubernetes_version == via_load.kubernetes_version
