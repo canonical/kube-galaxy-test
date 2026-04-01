@@ -130,13 +130,15 @@ def _component_kill_timeout(component: ComponentConfig) -> str | None:
     return None
 
 
-def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> list[str]:
+def _generate_orchestration_spread_yaml(
+    components: list[ComponentConfig], k8s_version: str
+) -> list[str]:
     """
     Generate spread.yaml from template for component test orchestration.
 
     Args:
         components: List of components with spread tests
-        kubeconfig: Path to kubeconfig file (in shared directory)
+        k8s_version: Kubernetes version for conditional test logic
 
     Returns:
         List of component suites
@@ -159,6 +161,7 @@ def _generate_orchestration_spread_yaml(components: list[ComponentConfig]) -> li
                 "TEST_TIMEOUT_S": str(Timeouts.TEST_EXECUTION_TIMEOUT_S),
                 "TEST_TIMEOUT_M": str(Timeouts.TEST_EXECUTION_TIMEOUT_S // 60),
                 "KUBECONFIG": str(SystemPaths.local_kube_config()),
+                "K8S_VERSION": k8s_version,
             },
         }
 
@@ -286,7 +289,8 @@ def _run_component_tests(manifest: Manifest, work_dir: Path, test_type: str, deb
         raise ClusterError("Component validation failed")
 
     # Generate orchestration spread.yaml
-    component_suites = _generate_orchestration_spread_yaml(spread_components)
+    k8s_version = manifest.kubernetes_version
+    component_suites = _generate_orchestration_spread_yaml(spread_components, k8s_version)
 
     # Track test results
     test_results = []

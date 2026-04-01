@@ -264,6 +264,9 @@ Inside `task.yaml` you can reference environment variables set by kube-galaxy:
 | `SYSTEM_ARCH`       | Raw `uname -m` architecture                   |
 | `IMAGE_ARCH`        | Container image architecture tag              |
 | `KUBECONFIG`        | Path to shared kubeconfig                     |
+| `K8S_VERSION`       | Versions of Kubernetes defined in manifest    |
+| `TEST_TIMEOUT_M`    | How long the task should take maximum in min  |
+| `TEST_TIMEOUT_S`    | How long the task should take maximum in sec  |
 
 Example `task.yaml`:
 
