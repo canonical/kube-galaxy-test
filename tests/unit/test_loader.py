@@ -469,3 +469,50 @@ provider:
     assert isinstance(manifest.provider.nodes.control_plane, int)
     assert manifest.provider.nodes.worker == 3
     assert isinstance(manifest.provider.nodes.worker, int)
+
+
+def test_load_manifest_provider_vsphere_fields(tmp_manifest_dir):
+    """vSphere-specific provider fields are parsed correctly."""
+    manifest_file = tmp_manifest_dir / "vsphere.yaml"
+    manifest_file.write_text(
+        """
+name: vsphere-test
+kubernetes-version: "1.35.0"
+provider:
+  type: vsphere
+  image: ubuntu-24.04-template
+  vsphere-datacenter: DC1
+  vsphere-datastore: datastore1
+  vsphere-network: VM Network
+  nodes:
+    control-plane: 1
+    worker: 2
+"""
+    )
+    manifest = load_manifest(manifest_file)
+    assert manifest.provider.type == "vsphere"
+    assert manifest.provider.image == "ubuntu-24.04-template"
+    assert manifest.provider.vsphere_datacenter == "DC1"
+    assert manifest.provider.vsphere_datastore == "datastore1"
+    assert manifest.provider.vsphere_network == "VM Network"
+    assert manifest.provider.nodes.control_plane == 1
+    assert manifest.provider.nodes.worker == 2
+
+
+def test_load_manifest_provider_vsphere_defaults(tmp_manifest_dir):
+    """vSphere fields default to empty strings when omitted."""
+    manifest_file = tmp_manifest_dir / "vsphere-defaults.yaml"
+    manifest_file.write_text(
+        """
+name: vsphere-defaults
+kubernetes-version: "1.35.0"
+provider:
+  type: vsphere
+  image: ubuntu-template
+"""
+    )
+    manifest = load_manifest(manifest_file)
+    assert manifest.provider.type == "vsphere"
+    assert manifest.provider.vsphere_datacenter == ""
+    assert manifest.provider.vsphere_datastore == ""
+    assert manifest.provider.vsphere_network == ""

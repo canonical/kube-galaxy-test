@@ -26,6 +26,7 @@ from kube_galaxy.pkg.units.provider import (
     provider_factory,
 )
 from kube_galaxy.pkg.units.ssh import SSHUnitProvider
+from kube_galaxy.pkg.units.vsphere import VSphereUnitProvider
 from tests.unit.components.conftest import MockUnit
 
 # ---------------------------------------------------------------------------
@@ -72,6 +73,21 @@ def test_provider_factory_unknown():
     m = _manifest_with_provider("nonexistent")
     with pytest.raises(ValueError, match="Unknown provider type"):
         provider_factory(m)
+
+
+def test_provider_factory_vsphere(monkeypatch):
+    monkeypatch.setattr("kube_galaxy.pkg.units.vsphere.check_version", lambda _cmd: None)
+    monkeypatch.setattr("kube_galaxy.pkg.units.vsphere.check_installed", lambda _cmd: None)
+    m = _manifest_with_provider(
+        "vsphere",
+        image="ubuntu-24.04-template",
+        vsphere_datacenter="DC1",
+        vsphere_datastore="datastore1",
+        vsphere_network="VM Network",
+    )
+    p = provider_factory(m)
+    assert isinstance(p, VSphereUnitProvider)
+    assert p.is_ephemeral
 
 
 def test_provider_factory_default_is_lxd():

@@ -248,3 +248,17 @@ def test_validate_provider_nodes_valid_passes():
         provider=ProviderConfig(nodes=NodesConfig(control_plane=1, worker=0))
     )
     validate_manifest(manifest)  # should not raise
+
+
+def test_validate_provider_type_vsphere_accepted():
+    """Provider type 'vsphere' should pass validation."""
+    manifest = _minimal_manifest(
+        provider=ProviderConfig(
+            type="vsphere",
+            image="ubuntu-template",
+            vsphere_datacenter="DC1",
+            vsphere_datastore="ds1",
+            vsphere_network="VM Network",
+        )
+    )
+    validate_manifest(manifest)  # should not raise

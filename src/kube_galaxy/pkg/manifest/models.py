@@ -106,12 +106,16 @@ class ProviderConfig:
     manifest.
     """
 
-    type: str = "lxd"  # local | lxd | multipass | ssh
-    image: str = "ubuntu:24.04"  # base image for lxd / multipass providers
+    type: str = "lxd"  # local | lxd | multipass | ssh | vsphere | juju
+    image: str = "ubuntu:24.04"  # base image for lxd / multipass / vsphere providers
     nodes: NodesConfig = field(
         default_factory=NodesConfig
     )  # node counts for each role (lxd/multipass)
     hosts: list[str] = field(default_factory=list)  # pre-existing hosts for ssh provider
+    # vSphere-specific (credentials via GOVC_URL / GOVC_USERNAME / GOVC_PASSWORD env vars)
+    vsphere_datacenter: str = ""  # vCenter datacenter name
+    vsphere_datastore: str = ""  # vCenter datastore name
+    vsphere_network: str = ""  # vCenter network name
 
 
 @dataclass

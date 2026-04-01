@@ -4,6 +4,7 @@ import kube_galaxy.pkg.units.juju as juju
 import kube_galaxy.pkg.units.lxdvm as lxdvm
 import kube_galaxy.pkg.units.multipass as multipass
 import kube_galaxy.pkg.units.ssh as ssh
+import kube_galaxy.pkg.units.vsphere as vsphere
 from kube_galaxy.pkg.manifest.models import Manifest, NodesConfig, ProviderConfig
 from kube_galaxy.pkg.units._base import UnitProvider
 from kube_galaxy.pkg.units.local import LocalUnitProvider
@@ -32,5 +33,14 @@ def provider_factory(manifest: Manifest) -> UnitProvider:
         case "juju":
             juju.print_dependency_status()
             return juju.JujuUnitProvider(node_cfg, image=cfg.image)
+        case "vsphere":
+            vsphere.print_dependency_status()
+            return vsphere.VSphereUnitProvider(
+                node_cfg,
+                image=cfg.image,
+                datacenter=cfg.vsphere_datacenter,
+                datastore=cfg.vsphere_datastore,
+                network=cfg.vsphere_network,
+            )
         case _:
             raise ValueError(f"Unknown provider type: {cfg.type!r}")

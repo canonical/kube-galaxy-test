@@ -7,7 +7,7 @@ import yaml
 from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.models import ComponentConfig, Manifest, TestMethod
 
-_VALID_PROVIDER_TYPES = {"local", "lxd", "multipass", "ssh", "juju"}
+_VALID_PROVIDER_TYPES = {"local", "lxd", "multipass", "ssh", "juju", "vsphere"}
 _VALID_PLACEMENT_VALUES = {"all", "control-plane", "workers", "orchestrator"}
 
 
