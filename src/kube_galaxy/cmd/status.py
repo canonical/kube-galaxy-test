@@ -19,7 +19,7 @@ from kube_galaxy.pkg.utils.client import (
 )
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, info, section, success, warning
-from kube_galaxy.pkg.utils.shell import check_installed, check_version
+from kube_galaxy.pkg.utils.shell import check_version
 
 
 def status(manifest_path: str, wait: bool = False, timeout: int = 300) -> None:
@@ -44,7 +44,6 @@ def status(manifest_path: str, wait: bool = False, timeout: int = 300) -> None:
 def _print_dependency_status() -> None:
     """Print required command dependency status."""
     info("Dependencies:")
-    check_installed("spread")
     check_version("kubectl")
 
 

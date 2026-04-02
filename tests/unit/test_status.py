@@ -34,7 +34,6 @@ def test_status_wait_runs_readiness_checks(monkeypatch):
     monkeypatch.setattr(status_cmd, "get_nodes", fake_get_nodes)
     monkeypatch.setattr(status_cmd, "get_cluster_info", lambda _unit: "cluster-info")
     monkeypatch.setattr(status_cmd, "get_pods", lambda _unit: "pods-output")
-    monkeypatch.setattr(status_cmd, "check_installed", lambda _cmd: None)
     monkeypatch.setattr(status_cmd, "check_version", lambda _cmd: None)
     monkeypatch.setattr(
         status_cmd,
@@ -70,7 +69,6 @@ def test_status_wait_exits_non_zero_on_readiness_failure(monkeypatch):
     monkeypatch.setattr(status_cmd, "wait_for_nodes", fake_wait_for_nodes)
     monkeypatch.setattr(status_cmd, "get_context", fake_get_context)
     monkeypatch.setattr(status_cmd, "get_nodes", fake_get_nodes)
-    monkeypatch.setattr(status_cmd, "check_installed", lambda _cmd: None)
     monkeypatch.setattr(status_cmd, "check_version", lambda _cmd: None)
     monkeypatch.setattr(
         status_cmd,

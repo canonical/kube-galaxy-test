@@ -35,6 +35,10 @@ on:
         description: "Open a GitHub issue when a test job fails"
         type: boolean
         default: false
+      runs-on:
+        description: "Runner labels for test jobs (e.g. 'ubuntu-latest' or 'self-hosted,linux,x64')"
+        type: string
+        default: "ubuntu-latest"
     secrets:
       REPO_ACCESS_TOKEN:
         description: "GitHub token used as GITHUB_TOKEN for container registry auth and kube-galaxy setup"
@@ -55,14 +59,29 @@ jobs:
   # ------------------------------------------------------------------
   # Matrix job: one runner per manifest
   # ------------------------------------------------------------------
-  test-matrix:
+  setup:
+    name: Setup Test Matrix
     runs-on: ubuntu-latest
+    outputs:
+      runs-on: ${{ steps.split-runs-on.outputs.runs-on }}
+    steps:
+      - name: Split runs-on labels
+        id: split-runs-on
+        shell: bash
+        run: |
+          # Output the runs-on labels as a JSON array for use in next job
+          RUNS_ON=$(echo "${{ inputs.runs-on }}" \
+            | jq -cR 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+          echo "runs-on=$RUNS_ON" >> "$GITHUB_OUTPUT"
+
+  test-matrix:
+    needs: setup
+    runs-on: ${{ fromJson(needs.setup.outputs.runs-on) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJson(inputs.manifests-json) }}
-
     steps:
       - name: Validate Manifest File
         shell: bash
@@ -110,6 +129,11 @@ jobs:
 
       - name: Setup LXD
         uses: canonical/setup-lxd@main
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v5
+        with:
+          version: "latest"
 
       - name: Setup Skopeo
         run: |
