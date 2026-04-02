@@ -1218,3 +1218,48 @@ def test_juju_unit_enlist_opens_tunnel_before_etc_hosts(monkeypatch):
     unit.enlist("127.0.0.1", timeout=30)
 
     assert call_order == ["open_tunnel", "update_etc_hosts"]
+
+
+# ---------------------------------------------------------------------------
+# JujuUnit — public_address
+# ---------------------------------------------------------------------------
+
+_STATE_WITH_PUBLIC_IP = {
+    "applications": {
+        "myapp": {
+            "units": {
+                "myapp/0": {
+                    "workload-status": {"current": "active"},
+                    "juju-status": {"current": "idle"},
+                    "public-address": "203.0.113.42",
+                },
+            }
+        }
+    }
+}
+
+
+def test_juju_unit_public_address_returns_field_from_status(monkeypatch):
+    """public_address returns `public-address` field when present in Juju status."""
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units.juju.run",
+        lambda cmd, **kw: _make_run_result(stdout=json.dumps(_STATE_WITH_PUBLIC_IP)),
+    )
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0)
+    assert unit.public_address == "203.0.113.42"
+
+
+def test_juju_unit_public_address_falls_back_to_private_address(monkeypatch):
+    """public_address falls back to private_address when `public-address` is absent."""
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units.juju.run",
+        lambda cmd, **kw: _make_run_result(stdout=json.dumps(_FULL_STATE)),
+    )
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0)
+    # private_address is a cached_property backed by run(); stub it directly
+    monkeypatch.setattr(
+        JujuUnit,
+        "private_address",
+        property(lambda self: "10.0.0.5"),
+    )
+    assert unit.public_address == "10.0.0.5"

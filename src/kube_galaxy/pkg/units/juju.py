@@ -8,10 +8,11 @@ import json
 import shlex
 import subprocess
 import time
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
-from kube_galaxy.pkg.literals import Timeouts
+from kube_galaxy.pkg.literals import Ports, Timeouts
 from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
@@ -86,6 +87,18 @@ def _get_workload_status(unit: str, timeout: float = 10) -> tuple[str, str] | No
     return None
 
 
+def _expose(unit: str) -> None:
+    """Expose the Juju unit's application via 'juju expose'."""
+    app = unit.split("/")[0]
+    run(["juju", "expose", app], check=True)
+
+
+def _open_ports(unit: Unit, *ports: int) -> None:
+    """Open the given ports on the Juju machine via 'juju open-port'."""
+    for port in ports:
+        unit.run(["open-port", str(port)], check=True)
+
+
 class JujuUnit(Unit):
     """Unit backed by a Juju machine.
 
@@ -110,6 +123,12 @@ class JujuUnit(Unit):
     @staticmethod
     def application(unit: str) -> str:
         return unit.split("/")[0]
+
+    @cached_property
+    def public_address(self) -> str:
+        """Return the unit's public IP address from Juju status."""
+        status = _get_unit_status(self._name)
+        return status.get("public-address") or self.private_address
 
     def open_tunnel(self) -> None:
         """Open (or re-open) the SSH reverse tunnel for this unit.
@@ -165,6 +184,8 @@ class JujuUnit(Unit):
         self._enable_root_ssh()
         self.open_tunnel()
         self.update_etc_hosts(orchestrator_ip)
+        _expose(self.name)
+        _open_ports(self, Ports.KUBE_API_SERVER)
 
     def _juju_exec(
         self,
