@@ -51,6 +51,7 @@ def _download(comp: ComponentBase) -> None:
         mirror_path = f"{parts[1]}:{source_tag}" if len(parts) > 1 else image_source
         info(f"  Preloading image into registry mirror: {image_source} -> {mirror_path}")
         mirror.preload(f"docker://{image_source}", mirror_path)
+        comp.install_path = f"{mirror.registry_address()}/{mirror_path}"
     else:
         info(f"  No registry mirror configured; skipping preload for {image_source}")
 
@@ -60,6 +61,7 @@ def _download(comp: ComponentBase) -> None:
         retag_path = f"{parts[1]}:{retag_tag}" if len(parts) > 1 else image_retag
         info(f"  Retagging image in registry mirror: {mirror_path} -> {retag_path}")
         mirror.retag(mirror_path, retag_path)
+        comp.install_path = f"{mirror.registry_address()}/{retag_path}"
 
 
 _ContainerImageInstallStrategy = _InstallStrategy(download=_download)
