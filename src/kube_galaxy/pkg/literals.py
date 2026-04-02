@@ -223,6 +223,14 @@ class URLs:
     REGISTRY_K8S_IO = "registry.k8s.io"
 
 
+class Ports:
+    """Network port numbers."""
+
+    KUBE_API_SERVER = 6443
+    ARTIFACT_SERVER = 8765
+    MIRROR_REGISTRY = 5000
+
+
 class TestDirectories:
     """Test and output directory names."""
 

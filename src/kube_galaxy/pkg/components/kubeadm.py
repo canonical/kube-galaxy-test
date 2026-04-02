@@ -12,7 +12,7 @@ import requests
 import yaml
 
 from kube_galaxy.pkg.components import ClusterComponentBase, register_component
-from kube_galaxy.pkg.literals import SystemPaths, URLs
+from kube_galaxy.pkg.literals import Ports, SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.utils.client import (
     get_api_server_status,
@@ -20,6 +20,7 @@ from kube_galaxy.pkg.utils.client import (
     wait_for_nodes,
 )
 from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.kubeconfig import rewrite_cluster_server
 from kube_galaxy.pkg.utils.logging import info
 from kube_galaxy.pkg.utils.paths import ensure_dir
 
@@ -83,8 +84,12 @@ class Kubeadm(ClusterComponentBase):
             config["dns"].update({"imageTag": release})
         if len(self._ctx.control_plane_units) > 1:
             ## TODO: Support multiple control-plane nodes with a VIP
-            config["controlPlaneEndpoint"] = "kube-galaxy:6443"
+            config["controlPlaneEndpoint"] = f"kube-galaxy:{Ports.KUBE_API_SERVER}"
             raise ComponentError("Multiple control-plane units not supported")
+        if sans := list(
+            filter(None, {self.unit.private_address, self.unit.public_address, self.unit.hostname})
+        ):
+            config.setdefault("apiServer", {})["certSANs"] = sans
 
     def _update_init_config(self, config: dict[str, Any]) -> None:
         """
@@ -177,6 +182,8 @@ class Kubeadm(ClusterComponentBase):
         ensure_dir(orchestrator_kube_config.parent)
         self.unit.get("/etc/kubernetes/admin.conf", orchestrator_kube_config)
         self.unit.put(orchestrator_kube_config, str(SystemPaths.kube_config()))
+        if public_addr := self.unit.public_address:
+            rewrite_cluster_server(orchestrator_kube_config, public_addr)
 
     def generate_join_token(self, role: NodeRole) -> str:
         """Generate a single-use join token on the control-plane unit."""

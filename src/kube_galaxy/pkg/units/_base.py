@@ -170,6 +170,19 @@ class Unit(ABC):
         result = self.run(["hostname"], check=False)
         return result.stdout.strip() if result.returncode == 0 else ""
 
+    @cached_property
+    def private_address(self) -> str:
+        """Return the unit's primary private IP address."""
+        result = self.run(["hostname", "-I"], check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split()[0]
+        return ""
+
+    @cached_property
+    def public_address(self) -> str:
+        """Return the unit's public IP address (defaults to private_address)."""
+        return self.private_address
+
     def enlist(self, orchestrator_ip: str, timeout: float | None = None) -> None:
         """Block until the unit agent is responsive.
 
