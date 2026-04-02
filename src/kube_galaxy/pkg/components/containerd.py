@@ -89,9 +89,9 @@ class Containerd(ComponentBase):
             if (
                 install.method
                 in [InstallMethod.CONTAINER_IMAGE_ARCHIVE, InstallMethod.CONTAINER_IMAGE]
-                and install.source_format
+                and pause.install_path
             ):
-                image_format = pause.config.installation.source_format
+                image_format = pause.install_path
             # Otherwise construct from release version
             elif pause.config.release:
                 image_format = f"{URLs.REGISTRY_K8S_IO}/pause:{pause.config.release}"
