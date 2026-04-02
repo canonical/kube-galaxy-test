@@ -100,7 +100,7 @@ class LocalUnit(Unit):
 
         return compute_sha256(Path(path))
 
-    def enlist(self, timeout: float | None = None) -> None:
+    def enlist(self, orchestrator_ip: str = "", timeout: float | None = None) -> None:
         """Local unit is always ready; nothing to wait for."""
 
 

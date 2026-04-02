@@ -72,8 +72,9 @@ class RegistryMirror:
             block.
     """
 
-    def __init__(self, cfg: RegistryConfig) -> None:
+    def __init__(self, cfg: RegistryConfig, orchestrator_ip: str | None = None) -> None:
         self._cfg = cfg
+        self._orchestrator_ip = orchestrator_ip
 
     @property
     def data_dir(self) -> Path:
@@ -169,8 +170,8 @@ class RegistryMirror:
     def registry_address(self, local: bool = False) -> str:
         """Return the registry address for use in container image references."""
         if local:
-            registry_addr = detect_ip()
-            return f"{registry_addr}:{self._cfg.port}"
+            ip = self._orchestrator_ip if self._orchestrator_ip is not None else detect_ip()
+            return f"{ip}:{self._cfg.port}"
         return f"{URLs.ORCHESTRATOR_HOST}:{self._cfg.port}"
 
     def preload(self, image_ref: str, mirror_path: str) -> None:
