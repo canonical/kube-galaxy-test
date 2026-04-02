@@ -65,6 +65,8 @@ class ArtifactServer:
             print(srv.base_url)   # "http://myhost:9000"
     """
 
+    DEFAULT_PORT = 8765
+
     def __init__(
         self,
         port: int = 8765,

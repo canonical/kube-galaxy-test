@@ -28,6 +28,7 @@ def spread(manifest_path: str) -> None:
         manifest = load_manifest(manifest_path)
         provider = provider_factory(manifest)
         lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
+        provider.open_tunnels()
 
         # Check if kubectl can connect
         verify_connectivity(lead_unit)
@@ -53,6 +54,8 @@ def spread(manifest_path: str) -> None:
     except ClusterError as e:
         exception("Spread tests failed", e)
         raise typer.Exit(code=1) from e
+    finally:
+        provider.stop_tunnels()
 
 
 def validate(manifest_path: str | None = None) -> None:

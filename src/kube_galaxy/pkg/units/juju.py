@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from kube_galaxy.pkg.literals import Timeouts
-from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.logging import info, warning
@@ -95,9 +95,13 @@ class JujuUnit(Unit):
 
     JUJU_PATIENT_TIMEOUT = 900  # Juju machines can be slow to provision and become ready
 
-    def __init__(self, machine_name: str, role: NodeRole, index: int) -> None:
+    def __init__(
+        self, machine_name: str, role: NodeRole, index: int, tunnel_ports: list[int] | None = None
+    ) -> None:
         super().__init__(role, index)
         self._name = machine_name
+        self._tunnel_ports: list[int] = tunnel_ports or []
+        self._tunnel: subprocess.Popen[bytes] | None = None
 
     @property
     def name(self) -> str:
@@ -106,6 +110,36 @@ class JujuUnit(Unit):
     @staticmethod
     def application(unit: str) -> str:
         return unit.split("/")[0]
+
+    def open_tunnel(self) -> None:
+        """Open (or re-open) the SSH reverse tunnel for this unit.
+
+        Idempotent: no-op if the tunnel process is already running.
+        Uses ``juju ssh`` so that Juju handles host-key verification and
+        identity management.
+        """
+        if self._tunnel is not None and self._tunnel.poll() is None:
+            return  # already alive
+        if not self._tunnel_ports:
+            return
+        cmd = ["juju", "ssh", "--no-host-key-checks", self._name, "-N"]
+        for port in self._tunnel_ports:
+            cmd += ["-R", f"{port}:localhost:{port}"]
+        self._tunnel = subprocess.Popen(cmd)
+
+    def stop_tunnel(self) -> None:
+        """Terminate the SSH reverse tunnel if it is running."""
+        if self._tunnel is not None:
+            self._tunnel.terminate()
+            try:
+                self._tunnel.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._tunnel.kill()
+            self._tunnel = None
+
+    def tunnel_alive(self) -> bool:
+        """Return True if the SSH reverse tunnel process is currently running."""
+        return self._tunnel is not None and self._tunnel.poll() is None
 
     def _enable_root_ssh(self) -> None:
         # Juju machines don't have root SSH access by default,
@@ -116,7 +150,7 @@ class JujuUnit(Unit):
             check=True,
         )
 
-    def enlist(self, timeout: float | None = None) -> None:
+    def enlist(self, orchestrator_ip: str, timeout: float | None = None) -> None:
         # Juju machines can take a while to come up, so instead we wait for active/idle
         effective_timeout = self.JUJU_PATIENT_TIMEOUT if timeout is None else timeout
         deadline = time.monotonic() + effective_timeout
@@ -129,7 +163,8 @@ class JujuUnit(Unit):
                 )
             time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
         self._enable_root_ssh()
-        self.update_etc_hosts()
+        self.open_tunnel()
+        self.update_etc_hosts(orchestrator_ip)
 
     def _juju_exec(
         self,
@@ -195,6 +230,16 @@ class JujuUnit(Unit):
 class JujuUnitProvider(UnitProvider):
     """Provisions and destroys Juju machines."""
 
+    def __init__(
+        self, node_cfg: NodesConfig, image: str, tunnel_ports: list[int] | None = None
+    ) -> None:
+        super().__init__(node_cfg, image)
+        self._tunnel_ports: list[int] = tunnel_ports or []
+
+    def orchestrator_ip(self) -> str:
+        """Return 127.0.0.1 — Juju units reach the orchestrator via reverse SSH tunnel."""
+        return "127.0.0.1"
+
     @property
     def is_ephemeral(self) -> bool:
         return True
@@ -253,9 +298,23 @@ class JujuUnitProvider(UnitProvider):
             time.sleep(5)
         # the unit with the highest index should be the one we just launched
         unit_name = sorted(app["units"].keys())[index]
-        return JujuUnit(unit_name, role, index)
+        return JujuUnit(unit_name, role, index, tunnel_ports=self._tunnel_ports)
+
+    def open_tunnels(self) -> None:
+        """Open SSH reverse tunnels for all tracked Juju units."""
+        for unit in self._units:
+            if isinstance(unit, JujuUnit):
+                unit.open_tunnel()
+
+    def stop_tunnels(self) -> None:
+        """Close SSH reverse tunnels for all tracked Juju units."""
+        for unit in self._units:
+            if isinstance(unit, JujuUnit):
+                unit.stop_tunnel()
 
     def deprovision(self, unit: Unit) -> None:
+        if isinstance(unit, JujuUnit):
+            unit.stop_tunnel()
         info(f"Deprovisioning Juju machine '{unit.name}'...")
         if unit.index == 0:
             cmd = ["juju", "remove-application", "--force", "--no-prompt", unit.name.split("/")[0]]
