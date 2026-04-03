@@ -209,9 +209,6 @@ def _deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
             worker=int(nodes_data.get("worker", 0)),
         ),
         hosts=provider_data.get("hosts", []),
-        vsphere_datacenter=provider_data.get("vsphere-datacenter", ""),
-        vsphere_datastore=provider_data.get("vsphere-datastore", ""),
-        vsphere_network=provider_data.get("vsphere-network", ""),
     )
 
     return Manifest(

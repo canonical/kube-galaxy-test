@@ -1,0 +1,114 @@
+name: Test vSphere Cluster (Juju)
+
+# Manual-only until a self-hosted runner with Juju+vSphere is available.
+# Requires a Juju controller already bootstrapped on a vSphere cloud:
+#
+#   juju add-cloud vsphere --client
+#   juju add-credential vsphere
+#   juju bootstrap vsphere/Boston my-controller \
+#       --model-default datastore=vsanDatastore \
+#       --model-default primary-network=VLAN_2763 \
+#       --model-default force-vm-hardware-version=17
+#
+# The self-hosted runner must have:
+#   - juju CLI installed and authenticated to the controller
+#   - A model selected (juju switch <model>)
+#   - Network access to vCenter and the provisioned VMs
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: "Manifest file to test"
+        required: false
+        default: "manifests/smoketest-vsphere.yaml"
+      timeout-minutes:
+        description: "Job timeout"
+        required: false
+        default: "120"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test-vsphere:
+    runs-on: [self-hosted, vsphere]
+    timeout-minutes: ${{ fromJson(inputs.timeout-minutes) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Astral UV
+        uses: astral-sh/setup-uv@v8.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ">=1.22"
+
+      - name: Install Spread
+        run: go install github.com/canonical/spread/cmd/spread@latest
+
+      - name: Install kube-galaxy
+        run: |
+          uv tool install .
+          kube-galaxy --version
+
+      - name: Verify Juju controller
+        run: |
+          juju --version
+          juju status --format short
+          juju models --format json | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          model = data.get('current-model', 'none')
+          models = data.get('models', [])
+          active = [m for m in models if m.get('short-name') == model]
+          cloud_type = active[0].get('type', 'unknown') if active else 'unknown'
+          print(f'Current model: {model} (cloud type: {cloud_type})')
+          if cloud_type != 'vsphere':
+              print(f'WARNING: Expected vsphere cloud, got {cloud_type}')
+          "
+
+      - name: Display Cluster Configuration
+        run: |
+          echo "## Test Configuration"
+          echo "- **Manifest**: ${{ inputs.manifest }}"
+          echo "- **Provider**: juju (vSphere cloud)"
+          echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes"
+
+      - name: Setup Cluster
+        id: setup-cluster
+        env:
+          GITHUB_ACTOR: cdkbot
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+        run: |
+          ARTIFACT_NAME=$(echo "${{ inputs.manifest }}" | sed 's/\//-/g')
+          echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          kube-galaxy setup ${{ inputs.manifest }}
+
+      - name: Verify Cluster Health
+        run: kube-galaxy status --wait --timeout 600
+
+      - name: Run Spread Tests
+        run: kube-galaxy test ${{ inputs.manifest }}
+
+      - name: Collect Logs
+        if: always()
+        run: kube-galaxy logs ${{ inputs.manifest }}
+
+      - name: Upload Debug Logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-logs-vsphere-${{ steps.setup-cluster.outputs.artifact-name || 'unknown' }}
+          path: debug-logs/
+          retention-days: 30
+
+      - name: Cleanup Cluster
+        if: always()
+        run: kube-galaxy cleanup all
