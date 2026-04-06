@@ -52,11 +52,21 @@ jobs:
     steps:
       - name: Debug Network Connectivity
         run: |
-          echo "Checking if runner can reach vCenter API..."
-          nc -zv 10.246.152.100 443 || echo "TCP Port 443 is CLOSED or BLOCKED"
-          
-          echo "Checking environment proxies..."
+          echo "=== Runner identity ==="
+          hostname -f || hostname
+          ip -4 addr show | grep 'inet ' || true
+
+          echo "=== Route to vCenter ==="
+          ip route get 10.246.152.100 || true
+
+          echo "=== Checking if runner can reach vCenter API ==="
+          nc -zv -w 10 10.246.152.100 443 || echo "TCP Port 443 is CLOSED or BLOCKED"
+
+          echo "=== Checking environment proxies ==="
           env | grep -i proxy || echo "No proxies defined"
+
+          echo "=== Firewall rules (if readable) ==="
+          sudo iptables -L -n 2>/dev/null | head -40 || echo "Cannot read iptables"
       - name: Setup Juju
         uses: charmed-kubernetes/actions-operator@main
         with:
