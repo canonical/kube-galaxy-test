@@ -1,4 +1,4 @@
-name: Test vSphere Clusters
+name: Test vSphere Clusters 
 
 on:
   push:
@@ -70,6 +70,7 @@ jobs:
   # Run the actual cluster test via the reusable workflow
   # -------------------------------------------------------------------
   run-tests:
+    name: Run cluster tests on vSphere
     needs: prepare
     uses: ./.github/workflows/reusable-cluster-test.yml
     with:
