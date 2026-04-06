@@ -54,8 +54,8 @@ jobs:
         uses: charmed-kubernetes/actions-operator@main
         with:
           provider: vsphere
-          credentials: ${{ secrets.VSPHERE_CREDS }}
-          clouds: ${{ secrets.VSPHERE_CLOUDS }}
+          credentials-yaml: ${{ secrets.VSPHERE_CREDS }}
+          clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
 
       - name: Create test model
         id: model
