@@ -50,6 +50,13 @@ jobs:
     outputs:
       model-name: ${{ steps.model.outputs.name }}
     steps:
+      - name: Debug Network Connectivity
+        run: |
+          echo "Checking if runner can reach vCenter API..."
+          nc -zv 10.246.152.100 443 || echo "TCP Port 443 is CLOSED or BLOCKED"
+          
+          echo "Checking environment proxies..."
+          env | grep -i proxy || echo "No proxies defined"
       - name: Setup Juju
         uses: charmed-kubernetes/actions-operator@main
         with:
@@ -57,7 +64,7 @@ jobs:
           credentials-yaml: ${{ secrets.VSPHERE_CREDS }}
           clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
-          bootstrap-options: "--config ssl-hostname-verification=false --config allow-unauthenticated-certificates=true"
+          bootstrap-options: "--config ssl-hostname-verification=false"
 
       - name: Create test model
         id: model
