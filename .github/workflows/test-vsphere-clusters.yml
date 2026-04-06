@@ -1,4 +1,4 @@
-name: Test vSphere Clusters 
+name: Test vSphere Clusters
 
 on:
   push:
@@ -56,6 +56,7 @@ jobs:
           provider: vsphere
           credentials-yaml: ${{ secrets.VSPHERE_CREDS }}
           clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
+          bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
 
       - name: Create test model
         id: model
