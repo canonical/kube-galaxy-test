@@ -1,0 +1,114 @@
+name: Test vSphere Clusters
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'manifests/*.yaml'
+      - 'manifests/overlays/vsphere-juju.yaml'
+      - 'components/**'
+      - '.github/workflows/test-vsphere-clusters.yml'
+      - '.github/workflows/reusable-cluster-test.yml'
+      - 'pyproject.toml'
+  # Manual trigger for ad-hoc vSphere testing
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'manifests/*.yaml'
+      - 'components/**'
+      - 'tests/**'
+      - '.github/workflows/test-baseline-clusters.yml'
+      - '.github/workflows/reusable-cluster-test.yml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      cleanup-on-success:
+        description: 'Destroy Juju model after a successful run'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------------------------
+  # Create a fresh Juju model on the existing vSphere controller, then
+  # delegate to the reusable cluster-test workflow.The actions operator
+  # allows for automatic deployment of a vsphere controller.
+  # -------------------------------------------------------------------
+  prepare:
+    name: Bootstrap Juju on vSphere
+    runs-on: [self-hosted, linux, x64]
+    outputs:
+      model-name: ${{ steps.model.outputs.name }}
+    steps:
+      - name: Setup Juju
+        uses: charmed-kubernetes/actions-operator@main
+        with:
+          provider: vsphere
+          credentials: ${{ secrets.VSPHERE_CREDS }}
+          clouds: ${{ secrets.VSPHERE_CLOUDS }}
+
+      - name: Create test model
+        id: model
+        shell: bash
+        run: |
+          MODEL_NAME="kube-galaxy-${GITHUB_RUN_ID}"
+          juju add-model "${MODEL_NAME}" || true  # tolerate "already exists"
+          juju switch "${MODEL_NAME}"
+          echo "name=${MODEL_NAME}" >> "$GITHUB_OUTPUT"
+
+  # -------------------------------------------------------------------
+  # Run the actual cluster test via the reusable workflow
+  # -------------------------------------------------------------------
+  run-tests:
+    needs: prepare
+    uses: ./.github/workflows/reusable-cluster-test.yml
+    with:
+      manifests-repo: ${{ github.repository }}
+      manifests-ref: ${{ github.head_ref || github.ref_name }}
+      kube-galaxy-ref: ${{ github.head_ref || github.ref_name }}
+      manifests-json: >-
+        [{"manifest-file":"manifests/smoketest.yaml","overlays":["manifests/overlays/vsphere-juju.yaml"]}]
+      runs-on: "self-hosted,linux,x64"
+      timeout-minutes: 120
+      create-issues-on-failure: ${{ github.event_name != 'pull_request' }}
+    secrets:
+      REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  # -------------------------------------------------------------------
+  # Teardown: destroy the Juju model (always runs)
+  # -------------------------------------------------------------------
+  teardown:
+    name: Cleanup vSphere model
+    needs: [prepare, run-tests]
+    runs-on: [self-hosted, linux, x64]
+    if: always()
+    steps:
+      - name: Destroy test model
+        shell: bash
+        run: |
+          MODEL="${{ needs.prepare.outputs.model-name }}"
+          if [ -z "$MODEL" ]; then
+            echo "No model name found — skipping teardown"
+            exit 0
+          fi
+
+          # On success + cleanup-on-success=false, skip
+          if [ "${{ needs.run-tests.result }}" = "success" ] && [ "${{ inputs.cleanup-on-success }}" = "false" ]; then
+            echo "Tests passed and cleanup-on-success is false — keeping model '${MODEL}'"
+            exit 0
+          fi
+
+          echo "Destroying Juju model '${MODEL}'..."
+          juju destroy-model "${MODEL}" --force --no-wait --destroy-storage -y 2>/dev/null || true
