@@ -57,6 +57,7 @@ jobs:
           credentials-yaml: ${{ secrets.VSPHERE_CREDS }}
           clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
+          bootstrap-options: "--config ssl-hostname-verification=false --config allow-unauthenticated-certificates=true"
 
       - name: Create test model
         id: model
