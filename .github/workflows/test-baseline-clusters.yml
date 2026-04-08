@@ -68,7 +68,7 @@ jobs:
           fi
 
           if [ "$IS_PR" = "true" ]; then
-            manifests='[{"manifest-file":"manifests/smoketest.yaml","overlays":[]}]'
+            manifests='[{"manifest-file":"manifests/smoketest.yaml","overlays":[]},{"manifest-file":"manifests/smoketest-kind.yaml","overlays":[]}]'
           else
             echo "Non-PR context: Including all manifests"
             manifests='[{"manifest-file":"manifests/smoketest.yaml","overlays":["manifests/overlays/conformance-full.yaml"]}]'

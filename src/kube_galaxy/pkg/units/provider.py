@@ -1,6 +1,7 @@
 """UnitProvider ABC and concrete implementations for machine lifecycle management."""
 
 import kube_galaxy.pkg.units.juju as juju
+import kube_galaxy.pkg.units.kind as kind
 import kube_galaxy.pkg.units.lxdvm as lxdvm
 import kube_galaxy.pkg.units.multipass as multipass
 import kube_galaxy.pkg.units.ssh as ssh
@@ -32,5 +33,18 @@ def provider_factory(manifest: Manifest) -> UnitProvider:
         case "juju":
             juju.print_dependency_status()
             return juju.JujuUnitProvider(node_cfg, image=cfg.image)
+        case "kind":
+            kind.print_dependency_status()
+            # When no explicit kind image is set the manifest defaults to
+            # "ubuntu:24.04" (the LXD/Multipass default).  Detect this and
+            # fall back to the canonical kindest/node image.
+            kind_image = cfg.image
+            if not kind_image or kind_image == ProviderConfig().image:
+                kind_image = f"kindest/node:v{manifest.kubernetes_version}"
+            return kind.KindUnitProvider(
+                node_cfg,
+                image=kind_image,
+                cluster_name=manifest.name,
+            )
         case _:
             raise ValueError(f"Unknown provider type: {cfg.type!r}")

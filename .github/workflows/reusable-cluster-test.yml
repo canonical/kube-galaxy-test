@@ -127,6 +127,9 @@ jobs:
       - name: Install Spread
         run: go install github.com/canonical/spread/cmd/spread@latest
 
+      - name: Install Kind
+        run: go install sigs.k8s.io/kind@latest
+
       - name: Setup LXD
         uses: canonical/setup-lxd@main
 

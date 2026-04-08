@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import yaml as _yaml
 
 from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit
@@ -16,6 +17,12 @@ from kube_galaxy.pkg.units.juju import (
     _get_unit_status,
     _get_workload_status,
     print_dependency_status,
+)
+from kube_galaxy.pkg.units.kind import (
+    KindUnit,
+    KindUnitProvider,
+    _build_kind_config,
+    _container_name,
 )
 from kube_galaxy.pkg.units.local import LocalUnit, LocalUnitProvider
 from kube_galaxy.pkg.units.lxdvm import LXDUnit
@@ -984,3 +991,398 @@ def test_juju_provider_deprovision_untracks_unit(monkeypatch):
 
     p.deprovision(unit)
     assert len(p._units) == 0
+
+
+# ---------------------------------------------------------------------------
+# KindUnit — importability and ABC compliance
+# ---------------------------------------------------------------------------
+
+
+def test_kind_unit_importable():
+    """KindUnit can be imported and instantiated without error."""
+    unit = KindUnit("kube-galaxy-control-plane", NodeRole.CONTROL_PLANE, 0)
+    assert unit.name == "kube-galaxy-control-plane"
+
+
+def test_kind_unit_implements_unit_abc():
+    """KindUnit has no unimplemented abstract methods — mypy/ABC compliant."""
+    unit = KindUnit("abc", NodeRole.CONTROL_PLANE, 0)
+    assert isinstance(unit, Unit)
+
+
+# ---------------------------------------------------------------------------
+# KindUnit.run — docker exec delegation
+# ---------------------------------------------------------------------------
+
+
+def test_kind_unit_run_delegates_to_docker_exec(monkeypatch):
+    """run() delegates to ``docker exec <container> <cmd>``."""
+    recorded: list[list[str]] = []
+
+    def fake_subproc(cmd, **kwargs):
+        recorded.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "ok\n", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    unit = KindUnit("kube-galaxy-control-plane", NodeRole.CONTROL_PLANE, 0)
+    result = unit.run(["echo", "hello"])
+
+    assert len(recorded) == 1
+    assert recorded[0] == ["docker", "exec", "kube-galaxy-control-plane", "echo", "hello"]
+    assert result.stdout == "ok\n"
+
+
+def test_kind_unit_run_passes_env_vars(monkeypatch):
+    """run() passes environment variables via ``-e`` flags."""
+    recorded: list[list[str]] = []
+
+    def fake_subproc(cmd, **kwargs):
+        recorded.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    unit = KindUnit("my-node", NodeRole.WORKER, 0)
+    unit.run(["env"], env={"FOO": "bar", "BAZ": "qux"})
+
+    assert len(recorded) == 1
+    assert "-e" in recorded[0]
+    assert "FOO=bar" in recorded[0]
+    assert "BAZ=qux" in recorded[0]
+
+
+def test_kind_unit_run_raises_on_failure(monkeypatch):
+    """run(check=True) raises ShellError on non-zero exit."""
+
+    def fake_subproc(cmd, **kwargs):
+        return type("R", (), {"returncode": 1, "stdout": "", "stderr": "fail"})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    unit = KindUnit("my-node", NodeRole.CONTROL_PLANE, 0)
+    with pytest.raises(ShellError):
+        unit.run(["false"])
+
+
+def test_kind_unit_run_no_raise_when_check_false(monkeypatch):
+    """run(check=False) returns non-zero without raising."""
+
+    def fake_subproc(cmd, **kwargs):
+        return type("R", (), {"returncode": 42, "stdout": "", "stderr": "err"})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    unit = KindUnit("my-node", NodeRole.CONTROL_PLANE, 0)
+    result = unit.run(["false"], check=False)
+    assert result.returncode == 42
+
+
+# ---------------------------------------------------------------------------
+# KindUnit.put / .get — docker cp delegation
+# ---------------------------------------------------------------------------
+
+
+def test_kind_unit_put_uses_docker_cp(monkeypatch, tmp_path):
+    """put() delegates to ``docker cp <local> <container>:<remote>``."""
+    recorded: list[list[str]] = []
+
+    def fake_subproc(cmd, **kwargs):
+        recorded.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    local_file = tmp_path / "test.txt"
+    local_file.write_text("data")
+
+    unit = KindUnit("my-node", NodeRole.CONTROL_PLANE, 0)
+    unit.put(local_file, "/etc/test.txt")
+
+    # First call: mkdir -p inside container; second call: docker cp
+    assert any("docker" in cmd and "cp" in cmd for cmd in recorded)
+    cp_call = next(cmd for cmd in recorded if "cp" in cmd)
+    assert "my-node:/etc/test.txt" in cp_call[-1]
+
+
+def test_kind_unit_put_raises_on_failure(monkeypatch, tmp_path):
+    """put() raises ComponentError when docker cp fails."""
+    call_count = {"n": 0}
+
+    def fake_subproc(cmd, **kwargs):
+        call_count["n"] += 1
+        if "cp" in cmd:
+            return type("R", (), {"returncode": 1, "stdout": "", "stderr": "no space"})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    local_file = tmp_path / "test.txt"
+    local_file.write_text("data")
+
+    unit = KindUnit("my-node", NodeRole.CONTROL_PLANE, 0)
+    with pytest.raises(ComponentError, match="Failed to push"):
+        unit.put(local_file, "/etc/test.txt")
+
+
+def test_kind_unit_get_uses_docker_cp(monkeypatch, tmp_path):
+    """get() delegates to ``docker cp <container>:<remote> <local>``."""
+    recorded: list[list[str]] = []
+
+    def fake_subproc(cmd, **kwargs):
+        recorded.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    local_file = tmp_path / "dest.txt"
+
+    unit = KindUnit("my-node", NodeRole.CONTROL_PLANE, 0)
+    unit.get("/etc/test.txt", local_file)
+
+    assert any("docker" in cmd and "cp" in cmd for cmd in recorded)
+
+
+def test_kind_unit_get_raises_on_failure(monkeypatch, tmp_path):
+    """get() raises ComponentError when docker cp fails."""
+
+    def fake_subproc(cmd, **kwargs):
+        return type("R", (), {"returncode": 1, "stdout": "", "stderr": "not found"})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    unit = KindUnit("my-node", NodeRole.CONTROL_PLANE, 0)
+    with pytest.raises(ComponentError, match="Failed to pull"):
+        unit.get("/etc/test.txt", tmp_path / "dest.txt")
+
+
+# ---------------------------------------------------------------------------
+# _container_name helper
+# ---------------------------------------------------------------------------
+
+
+def test_container_name_first_control_plane():
+    """First control-plane node has no numeric suffix."""
+    assert _container_name("my-cluster", NodeRole.CONTROL_PLANE, 0) == "my-cluster-control-plane"
+
+
+def test_container_name_second_control_plane():
+    """Second control-plane node gets suffix '2'."""
+    assert _container_name("my-cluster", NodeRole.CONTROL_PLANE, 1) == "my-cluster-control-plane2"
+
+
+def test_container_name_first_worker():
+    """First worker node has no numeric suffix."""
+    assert _container_name("my-cluster", NodeRole.WORKER, 0) == "my-cluster-worker"
+
+
+def test_container_name_third_worker():
+    """Third worker node gets suffix '3'."""
+    assert _container_name("my-cluster", NodeRole.WORKER, 2) == "my-cluster-worker3"
+
+
+# ---------------------------------------------------------------------------
+# _build_kind_config
+# ---------------------------------------------------------------------------
+
+
+def test_build_kind_config_single_node():
+    """Single control-plane produces correct YAML."""
+    config_yaml = _build_kind_config(NodesConfig(control_plane=1, worker=0), "kindest/node:v1.35.0")
+
+    config = _yaml.safe_load(config_yaml)
+    assert config["kind"] == "Cluster"
+    assert config["apiVersion"] == "kind.x-k8s.io/v1alpha4"
+    assert len(config["nodes"]) == 1
+    assert config["nodes"][0]["role"] == "control-plane"
+    assert config["nodes"][0]["image"] == "kindest/node:v1.35.0"
+
+
+def test_build_kind_config_multi_node():
+    """Multiple control-planes and workers produce correct YAML."""
+    config_yaml = _build_kind_config(NodesConfig(control_plane=2, worker=3), "kindest/node:v1.35.0")
+
+    config = _yaml.safe_load(config_yaml)
+    assert len(config["nodes"]) == 5
+    roles = [n["role"] for n in config["nodes"]]
+    assert roles.count("control-plane") == 2
+    assert roles.count("worker") == 3
+
+
+def test_build_kind_config_no_image():
+    """Empty image string omits the image key from nodes."""
+    config_yaml = _build_kind_config(NodesConfig(control_plane=1, worker=0), "")
+
+    config = _yaml.safe_load(config_yaml)
+    assert "image" not in config["nodes"][0]
+
+
+# ---------------------------------------------------------------------------
+# KindUnitProvider — provision / locate / deprovision
+# ---------------------------------------------------------------------------
+
+
+def test_kind_provider_is_ephemeral():
+    """KindUnitProvider.is_ephemeral is True."""
+    p = KindUnitProvider(NodesConfig(control_plane=1, worker=0), image="kindest/node:v1.35.0")
+    assert p.is_ephemeral is True
+
+
+def test_kind_provider_provision_creates_cluster(monkeypatch):
+    """provision() creates a kind cluster on first call."""
+    recorded: list[list[str]] = []
+
+    def fake_subproc(cmd, **kwargs):
+        recorded.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=0),
+        image="kindest/node:v1.35.0",
+        cluster_name="test-cluster",
+    )
+    unit = p.provision(NodeRole.CONTROL_PLANE, 0)
+
+    assert isinstance(unit, KindUnit)
+    assert unit.name == "test-cluster-control-plane"
+    # kind create cluster was called
+    create_cmds = [cmd for cmd in recorded if "create" in cmd]
+    assert len(create_cmds) == 1
+    assert "--name=test-cluster" in create_cmds[0]
+
+
+def test_kind_provider_provision_only_creates_cluster_once(monkeypatch):
+    """Second provision() does not call kind create again."""
+    create_calls = {"count": 0}
+
+    def fake_subproc(cmd, **kwargs):
+        if "create" in cmd:
+            create_calls["count"] += 1
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=1),
+        image="kindest/node:v1.35.0",
+    )
+    p.provision(NodeRole.CONTROL_PLANE, 0)
+    p.provision(NodeRole.WORKER, 0)
+
+    assert create_calls["count"] == 1
+
+
+def test_kind_provider_provision_raises_on_failure(monkeypatch):
+    """provision() raises ComponentError when kind create fails."""
+
+    def fake_subproc(cmd, **kwargs):
+        if "create" in cmd:
+            return type("R", (), {"returncode": 1, "stdout": "", "stderr": "docker not running"})()
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=0),
+        image="kindest/node:v1.35.0",
+    )
+    with pytest.raises(ComponentError, match="Failed to create kind cluster"):
+        p.provision(NodeRole.CONTROL_PLANE, 0)
+
+
+def test_kind_provider_locate_returns_unit():
+    """locate() returns a KindUnit with correct container name."""
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=1),
+        image="kindest/node:v1.35.0",
+        cluster_name="my-cluster",
+    )
+    unit = p.locate(NodeRole.WORKER, 0)
+    assert isinstance(unit, KindUnit)
+    assert unit.name == "my-cluster-worker"
+
+
+def test_kind_provider_locate_all_populates_units():
+    """locate_all() populates units for all roles and indices."""
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=2),
+        image="kindest/node:v1.35.0",
+        cluster_name="my-cluster",
+    )
+    units = p.locate_all()
+    assert len(units) == 3
+    names = {u.name for u in units}
+    assert "my-cluster-control-plane" in names
+    assert "my-cluster-worker" in names
+    assert "my-cluster-worker2" in names
+
+
+def test_kind_provider_deprovision_all_deletes_cluster(monkeypatch):
+    """deprovision_all() calls kind delete cluster."""
+    recorded: list[list[str]] = []
+
+    def fake_subproc(cmd, **kwargs):
+        recorded.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=0),
+        image="kindest/node:v1.35.0",
+        cluster_name="test-cluster",
+    )
+    # Simulate a tracked unit
+    unit = KindUnit("test-cluster-control-plane", NodeRole.CONTROL_PLANE, 0)
+    p._track(unit)
+
+    p.deprovision_all()
+
+    delete_cmds = [cmd for cmd in recorded if "delete" in cmd]
+    assert len(delete_cmds) == 1
+    assert "--name=test-cluster" in delete_cmds[0]
+    assert len(p._units) == 0
+
+
+def test_kind_provider_deprovision_all_raises_on_failure(monkeypatch):
+    """deprovision_all() raises ComponentError when kind delete fails."""
+
+    def fake_subproc(cmd, **kwargs):
+        return type("R", (), {"returncode": 1, "stdout": "", "stderr": "not found"})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=0),
+        image="kindest/node:v1.35.0",
+    )
+    with pytest.raises(ComponentError, match="Failed to delete kind cluster"):
+        p.deprovision_all()
+
+
+def test_kind_provider_deprovision_single_untracks(monkeypatch):
+    """deprovision() on a single unit only untracks it (no cluster delete)."""
+    recorded: list[list[str]] = []
+
+    def fake_subproc(cmd, **kwargs):
+        recorded.append(list(cmd))
+        return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.kind.subprocess.run", fake_subproc)
+
+    p = KindUnitProvider(
+        NodesConfig(control_plane=1, worker=0),
+        image="kindest/node:v1.35.0",
+    )
+    unit = KindUnit("kube-galaxy-control-plane", NodeRole.CONTROL_PLANE, 0)
+    p._track(unit)
+    assert len(p._units) == 1
+
+    p.deprovision(unit)
+
+    assert len(p._units) == 0
+    # No kind delete cluster call
+    assert not any("delete" in cmd for cmd in recorded)
+

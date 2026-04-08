@@ -1,6 +1,7 @@
 """Kubeconfig context management utilities for kube-galaxy."""
 
 import copy
+import socket
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import yaml
 __all__ = [
     "KUBE_GALAXY_CONTEXT",
     "context_exists",
+    "host_ip",
     "is_interactive",
     "merge_kube_galaxy_context",
     "remove_kube_galaxy_context",
@@ -18,6 +20,23 @@ __all__ = [
 KUBE_GALAXY_CONTEXT = "kube-galaxy"
 
 _HOME_KUBE_CONFIG = Path.home() / ".kube" / "config"
+
+
+def host_ip() -> str:
+    """Return the default IP address of the host.
+
+    Uses a UDP connect to a public DNS address to determine which local
+    interface would be used for outbound traffic — no packets are sent.
+    Falls back to ``gethostbyname(gethostname())`` if the socket trick
+    fails.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip: str = s.getsockname()[0]
+            return ip
+    except OSError:
+        return str(socket.gethostbyname(socket.gethostname()))
 
 _EMPTY_CONFIG: dict[str, Any] = {
     "apiVersion": "v1",
