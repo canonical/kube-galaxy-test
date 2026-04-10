@@ -107,7 +107,7 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> None:
     """
     try:
         with tarfile.open(archive_path) as tar:
-            tar.extractall(dest_dir)
+            tar.extractall(dest_dir, filter="data")
     except Exception as e:
         raise ComponentError(f"Failed to extract {archive_path.name}: {e}") from e
 
