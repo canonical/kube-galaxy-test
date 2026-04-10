@@ -46,7 +46,7 @@ jobs:
   # -------------------------------------------------------------------
   prepare:
     name: Bootstrap Juju on vSphere
-    runs-on: [self-hosted-linux-amd64-noble-private-endpoint-medium]
+    runs-on: [self-hosted-linux-amd64-jammy-private-endpoint-medium]
     outputs:
       model-name: ${{ steps.model.outputs.name }}
     steps:
@@ -112,7 +112,7 @@ jobs:
   teardown:
     name: Cleanup vSphere model
     needs: [prepare, run-tests]
-    runs-on: [self-hosted-linux-amd64-noble-private-endpoint-medium]
+    runs-on: [self-hosted-linux-amd64-jammy-private-endpoint-medium]
     if: always()
     steps:
       - name: Destroy test model
