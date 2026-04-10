@@ -229,7 +229,7 @@ jobs:
 
       - name: Setup upterm session for debugging
         if: failure() && github.event_name == 'pull_request'
-        uses: owenthereal/action-upterm@03a90e8bc8d4883773d048976a3e53347ab4d6dd # v1
+        uses: owenthereal/action-upterm@f26ebc11e22a09b8365f39d2cdafd06f63b42053 # v1
         timeout-minutes: 5
         with:
           limit-access-to-actor: true
