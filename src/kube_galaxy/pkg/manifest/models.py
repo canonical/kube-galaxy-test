@@ -106,8 +106,8 @@ class ProviderConfig:
     manifest.
     """
 
-    type: str = "lxd"  # local | lxd | multipass | ssh
-    image: str = "ubuntu:24.04"  # base image for lxd / multipass providers
+    type: str = "lxd"  # local | lxd | multipass | ssh | juju | kind
+    image: str = "ubuntu:24.04"  # base image for lxd / multipass / kind providers
     nodes: NodesConfig = field(
         default_factory=NodesConfig
     )  # node counts for each role (lxd/multipass)

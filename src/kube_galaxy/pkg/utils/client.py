@@ -350,7 +350,7 @@ def create(
     if output_format:
         cmd.extend(["-o", output_format])
     if file:
-        remote = "/tmp/create_input.yaml"
+        remote = "/var/tmp/create_input.yaml"
         unit.put(Path(file), remote)
         cmd.extend(["-f", remote])
     try:
@@ -443,7 +443,7 @@ def apply_manifest(unit: Unit, manifest_path: Path | str) -> None:
     if not manifest_path.exists():
         raise ClusterError(f"Manifest not found: {manifest_path}")
 
-    remote = "/tmp/apply_now"
+    remote = "/var/tmp/apply_now"
     try:
         info(f"Applying manifest: {manifest_path.name}")
         unit.put(manifest_path, remote)

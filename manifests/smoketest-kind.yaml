@@ -1,0 +1,190 @@
+name: smoke-test-kind
+description: Single-node kind cluster + calico + csi-hostpath - core components only
+kubernetes-version: &k8s-version "1.35.1"
+
+# Kind provider: creates a Kubernetes-in-Docker cluster.
+# - Default image: kindest/node:v{kubernetes-version} (auto-derived)
+# - Override with `image:` to test a custom node image.
+provider:
+  type: kind
+  # image: kindest/node:v1.35.1    # uncomment to pin or use a custom image
+  nodes:
+    control-plane: 1
+    worker: 1
+
+# artifact:
+#   registry:
+#     enabled: true                      # default
+#     remote-registry:  registry.k8s.io  # default
+#     port:    5000                      # default
+
+components:
+  - name: kind
+    category: kubernetes/kubernetes
+    release: *k8s-version
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-sigs/kind
+      source-format: "kindest/node:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/kindest/node:{{ release }}"
+
+  # Container runtime
+  - name: runc
+    category: containerd
+    release: "1.3.4"
+    installation:
+      method: binary
+      repo:
+        base-url: https://github.com/opencontainers/runc
+      source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/runc.{{ arch }}"
+
+  - name: crictl
+    category: containerd
+    release: "1.35.0"
+    installation:
+      method: binary-archive
+      repo:
+        base-url: https://github.com/kubernetes-sigs/cri-tools
+      source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/crictl-v{{ release }}-linux-{{ arch }}.tar.gz"
+
+  - name: containerd
+    category: containerd
+    release: "2.2.1"
+    installation:
+      method: binary-archive
+      bin-path: "./bin/*"
+      repo:
+        base-url: https://github.com/containerd/containerd
+      source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/containerd-{{ release }}-linux-{{ arch }}.tar.gz"
+
+  # cni-plugins
+  - name: cni-plugins
+    category: container-networking
+    release: "1.9.0"
+    installation:
+      method: binary-archive
+      repo:
+        base-url: https://github.com/containernetworking/plugins
+      source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/cni-plugins-linux-{{ arch }}-v{{ release }}.tgz"
+
+  - name: kubectl
+    category: kubernetes/kubernetes
+    release: *k8s-version
+    installation:
+      method: binary
+      repo:
+        base-url: https://github.com/kubernetes/kubernetes
+      source-format: "https://dl.k8s.io/release/v{{ release }}/bin/linux/{{ arch }}/kubectl"
+
+  # CoreDNS - required for cluster DNS
+  - name: coredns
+    category: coredns
+    release: "1.13.1"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/coredns/coredns
+      source-format: "registry.k8s.io/coredns/coredns:v{{ release }}"
+      retag-format: "{{ mirror.base-url }}/coredns:{{ release }}"
+
+  # CSI Driver Host Path - lightweight CSI for testing
+  - name: csi-hostpath
+    category: kubernetes-csi/csi-driver-host-path
+    release: &csi-hostpath-version "1.17.1"
+    installation:
+      method: container-manifest
+      repo:
+        base-url: https://github.com/kubernetes-csi/csi-driver-host-path
+      source-format: "local://components/csi-driver-host-path/csi-driver-host-path.yaml"
+
+  - name: csi-hostpath-plugin
+    category: kubernetes-csi/csi-driver-host-path
+    release: "1.16.1"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/csi-driver-host-path
+      source-format: "registry.k8s.io/sig-storage/hostpathplugin:v{{ release }}"
+
+  - name: csi-attacher
+    category: kubernetes-csi/csi-driver-host-path
+    release: "4.8.0"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/external-attacher
+      source-format: "registry.k8s.io/sig-storage/csi-attacher:v{{ release }}"
+
+  - name: csi-provisioner
+    category: kubernetes-csi/csi-driver-host-path
+    release: "5.2.0"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/external-provisioner
+      source-format: "registry.k8s.io/sig-storage/csi-provisioner:v{{ release }}"
+
+  - name: csi-node-driver-registrar
+    category: kubernetes-csi/csi-driver-host-path
+    release: "2.13.0"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/csi-driver-host-path
+      source-format: "registry.k8s.io/sig-storage/csi-node-driver-registrar:v{{ release }}"
+
+  - name: csi-resizer
+    category: kubernetes-csi/csi-driver-host-path
+    release: "1.13.1"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/external-resizer
+      source-format: "registry.k8s.io/sig-storage/csi-resizer:v{{ release }}"
+
+  - name: csi-snapshotter
+    category: kubernetes-csi/csi-driver-host-path
+    release: "8.2.0"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/external-snapshotter
+      source-format: "registry.k8s.io/sig-storage/csi-snapshotter:v{{ release }}"
+
+  - name: csi-livenessprobe
+    category: kubernetes-csi/csi-driver-host-path
+    release: "2.15.0"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/csi-driver-host-path
+      source-format: "registry.k8s.io/sig-storage/livenessprobe:v{{ release }}"
+
+  - name: csi-external-health-monitor-controller
+    category: kubernetes-csi/csi-driver-host-path
+    release: "0.14.0"
+    installation:
+      method: container-image
+      repo:
+        base-url: https://github.com/kubernetes-csi/external-health-monitor
+      source-format: "registry.k8s.io/sig-storage/csi-external-health-monitor-controller:v{{ release }}"
+
+  # Test only component, nothing installed in the cluster
+  - name: cncf-conformance
+    category: Conformance
+    release: "0.57.3"
+    installation:
+      method: none
+    test:
+      method: spread
+      repo:
+        base-url: https://github.com/vmware-tanzu/sonobuoy
+      source-format: local://components/cncf-conformance/task.yaml
+      environment:
+        SONOBUOY_MODE: quick
+
+networking:
+  - name: default
+    service-cidr: 10.96.0.0/12
+    pod-cidr: 192.168.0.0/16
