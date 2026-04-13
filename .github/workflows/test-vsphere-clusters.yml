@@ -72,11 +72,30 @@ jobs:
           systemctl is-active aproxy 2>/dev/null || echo "aproxy not found"
           ps aux | grep -i aproxy | grep -v grep || echo "No aproxy process"
 
-          echo "=== Checking connectivity via curl (proxy-aware) ==="
-          curl -sk --connect-timeout 10 https://10.246.152.100/sdk -o /dev/null -w "HTTP %{http_code}\n" || echo "curl also failed"
+          # Detect aproxy listen port
+          APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
+          if [ -n "$APROXY_PORT" ]; then
+            echo "aproxy listening on port $APROXY_PORT"
+            echo "=== Testing vCenter via aproxy ==="
+            curl -sk --proxy http://localhost:$APROXY_PORT --connect-timeout 15 https://10.246.152.100/sdk -o /dev/null -w "HTTP %{http_code} (via aproxy)\n" || echo "curl via aproxy also failed"
+          else
+            echo "No aproxy port detected"
+          fi
 
           echo "=== Firewall rules (if readable) ==="
           sudo iptables -L -n 2>/dev/null | head -40 || echo "Cannot read iptables"
+      - name: Detect aproxy port
+        id: aproxy
+        run: |
+          APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
+          if [ -n "$APROXY_PORT" ]; then
+            echo "proxy=http://localhost:$APROXY_PORT" >> "$GITHUB_OUTPUT"
+            echo "Detected aproxy on port $APROXY_PORT"
+          else
+            echo "proxy=" >> "$GITHUB_OUTPUT"
+            echo "No aproxy detected — direct connectivity assumed"
+          fi
+
       - name: Setup Juju
         uses: charmed-kubernetes/actions-operator@main
         with:
@@ -85,6 +104,8 @@ jobs:
           clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
           bootstrap-options: "--config ssl-hostname-verification=false"
+        env:
+          HTTPS_PROXY: ${{ steps.aproxy.outputs.proxy }}
 
       - name: Create test model
         id: model
