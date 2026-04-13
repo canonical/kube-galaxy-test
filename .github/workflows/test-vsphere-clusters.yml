@@ -92,7 +92,12 @@ jobs:
         shell: bash
         run: |
           MODEL_NAME="kube-galaxy-${GITHUB_RUN_ID}"
-          juju add-model "${MODEL_NAME}" || true  # tolerate "already exists"
+          juju add-model --config primary-network=VLAN_2764 \
+          --config logging-config='<root>=DEBUG' \
+           --config datastore=iSCSI-Datastore-B \
+           --config disk-provisioning-type=thin \
+           "${MODEL_NAME}" \ 
+           vsphere/Boston || true  # tolerate "already exists"
           juju switch "${MODEL_NAME}"
           echo "name=${MODEL_NAME}" >> "$GITHUB_OUTPUT"
 
