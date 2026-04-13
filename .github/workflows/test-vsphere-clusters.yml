@@ -50,6 +50,19 @@ jobs:
     outputs:
       model-name: ${{ steps.model.outputs.name }}
     steps:
+      - name: Route vSphere traffic through aproxy (PS7 only)
+        run: |
+          # On PS7 runners, aproxy is a transparent proxy that forwards to the
+          # egress proxy. nftables must redirect vSphere traffic to aproxy.
+          APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
+          if [ -n "$APROXY_PORT" ]; then
+            echo "PS7 runner detected — adding nftables redirect for vSphere via aproxy (port $APROXY_PORT)"
+            sudo nft add rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
+            echo "nftables rule added"
+          else
+            echo "No aproxy detected — assuming PS6 runner with direct connectivity"
+          fi
+
       - name: Debug Network Connectivity
         run: |
           echo "=== Runner identity ==="
@@ -59,44 +72,11 @@ jobs:
           echo "=== Route to vCenter ==="
           ip route get 10.246.152.100 || true
 
-          echo "=== Checking if runner can reach vCenter API ==="
+          echo "=== Checking vCenter connectivity ==="
           nc -zv -w 10 10.246.152.100 443 || echo "TCP Port 443 is CLOSED or BLOCKED"
 
-          echo "=== Checking environment proxies ==="
-          env | grep -i proxy || echo "No proxies defined"
-
-          echo "=== nftables rules (aproxy redirect check) ==="
-          sudo nft list ruleset 2>/dev/null | head -80 || echo "Cannot read nftables"
-
-          echo "=== aproxy status ==="
-          systemctl is-active aproxy 2>/dev/null || echo "aproxy not found"
-          ps aux | grep -i aproxy | grep -v grep || echo "No aproxy process"
-
-          # Detect aproxy listen port
-          APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
-          if [ -n "$APROXY_PORT" ]; then
-            echo "aproxy listening on port $APROXY_PORT"
-            echo "=== Testing vCenter via aproxy ==="
-            curl -sk --proxy http://localhost:$APROXY_PORT --connect-timeout 15 https://10.246.152.100/sdk -o /dev/null -w "HTTP %{http_code} (via aproxy)\n" || echo "curl via aproxy also failed"
-          else
-            echo "No aproxy port detected"
-          fi
-
-          echo "=== Firewall rules (if readable) ==="
-          sudo iptables -L -n 2>/dev/null | head -40 || echo "Cannot read iptables"
-      - name: Detect aproxy port
-        id: aproxy
-        run: |
-          APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
-          if [ -n "$APROXY_PORT" ]; then
-            echo "proxy=http://localhost:$APROXY_PORT" >> "$GITHUB_OUTPUT"
-            echo "Detected aproxy on port $APROXY_PORT"
-          else
-            echo "proxy=" >> "$GITHUB_OUTPUT"
-            echo "No aproxy detected — direct connectivity assumed"
-          fi
-
-          curl -sv --proxy http://localhost:54969 --connect-timeout 15 https://10.246.152.100/sdk 2>&1 | head -30
+          echo "=== nftables OUTPUT chain ==="
+          sudo nft list chain ip nat OUTPUT 2>/dev/null || echo "Cannot read nftables"
 
       - name: Setup Juju
         uses: charmed-kubernetes/actions-operator@main
@@ -106,8 +86,6 @@ jobs:
           clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
           bootstrap-options: "--config ssl-hostname-verification=false"
-        env:
-          HTTPS_PROXY: ${{ steps.aproxy.outputs.proxy }}
 
       - name: Create test model
         id: model
