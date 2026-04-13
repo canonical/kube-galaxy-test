@@ -85,7 +85,7 @@ jobs:
           credentials-yaml: ${{ secrets.VSPHERE_CREDS }}
           clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
-          bootstrap-options: "--config ssl-hostname-verification=false"
+          bootstrap-options: "--config ssl-hostname-verification=false --config external-network=VLAN_2764 --config primary-network=VLAN_2764 --model-default datastore=iSCSI-Datastore-B"
 
       - name: Create test model
         id: model
