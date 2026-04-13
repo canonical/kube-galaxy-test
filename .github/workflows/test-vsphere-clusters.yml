@@ -84,20 +84,31 @@ jobs:
           provider: vsphere
           credentials-yaml: ${{ secrets.VSPHERE_CREDS }}
           clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
-          bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
-          bootstrap-options: "--config ssl-hostname-verification=false --config external-network=VLAN_2764 --config primary-network=VLAN_2764 --config bootstrap-timeout=3600 --model-default datastore=iSCSI-Datastore-B"
+          bootstrap-constraints: "arch=amd64"
+          bootstrap-options: >-
+            --config ssl-hostname-verification=false
+            --config caas-image-repo=rocks.canonical.com/cdk/jujusolutions
+            --config bootstrap-timeout=3600
+            --bootstrap-image=juju-ci-root/templates/noble-test-template
+            --bootstrap-base=ubuntu@24.04
+            --model-default primary-network=VLAN_2764
+            --model-default external-network=VLAN_2764
+            --model-default datastore=iSCSI-Datastore-B
+            --model-default disk-provisioning-type=thin
+            --model-default force-vm-hardware-version=17
 
       - name: Create test model
         id: model
         shell: bash
         run: |
           MODEL_NAME="kube-galaxy-${GITHUB_RUN_ID}"
-          juju add-model --config primary-network=VLAN_2764 \
-          --config logging-config='<root>=DEBUG' \
-           --config datastore=iSCSI-Datastore-B \
-           --config disk-provisioning-type=thin \
-           "${MODEL_NAME}" \ 
-           vsphere/Boston || true  # tolerate "already exists"
+          juju add-model \
+            --config logging-config='<root>=DEBUG' \
+            --config datastore=iSCSI-Datastore-B \
+            --config disk-provisioning-type=thin \
+            --config primary-network=VLAN_2764 \
+            "${MODEL_NAME}" \
+            vsphere/Boston || true  # tolerate "already exists"
           juju switch "${MODEL_NAME}"
           echo "name=${MODEL_NAME}" >> "$GITHUB_OUTPUT"
 
