@@ -96,6 +96,8 @@ jobs:
             echo "No aproxy detected — direct connectivity assumed"
           fi
 
+          curl -sv --proxy http://localhost:54969 --connect-timeout 15 https://10.246.152.100/sdk 2>&1 | head -30
+
       - name: Setup Juju
         uses: charmed-kubernetes/actions-operator@main
         with:
