@@ -39,7 +39,7 @@ lint = [
     "types-requests",
 ]
 unit = [
-    "pytest>=7.0",
+    "pytest>=9.0.3",
     "pytest-cov>=4.0",
     "pytest-mock>=3.10",
 ]
