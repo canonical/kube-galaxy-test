@@ -56,28 +56,118 @@ jobs:
           # It can handle TLS (443) via ClientHello SNI peek but NOT:
           #   - raw SSH (22) — no TLS ClientHello to inspect
           #   - Juju API (17070) — connects by IP, so TLS ClientHello has
-          #     no SNI hostname; aproxy cannot form a valid CONNECT request
-          #     and resets the connection.
+          #     no SNI hostname; aproxy cannot form a valid CONNECT request.
+          #
+          # Three proxy strategies, one per traffic type:
+          #   443  → nftables REDIRECT → aproxy (SNI-based, works)
+          #   22   → SSH ProxyCommand → nc CONNECT → squid (proven)
+          #   17070 → nftables REDIRECT → local TCP-to-CONNECT bridge → squid
+          #
+          # The bridge for 17070 is the network-level equivalent of SSH's
+          # ProxyCommand: it intercepts redirected TCP, extracts the original
+          # destination via SO_ORIGINAL_DST, and tunnels through squid's
+          # HTTP CONNECT — no dependency on env var propagation or snap
+          # confinement behavior.
           APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
           if [ -n "$APROXY_PORT" ]; then
             echo "PS7 runner detected (aproxy port $APROXY_PORT)"
 
-            # 1) Redirect HTTPS (443) through aproxy (hostname-based, SNI works).
-            sudo nft add rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
-            echo "nftables redirect added for port 443"
+            # 1) vCenter HTTPS (443) — hostname-based TLS, aproxy peeks SNI.
+            sudo nft insert rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
+            echo "nftables: 10.246.152.0/21:443 → aproxy (:$APROXY_PORT)"
 
-            # 2) Juju API (17070) uses IP-based TLS with no SNI — aproxy
-            #    cannot peek the hostname, so route through squid directly
-            #    via HTTPS_PROXY instead.
-            export HTTPS_PROXY="http://egress.ps7.internal:3128"
-            export NO_PROXY="localhost,127.0.0.1"
-            echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
-            echo "NO_PROXY=localhost,127.0.0.1" >> "$GITHUB_ENV"
-            echo "HTTPS_PROXY configured for Juju API (port 17070) via squid"
+            # 2) Juju API (17070) — IP-based TLS, no SNI.
+            #    Run a local TCP-to-CONNECT bridge and redirect through it.
+            cat > /tmp/connect-bridge.py << 'PYEOF'
+          """TCP-to-HTTP-CONNECT bridge for nftables REDIRECT.
 
-            # 3) Tunnel SSH through the egress proxy via HTTP CONNECT.
-            #    aproxy cannot handle raw SSH, so we use an SSH ProxyCommand
-            #    to CONNECT directly through the squid egress proxy.
+          Accepts connections redirected by nftables, recovers the original
+          destination via SO_ORIGINAL_DST, and tunnels through an HTTP
+          CONNECT proxy (squid).  Same mechanism as SSH ProxyCommand
+          'nc -X connect' but at the network level for any TCP traffic.
+          """
+          import socket, struct, select, threading, sys
+
+          SO_ORIGINAL_DST = 80
+          PROXY = ("egress.ps7.internal", 3128)
+          LISTEN_PORT = 17071
+
+          def bridge(c, p):
+              socks = [c, p]
+              while True:
+                  readable, _, _ = select.select(socks, [], [], 120)
+                  if not readable:
+                      break
+                  for s in readable:
+                      data = s.recv(65536)
+                      if not data:
+                          return
+                      (p if s is c else c).sendall(data)
+
+          def handle(client):
+              proxy = None
+              try:
+                  dst = client.getsockopt(socket.SOL_IP, SO_ORIGINAL_DST, 16)
+                  port = struct.unpack(">H", dst[2:4])[0]
+                  ip = socket.inet_ntoa(dst[4:8])
+                  proxy = socket.create_connection(PROXY, timeout=30)
+                  req = f"CONNECT {ip}:{port} HTTP/1.1\r\nHost: {ip}:{port}\r\n\r\n"
+                  proxy.sendall(req.encode())
+                  resp = b""
+                  while b"\r\n\r\n" not in resp:
+                      chunk = proxy.recv(4096)
+                      if not chunk:
+                          break
+                      resp += chunk
+                  status = resp.split(b"\r\n")[0]
+                  if b"200" not in status:
+                      print(f"CONNECT {ip}:{port} rejected: {status.decode()}", flush=True)
+                      return
+                  print(f"tunnel {ip}:{port} established", flush=True)
+                  bridge(client, proxy)
+              except Exception as e:
+                  print(f"bridge error: {e}", flush=True)
+              finally:
+                  try: client.close()
+                  except: pass
+                  if proxy:
+                      try: proxy.close()
+                      except: pass
+
+          srv = socket.socket()
+          srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          srv.bind(("127.0.0.1", LISTEN_PORT))
+          srv.listen(16)
+          print(f"TCP-to-CONNECT bridge ready on :{LISTEN_PORT}", flush=True)
+          while True:
+              c, _ = srv.accept()
+              threading.Thread(target=handle, args=(c,), daemon=True).start()
+          PYEOF
+            nohup python3 /tmp/connect-bridge.py &>/tmp/connect-bridge.log &
+            BRIDGE_PID=$!
+            sleep 0.5
+            if kill -0 "$BRIDGE_PID" 2>/dev/null; then
+              echo "TCP-to-CONNECT bridge started (PID $BRIDGE_PID)"
+            else
+              echo "ERROR: bridge failed to start" >&2
+              cat /tmp/connect-bridge.log >&2
+              exit 1
+            fi
+            sudo nft insert rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 17070 redirect to :17071
+            echo "nftables: 10.246.152.0/21:17070 → bridge (:17071) → squid CONNECT"
+
+            # Verify squid ACL allows CONNECT on port 17070 to vSphere subnet.
+            CONNECT_RESP=$(echo -e "CONNECT 10.246.152.100:17070 HTTP/1.1\r\nHost: 10.246.152.100:17070\r\n\r\n" \
+              | nc -w 5 egress.ps7.internal 3128 | head -1 || true)
+            echo "squid CONNECT test (10.246.152.100:17070): $CONNECT_RESP"
+            if echo "$CONNECT_RESP" | grep -q "200"; then
+              echo "squid ACL verified: CONNECT on port 17070 is allowed"
+            else
+              echo "WARNING: squid CONNECT returned: $CONNECT_RESP"
+              echo "Check canonical-is-internal-proxy-configs ps7.conf ACL for kubernetes_vsphere_ip + Juju_controller_port"
+            fi
+
+            # 3) SSH — ProxyCommand tunnels through squid via HTTP CONNECT.
             mkdir -p ~/.ssh
             cat >> ~/.ssh/config <<'EOF'
           Host 10.246.152.* 10.246.153.* 10.246.154.* 10.246.155.* 10.246.156.* 10.246.157.* 10.246.158.* 10.246.159.*
@@ -86,7 +176,7 @@ jobs:
             UserKnownHostsFile /dev/null
           EOF
             chmod 600 ~/.ssh/config
-            echo "SSH ProxyCommand configured for 10.246.152.0/21 via egress.ps7.internal:3128"
+            echo "SSH ProxyCommand configured for 10.246.152.0/21"
           else
             echo "No aproxy detected — assuming direct connectivity"
           fi
@@ -103,8 +193,20 @@ jobs:
           echo "=== Checking vCenter connectivity ==="
           nc -zv -w 10 10.246.152.100 443 || echo "TCP Port 443 is CLOSED or BLOCKED"
 
-          echo "=== nftables OUTPUT chain ==="
+          echo "=== nftables OUTPUT chain (all rules) ==="
           sudo nft list chain ip nat OUTPUT 2>/dev/null || echo "Cannot read nftables"
+
+          echo "=== TCP-to-CONNECT bridge ==="
+          if [ -f /tmp/connect-bridge.log ]; then
+            cat /tmp/connect-bridge.log
+          else
+            echo "Bridge log not found (aproxy not detected?)"
+          fi
+
+          echo "=== Proxy env vars ==="
+          echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
+          echo "https_proxy=${https_proxy:-<unset>}"
+          echo "NO_PROXY=${NO_PROXY:-<unset>}"
 
       - name: Setup Juju
         uses: charmed-kubernetes/actions-operator@main
