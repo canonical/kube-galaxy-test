@@ -50,17 +50,34 @@ jobs:
     outputs:
       model-name: ${{ steps.model.outputs.name }}
     steps:
-      - name: Route vSphere traffic through aproxy (PS7 only)
+      - name: Route vSphere traffic through proxy (PS7 only)
         run: |
-          # On PS7 runners, aproxy is a transparent proxy that forwards to the
-          # egress proxy. nftables must redirect vSphere traffic to aproxy.
+          # On PS7 runners, aproxy is a transparent HTTP/HTTPS proxy.
+          # It can handle TLS (443, 17070) but NOT raw SSH (22).
           APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
           if [ -n "$APROXY_PORT" ]; then
-            echo "PS7 runner detected — adding nftables redirect for vSphere via aproxy (port $APROXY_PORT)"
+            echo "PS7 runner detected (aproxy port $APROXY_PORT)"
+
+            # 1) Redirect HTTPS (443) and Juju API (17070) through aproxy.
+            #    aproxy handles TLS via ClientHello SNI peek → CONNECT to squid.
             sudo nft add rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
-            echo "nftables rule added"
+            sudo nft add rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 17070 redirect to :"$APROXY_PORT"
+            echo "nftables redirect added for ports 443, 17070"
+
+            # 2) Tunnel SSH through the egress proxy via HTTP CONNECT.
+            #    aproxy cannot handle raw SSH, so we use an SSH ProxyCommand
+            #    to CONNECT directly through the squid egress proxy.
+            mkdir -p ~/.ssh
+            cat >> ~/.ssh/config <<'EOF'
+          Host 10.246.152.* 10.246.153.* 10.246.154.* 10.246.155.* 10.246.156.* 10.246.157.* 10.246.158.* 10.246.159.*
+            ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+            chmod 600 ~/.ssh/config
+            echo "SSH ProxyCommand configured for 10.246.152.0/21 via egress.ps7.internal:3128"
           else
-            echo "No aproxy detected — assuming PS6 runner with direct connectivity"
+            echo "No aproxy detected — assuming direct connectivity"
           fi
 
       - name: Debug Network Connectivity
