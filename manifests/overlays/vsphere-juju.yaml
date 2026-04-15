@@ -1,0 +1,13 @@
+# Overlay: Switch provider to Juju (for vSphere / cloud substrates)
+#
+# Apply on top of the base smoketest manifest to provision real VMs via Juju
+# instead of local LXD containers:
+#
+#   kube-galaxy setup manifests/smoketest.yaml --overlay manifests/overlays/vsphere-juju.yaml
+
+provider:
+  type: juju
+  image: "ubuntu:24.04"
+  nodes:
+    control-plane: 1
+    worker: 1
