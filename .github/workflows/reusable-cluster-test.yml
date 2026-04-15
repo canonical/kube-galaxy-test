@@ -160,6 +160,18 @@ jobs:
           uv tool install "git+https://github.com/${{ inputs.kube-galaxy-repo }}.git@${{ inputs.kube-galaxy-ref }}"
           kube-galaxy --version
 
+      - name: Install Juju (if required by overlay)
+        shell: bash
+        run: |
+          overlays='${{ toJson(matrix.overlays) }}'
+          if echo "$overlays" | grep -qi 'juju'; then
+            echo "Juju overlay detected — installing juju snap"
+            sudo snap install juju --channel=3/stable --classic
+            juju version
+          else
+            echo "No juju overlay — skipping juju install"
+          fi
+
       - name: Display Cluster Configuration
         shell: bash
         run: |
