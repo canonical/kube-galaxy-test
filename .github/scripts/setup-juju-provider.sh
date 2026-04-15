@@ -25,32 +25,35 @@ fi
 # On PS7 runners, aproxy intercepts outbound TLS via nftables REDIRECT
 # and SNI peek.  Juju connects to the controller by IP (no hostname),
 # so TLS ClientHello has no SNI → aproxy hangs.  Juju also ignores
-# HTTPS_PROXY (custom TLS dialer).  And PS7 runners have no direct
-# route to the vSphere network.
+# HTTPS_PROXY (custom TLS dialer).  PS7 runners have no direct route
+# to vSphere — all traffic must go through the squid egress proxy.
 #
 # Fix: for each controller API endpoint in controllers.yaml:
-#   1. Start a socat TCP listener on localhost that tunnels through
-#      squid via HTTP CONNECT to the real controller.
-#   2. Patch controllers.yaml to point at the local tunnel endpoint.
+#   1. Start a socat+nc tunnel on localhost that proxies through squid
+#      via HTTP CONNECT (nc -X connect — same method SSH uses).
+#   2. Patch controllers.yaml so juju connects to localhost instead.
 #
-# This bypasses aproxy entirely (juju connects to localhost, not the
-# remote IP) and needs zero nftables rules.
+# This bypasses aproxy entirely (juju connects to localhost) and uses
+# the same nc CONNECT method proven to work for SSH.
 APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1 || true)
 if [ -n "$APROXY_PORT" ]; then
   echo "PS7 runner detected (aproxy port $APROXY_PORT)"
 
-  # Install socat for TCP-to-CONNECT tunnelling
+  # Install socat (for TCP listener with fork support)
   sudo apt-get install -y -qq socat >/dev/null 2>&1 || true
+  echo "socat version: $(socat -V 2>&1 | head -2 | tail -1 || echo 'unknown')"
+  echo "nc version: $(nc -h 2>&1 | head -1 || echo 'unknown')"
 
-  # 3a. Create local TCP tunnels for each controller API endpoint,
-  #     then patch controllers.yaml so juju connects locally.
+  # 3a. Create local TCP tunnels for each controller API endpoint
   JUJU_CONTROLLERS="$JUJU_DATA_DIR/controllers.yaml"
   TUNNEL_PORT=19443
   CONTROLLER_SUBNETS=""
 
   if [ -f "$JUJU_CONTROLLERS" ]; then
-    echo "=== controllers.yaml endpoints (before patching) ==="
-    grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" || true
+    echo ""
+    echo "=== controllers.yaml (before patching) ==="
+    cat "$JUJU_CONTROLLERS"
+    echo ""
 
     # Each endpoint is ip:port (e.g. 10.246.154.178:443)
     ENDPOINTS=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" | sort -u)
@@ -58,30 +61,52 @@ if [ -n "$APROXY_PORT" ]; then
       IP="${endpoint%%:*}"
       PORT="${endpoint##*:}"
 
-      # Verify squid allows CONNECT to this endpoint
+      echo "--- Setting up tunnel for $endpoint → localhost:$TUNNEL_PORT ---"
+
+      # Step 1: Verify squid allows CONNECT to this endpoint
+      echo "Testing squid CONNECT to $endpoint..."
       CONNECT_RESP=$(echo -e "CONNECT ${endpoint} HTTP/1.1\r\nHost: ${endpoint}\r\n\r\n" \
         | nc -w 5 egress.ps7.internal 3128 | head -1 || true)
-      echo "squid CONNECT test ($endpoint): $CONNECT_RESP"
+      echo "  squid response: $CONNECT_RESP"
+      if ! echo "$CONNECT_RESP" | grep -q "200"; then
+        echo "  ❌ squid DENIED CONNECT to $endpoint — tunnel will not work"
+        continue
+      fi
 
-      # Start socat: localhost:TUNNEL_PORT → squid CONNECT → IP:PORT
-      socat TCP-LISTEN:${TUNNEL_PORT},fork,reuseaddr,bind=127.0.0.1 \
-        PROXY:egress.ps7.internal:${IP}:${PORT},proxyport=3128 &
+      # Step 2: Start socat listener that forks nc for each connection.
+      # nc -X connect -x proxy:port host port — sends HTTP CONNECT
+      # through squid, then bridges the tunnel bidirectionally.
+      # This is the SAME method that works for SSH ProxyCommand.
+      socat "TCP-LISTEN:${TUNNEL_PORT},fork,reuseaddr,bind=127.0.0.1" \
+        "EXEC:nc -X connect -x egress.ps7.internal\\:3128 ${IP} ${PORT}" &
       SOCAT_PID=$!
 
-      # Wait for socat to start accepting connections
-      for _ in $(seq 1 20); do
+      # Wait for socat to start listening
+      for _ in $(seq 1 30); do
         if ss -tln | grep -q ":${TUNNEL_PORT} "; then break; fi
         sleep 0.1
       done
 
-      if ss -tln | grep -q ":${TUNNEL_PORT} "; then
-        echo "✅ socat PID $SOCAT_PID: localhost:$TUNNEL_PORT → squid → $endpoint"
+      if ! ss -tln | grep -q ":${TUNNEL_PORT} "; then
+        echo "  ❌ socat failed to listen on port $TUNNEL_PORT (PID $SOCAT_PID)"
+        continue
+      fi
+      echo "  ✅ socat PID $SOCAT_PID listening on localhost:$TUNNEL_PORT"
+
+      # Step 3: End-to-end tunnel test — connect through the tunnel
+      # and verify we get a TLS ServerHello (or at least bytes back).
+      echo "  Testing tunnel end-to-end..."
+      TUNNEL_TEST=$(echo "" | timeout 5 nc -w 3 127.0.0.1 "$TUNNEL_PORT" 2>&1 | xxd | head -2 || true)
+      if [ -n "$TUNNEL_TEST" ]; then
+        echo "  ✅ Tunnel works — received data through tunnel:"
+        echo "  $TUNNEL_TEST"
       else
-        echo "❌ socat failed to start on port $TUNNEL_PORT"
+        echo "  ⚠️  No data received through tunnel (may still work for TLS)"
       fi
 
-      # Patch controllers.yaml: juju will now connect to localhost
+      # Step 4: Patch controllers.yaml to use local tunnel
       sed -i "s|${endpoint}|127.0.0.1:${TUNNEL_PORT}|g" "$JUJU_CONTROLLERS"
+      echo "  ✅ Patched controllers.yaml: $endpoint → 127.0.0.1:$TUNNEL_PORT"
 
       # Track subnet for SSH ProxyCommand
       CONTROLLER_SUBNETS="$CONTROLLER_SUBNETS ${IP%.*}"
@@ -89,8 +114,12 @@ if [ -n "$APROXY_PORT" ]; then
       TUNNEL_PORT=$((TUNNEL_PORT + 1))
     done
 
-    echo "=== controllers.yaml endpoints (after patching) ==="
-    grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" || true
+    echo ""
+    echo "=== controllers.yaml (after patching) ==="
+    cat "$JUJU_CONTROLLERS"
+    echo ""
+  else
+    echo "WARNING: $JUJU_CONTROLLERS not found — cannot set up tunnels"
   fi
 
   # 3b. SSH ProxyCommand — route SSH through squid for the controller
@@ -119,7 +148,27 @@ else
 fi
 
 # ── 4. Verify controller connectivity ──────────────────────────────
-if [ -d "$JUJU_DATA_DIR" ]; then
-  echo "Verifying juju controller connectivity..."
-  timeout 30 juju status --format json 2>&1 | head -5 || echo "WARNING: juju status failed — controller may not be reachable"
+if [ -d "$JUJU_DATA_DIR/controllers.yaml" ]; then
+  echo ""
+  echo "=== Juju controller connectivity test ==="
+  echo "Active controller: $(juju show-controller --format json 2>/dev/null | head -1 || echo 'unknown')"
+  echo "Running: juju status --format json (timeout 60s)..."
+  if timeout 60 juju status --format json 2>&1; then
+    echo "✅ juju status succeeded"
+  else
+    EXIT_CODE=$?
+    echo "❌ juju status failed (exit code $EXIT_CODE)"
+    echo ""
+    echo "=== Diagnostic info ==="
+    echo "socat processes:"
+    ps aux | grep socat | grep -v grep || echo "  none"
+    echo "Listening ports:"
+    ss -tln | grep '194' || echo "  none matching 194xx"
+    echo "nftables OUTPUT chain:"
+    sudo nft list chain ip nat OUTPUT 2>/dev/null | head -20 || echo "  cannot read"
+    echo "DNS resolution:"
+    getent hosts egress.ps7.internal || echo "  cannot resolve egress.ps7.internal"
+    echo ""
+    echo "WARNING: juju status failed — controller may not be reachable"
+  fi
 fi
