@@ -41,7 +41,25 @@ def print_dependency_status() -> None:
 
 def _get_state(name: str = "", timeout: float = 30) -> dict[str, Any]:
     cmd = f"juju status {name} --format json"
-    result = run(shlex.split(cmd), check=False, capture_output=True, text=True, timeout=timeout)
+    try:
+        result = run(shlex.split(cmd), check=False, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        stdout_raw = exc.stdout or b""
+        stderr_raw = exc.stderr or b""
+        if isinstance(stdout_raw, bytes):
+            partial_out = stdout_raw.decode(errors="replace")
+        else:
+            partial_out = stdout_raw
+        if isinstance(stderr_raw, bytes):
+            partial_err = stderr_raw.decode(errors="replace")
+        else:
+            partial_err = stderr_raw
+        warning(f"juju status timed out after {timeout}s")
+        if partial_out:
+            warning(f"  partial stdout: {partial_out[:500]}")
+        if partial_err:
+            warning(f"  partial stderr: {partial_err[:500]}")
+        return {}
     if result.returncode == 0:
         parsed = None
         try:
