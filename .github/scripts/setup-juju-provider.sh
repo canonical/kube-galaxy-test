@@ -22,22 +22,19 @@ else
 fi
 
 # ── 3. Configure network for Juju controller (PS7 runners) ─────────
-# On PS7 runners, aproxy intercepts ALL outbound TLS (port 443) via
-# nftables REDIRECT, then peeks the SNI from TLS ClientHello.
-# Juju's API client connects to the controller by IP (no hostname),
-# producing a TLS ClientHello with no SNI → aproxy hangs.
+# On PS7 runners, aproxy intercepts outbound TLS via nftables REDIRECT
+# and SNI peek.  Juju connects to the controller by IP (no hostname),
+# so TLS ClientHello has no SNI → aproxy hangs.  Juju also ignores
+# HTTPS_PROXY (custom TLS dialer).  And PS7 runners have no direct
+# route to the vSphere network.
 #
-# Juju also uses a custom TLS dialer for controller websocket
-# connections that does NOT honor HTTPS_PROXY — so setting the env
-# var alone doesn't help.
+# Fix: for each controller API endpoint in controllers.yaml:
+#   1. Start a socat TCP listener on localhost that tunnels through
+#      squid via HTTP CONNECT to the real controller.
+#   2. Patch controllers.yaml to point at the local tunnel endpoint.
 #
-# PS7 runners have NO direct route to the vSphere network.  All
-# traffic must flow through the squid egress proxy.
-#
-# Fix: for each controller IP, start a local socat TCP listener that
-# tunnels through squid via HTTP CONNECT, then nftables-redirect
-# controller traffic to the local listener.  This sidesteps both
-# aproxy (no SNI needed) and the lack of direct connectivity.
+# This bypasses aproxy entirely (juju connects to localhost, not the
+# remote IP) and needs zero nftables rules.
 APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1 || true)
 if [ -n "$APROXY_PORT" ]; then
   echo "PS7 runner detected (aproxy port $APROXY_PORT)"
@@ -45,41 +42,69 @@ if [ -n "$APROXY_PORT" ]; then
   # Install socat for TCP-to-CONNECT tunnelling
   sudo apt-get install -y -qq socat >/dev/null 2>&1 || true
 
-  # 3a. Extract controller API IPs and create tunnels through squid
+  # 3a. Create local TCP tunnels for each controller API endpoint,
+  #     then patch controllers.yaml so juju connects locally.
+  JUJU_CONTROLLERS="$JUJU_DATA_DIR/controllers.yaml"
   TUNNEL_PORT=19443
-  if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
-    # api-endpoints entries look like:  - 10.246.152.x:443
-    CONTROLLER_IPS=$(grep -oP '\d+\.\d+\.\d+\.\d+(?=:\d+)' "$JUJU_DATA_DIR/controllers.yaml" | sort -u)
-    for ip in $CONTROLLER_IPS; do
-      echo "Tunnel: $ip:443 → localhost:$TUNNEL_PORT → squid CONNECT → $ip:443"
+  CONTROLLER_SUBNETS=""
 
-      # Start socat in background: accepts local TCP, opens HTTP
-      # CONNECT through squid to the controller, bridges both sides.
-      socat TCP-LISTEN:$TUNNEL_PORT,fork,reuseaddr,bind=127.0.0.1 \
-        PROXY:egress.ps7.internal:$ip:443,proxyport=3128 &
+  if [ -f "$JUJU_CONTROLLERS" ]; then
+    echo "=== controllers.yaml endpoints (before patching) ==="
+    grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" || true
 
-      # Redirect outbound traffic to the controller through our tunnel
-      # (inserted BEFORE the default aproxy REDIRECT so it matches first)
-      sudo nft insert rule ip nat OUTPUT ip daddr "$ip" tcp dport 443 redirect to :$TUNNEL_PORT
+    # Each endpoint is ip:port (e.g. 10.246.154.178:443)
+    ENDPOINTS=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" | sort -u)
+    for endpoint in $ENDPOINTS; do
+      IP="${endpoint%%:*}"
+      PORT="${endpoint##*:}"
+
+      # Verify squid allows CONNECT to this endpoint
+      CONNECT_RESP=$(echo -e "CONNECT ${endpoint} HTTP/1.1\r\nHost: ${endpoint}\r\n\r\n" \
+        | nc -w 5 egress.ps7.internal 3128 | head -1 || true)
+      echo "squid CONNECT test ($endpoint): $CONNECT_RESP"
+
+      # Start socat: localhost:TUNNEL_PORT → squid CONNECT → IP:PORT
+      socat TCP-LISTEN:${TUNNEL_PORT},fork,reuseaddr,bind=127.0.0.1 \
+        PROXY:egress.ps7.internal:${IP}:${PORT},proxyport=3128 &
+      SOCAT_PID=$!
+
+      # Wait for socat to start accepting connections
+      for _ in $(seq 1 20); do
+        if ss -tln | grep -q ":${TUNNEL_PORT} "; then break; fi
+        sleep 0.1
+      done
+
+      if ss -tln | grep -q ":${TUNNEL_PORT} "; then
+        echo "✅ socat PID $SOCAT_PID: localhost:$TUNNEL_PORT → squid → $endpoint"
+      else
+        echo "❌ socat failed to start on port $TUNNEL_PORT"
+      fi
+
+      # Patch controllers.yaml: juju will now connect to localhost
+      sed -i "s|${endpoint}|127.0.0.1:${TUNNEL_PORT}|g" "$JUJU_CONTROLLERS"
+
+      # Track subnet for SSH ProxyCommand
+      CONTROLLER_SUBNETS="$CONTROLLER_SUBNETS ${IP%.*}"
 
       TUNNEL_PORT=$((TUNNEL_PORT + 1))
     done
+
+    echo "=== controllers.yaml endpoints (after patching) ==="
+    grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" || true
   fi
 
   # 3b. SSH ProxyCommand — route SSH through squid for the controller
   #     subnet (machines provisioned by Juju live on the same network).
-  if [ -n "${CONTROLLER_IPS:-}" ]; then
+  if [ -n "$CONTROLLER_SUBNETS" ]; then
     mkdir -p ~/.ssh
-    for ip in $CONTROLLER_IPS; do
-      # Derive /24 pattern for SSH config Host matching
-      SUBNET_PREFIX=$(echo "$ip" | cut -d. -f1-3)
+    for prefix in $(echo "$CONTROLLER_SUBNETS" | tr ' ' '\n' | sort -u); do
       cat >> ~/.ssh/config <<EOF
-Host ${SUBNET_PREFIX}.*
+Host ${prefix}.*
   ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
 EOF
-      echo "SSH ProxyCommand configured for ${SUBNET_PREFIX}.*"
+      echo "SSH ProxyCommand configured for ${prefix}.*"
     done
     chmod 600 ~/.ssh/config
   fi
