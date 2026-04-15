@@ -25,28 +25,44 @@ fi
 # On PS7 runners, aproxy intercepts ALL outbound TLS (port 443) via
 # nftables REDIRECT, then peeks the SNI from TLS ClientHello.
 # Juju's API client connects to the controller by IP (no hostname),
-# producing a TLS ClientHello with no SNI.  aproxy can't form a valid
-# CONNECT request → the connection hangs indefinitely.
+# producing a TLS ClientHello with no SNI → aproxy hangs.
 #
-# Additionally, Juju's API client uses a custom TLS dialer for
-# controller websocket connections — it does NOT honor HTTPS_PROXY.
-# So setting HTTPS_PROXY alone doesn't help for `juju status` etc.
+# Juju also uses a custom TLS dialer for controller websocket
+# connections that does NOT honor HTTPS_PROXY — so setting the env
+# var alone doesn't help.
 #
-# Fix: insert nftables ACCEPT rules for the controller IP(s) so
-# traffic bypasses aproxy entirely and goes direct.  HTTPS_PROXY is
-# still set for other Go/HTTP traffic (e.g. cloud API calls).
+# PS7 runners have NO direct route to the vSphere network.  All
+# traffic must flow through the squid egress proxy.
+#
+# Fix: for each controller IP, start a local socat TCP listener that
+# tunnels through squid via HTTP CONNECT, then nftables-redirect
+# controller traffic to the local listener.  This sidesteps both
+# aproxy (no SNI needed) and the lack of direct connectivity.
 APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1 || true)
 if [ -n "$APROXY_PORT" ]; then
   echo "PS7 runner detected (aproxy port $APROXY_PORT)"
 
-  # 3a. Extract controller API IPs from restored client state and
-  #     bypass aproxy for direct connectivity.
+  # Install socat for TCP-to-CONNECT tunnelling
+  sudo apt-get install -y -qq socat >/dev/null 2>&1 || true
+
+  # 3a. Extract controller API IPs and create tunnels through squid
+  TUNNEL_PORT=19443
   if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
     # api-endpoints entries look like:  - 10.246.152.x:443
     CONTROLLER_IPS=$(grep -oP '\d+\.\d+\.\d+\.\d+(?=:\d+)' "$JUJU_DATA_DIR/controllers.yaml" | sort -u)
     for ip in $CONTROLLER_IPS; do
-      echo "nftables: ACCEPT for controller $ip:443 (bypass aproxy)"
-      sudo nft insert rule ip nat OUTPUT ip daddr "$ip" tcp dport 443 counter accept
+      echo "Tunnel: $ip:443 → localhost:$TUNNEL_PORT → squid CONNECT → $ip:443"
+
+      # Start socat in background: accepts local TCP, opens HTTP
+      # CONNECT through squid to the controller, bridges both sides.
+      socat TCP-LISTEN:$TUNNEL_PORT,fork,reuseaddr,bind=127.0.0.1 \
+        PROXY:egress.ps7.internal:$ip:443,proxyport=3128 &
+
+      # Redirect outbound traffic to the controller through our tunnel
+      # (inserted BEFORE the default aproxy REDIRECT so it matches first)
+      sudo nft insert rule ip nat OUTPUT ip daddr "$ip" tcp dport 443 redirect to :$TUNNEL_PORT
+
+      TUNNEL_PORT=$((TUNNEL_PORT + 1))
     done
   fi
 
