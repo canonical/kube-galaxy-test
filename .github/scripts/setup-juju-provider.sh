@@ -28,6 +28,9 @@ fi
 APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1 || true)
 if [ -n "$APROXY_PORT" ]; then
   echo "PS7 runner detected (aproxy port $APROXY_PORT) — setting HTTPS_PROXY for Juju"
+  # Export for the current script AND persist for subsequent workflow steps
+  export HTTPS_PROXY="http://egress.ps7.internal:3128"
+  export NO_PROXY="localhost,127.0.0.1,::1"
   echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
   echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
 else
@@ -37,5 +40,5 @@ fi
 # ── 4. Verify controller connectivity ──────────────────────────────
 if [ -d "$JUJU_DATA_DIR" ]; then
   echo "Verifying juju controller connectivity..."
-  juju status --format json 2>&1 | head -5 || echo "WARNING: juju status failed — controller may not be reachable"
+  timeout 30 juju status --format json 2>&1 | head -5 || echo "WARNING: juju status failed — controller may not be reachable"
 fi
