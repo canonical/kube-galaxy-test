@@ -53,18 +53,29 @@ jobs:
       - name: Route vSphere traffic through proxy (PS7 only)
         run: |
           # On PS7 runners, aproxy is a transparent HTTP/HTTPS proxy.
-          # It can handle TLS (443, 17070) but NOT raw SSH (22).
+          # It can handle TLS (443) via ClientHello SNI peek but NOT:
+          #   - raw SSH (22) — no TLS ClientHello to inspect
+          #   - Juju API (17070) — connects by IP, so TLS ClientHello has
+          #     no SNI hostname; aproxy cannot form a valid CONNECT request
+          #     and resets the connection.
           APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
           if [ -n "$APROXY_PORT" ]; then
             echo "PS7 runner detected (aproxy port $APROXY_PORT)"
 
-            # 1) Redirect HTTPS (443) and Juju API (17070) through aproxy.
-            #    aproxy handles TLS via ClientHello SNI peek → CONNECT to squid.
+            # 1) Redirect HTTPS (443) through aproxy (hostname-based, SNI works).
             sudo nft add rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
-            sudo nft add rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 17070 redirect to :"$APROXY_PORT"
-            echo "nftables redirect added for ports 443, 17070"
+            echo "nftables redirect added for port 443"
 
-            # 2) Tunnel SSH through the egress proxy via HTTP CONNECT.
+            # 2) Juju API (17070) uses IP-based TLS with no SNI — aproxy
+            #    cannot peek the hostname, so route through squid directly
+            #    via HTTPS_PROXY instead.
+            export HTTPS_PROXY="http://egress.ps7.internal:3128"
+            export NO_PROXY="localhost,127.0.0.1"
+            echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
+            echo "NO_PROXY=localhost,127.0.0.1" >> "$GITHUB_ENV"
+            echo "HTTPS_PROXY configured for Juju API (port 17070) via squid"
+
+            # 3) Tunnel SSH through the egress proxy via HTTP CONNECT.
             #    aproxy cannot handle raw SSH, so we use an SSH ProxyCommand
             #    to CONNECT directly through the squid egress proxy.
             mkdir -p ~/.ssh
