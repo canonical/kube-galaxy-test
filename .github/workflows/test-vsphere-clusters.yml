@@ -168,6 +168,13 @@ jobs:
           juju switch "${MODEL_NAME}"
           echo "name=${MODEL_NAME}" >> "$GITHUB_OUTPUT"
 
+      - name: Upload Juju client state
+        uses: actions/upload-artifact@v7
+        with:
+          name: juju-client-state
+          path: ~/.local/share/juju/
+          retention-days: 1
+
   # -------------------------------------------------------------------
   # Run the actual cluster test via the reusable workflow
   # -------------------------------------------------------------------
@@ -183,6 +190,8 @@ jobs:
         [{"manifest-file":"manifests/smoketest.yaml","overlays":["manifests/overlays/vsphere-juju.yaml"]}]
       runs-on: "self-hosted,linux,x64"
       timeout-minutes: 120
+      pre-setup-artifact: "juju-client-state"
+      pre-setup-script: ".github/scripts/setup-juju-provider.sh"
       create-issues-on-failure: ${{ github.event_name != 'pull_request' }}
     secrets:
       REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
