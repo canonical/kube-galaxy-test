@@ -39,7 +39,7 @@ def print_dependency_status() -> None:
         )
 
 
-def _get_state(name: str = "", timeout: float = 10) -> dict[str, Any]:
+def _get_state(name: str = "", timeout: float = 30) -> dict[str, Any]:
     cmd = f"juju status {name} --format json"
     result = run(shlex.split(cmd), check=False, capture_output=True, text=True, timeout=timeout)
     if result.returncode == 0:
