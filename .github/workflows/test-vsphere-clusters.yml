@@ -188,7 +188,7 @@ jobs:
       kube-galaxy-ref: ${{ github.head_ref || github.ref_name }}
       manifests-json: >-
         [{"manifest-file":"manifests/smoketest.yaml","overlays":["manifests/overlays/vsphere-juju.yaml"]}]
-      runs-on: "self-hosted,linux,x64"
+      runs-on: "self-hosted-linux-amd64-noble-private-endpoint-medium"
       timeout-minutes: 120
       pre-setup-artifact: "juju-client-state"
       pre-setup-script: ".github/scripts/setup-juju-provider.sh"
