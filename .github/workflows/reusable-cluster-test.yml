@@ -195,7 +195,7 @@ jobs:
         run: |
           echo "## Test Configuration"
           echo "- **Manifest**: ${{ matrix.manifest-file }}"
-          echo "- **Runner**: ubuntu-latest"
+          echo "- **Runner**: ${{ inputs.runs-on }}"
           echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes"
 
       - name: Setup Cluster
