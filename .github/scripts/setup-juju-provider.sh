@@ -14,16 +14,48 @@ sudo snap install juju --channel=3/stable --devmode
 juju version
 
 # ── 2. Restore Juju client state from artifact ─────────────────────
-# With --devmode, juju can access the standard ~/.local/share/juju path.
+# The juju snap uses its own default data path (~/snap/juju/common/ or
+# similar), not ~/.local/share/juju.  We MUST set JUJU_DATA to tell juju
+# where our restored config files are.
 JUJU_DATA_DIR="${HOME}/.local/share/juju"
 if [ -d "${PRE_SETUP_ARTIFACT_DIR:-}" ] && [ "$(ls -A "$PRE_SETUP_ARTIFACT_DIR")" ]; then
   echo "Restoring Juju client state from ${PRE_SETUP_ARTIFACT_DIR}..."
   mkdir -p "$JUJU_DATA_DIR"
   cp -a "${PRE_SETUP_ARTIFACT_DIR}/." "$JUJU_DATA_DIR/"
   
+  # Tell juju to use this directory — critical for snap-installed juju
+  export JUJU_DATA="$JUJU_DATA_DIR"
+  echo "JUJU_DATA=$JUJU_DATA_DIR" >> "$GITHUB_ENV"
+  echo "JUJU_DATA set to: $JUJU_DATA_DIR"
+  
   # Verify contents
   echo "Restored files:"
   ls -la "$JUJU_DATA_DIR/"
+  
+  # Debug: what does juju think its data dir is?
+  echo ""
+  echo "=== Juju environment debug ==="
+  echo "HOME=$HOME"
+  echo "USER=$(whoami)"
+  echo "JUJU_DATA=$JUJU_DATA"
+  
+  # Check if controllers.yaml is valid YAML
+  echo ""
+  echo "=== Validating controllers.yaml ==="
+  if python3 -c "import yaml; yaml.safe_load(open('$JUJU_DATA_DIR/controllers.yaml'))" 2>&1; then
+    echo "  ✅ Valid YAML"
+  else
+    echo "  ❌ Invalid YAML"
+  fi
+  
+  # What does juju see?
+  echo ""
+  echo "=== juju controllers (list all known controllers) ==="  
+  juju controllers --format yaml 2>&1 || echo "  (command failed)"
+  
+  echo ""
+  echo "=== juju show-controller (detailed view) ==="
+  juju show-controller --format yaml 2>&1 || echo "  (command failed)"
 else
   echo "WARNING: PRE_SETUP_ARTIFACT_DIR is empty or unset — skipping state restore"
 fi
@@ -86,6 +118,7 @@ fi
 if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
   echo ""
   echo "=== Juju controller connectivity test ==="
+  echo "JUJU_DATA=${JUJU_DATA:-<not set>}"
   echo "Juju data dir contents:"
   ls -la "$JUJU_DATA_DIR/" || true
   echo ""
