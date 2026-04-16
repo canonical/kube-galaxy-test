@@ -56,15 +56,30 @@ if [ -n "$APROXY_PORT" ]; then
     echo ""
 
     echo "=== Squid connectivity check ==="
-    getent hosts egress.ps7.internal || echo "  ❌ DNS: cannot resolve egress.ps7.internal"
-    nc -w 3 -zv egress.ps7.internal 3128 2>&1 || echo "  ❌ TCP: cannot connect to egress.ps7.internal:3128"
+    SQUID_HOST="egress.ps7.internal"
+    SQUID_PORT="3128"
+    getent hosts "$SQUID_HOST" || echo "  ❌ DNS: cannot resolve $SQUID_HOST"
+    nc -w 3 -zv "$SQUID_HOST" "$SQUID_PORT" 2>&1 || echo "  ❌ TCP: cannot connect to $SQUID_HOST:$SQUID_PORT"
     echo ""
 
+    echo "=== nftables OUTPUT chain (before changes) ==="
+    sudo nft list chain ip nat OUTPUT 2>/dev/null || echo "  cannot read nftables"
+    echo ""
+
+    # Ensure nc connections to squid bypass aproxy entirely.
+    # aproxy typically only redirects 80/443 but this is cheap insurance.
+    SQUID_IP=$(getent hosts "$SQUID_HOST" | awk '{print $1}' | head -1)
+    if [ -n "$SQUID_IP" ]; then
+      sudo nft insert rule ip nat OUTPUT ip daddr "$SQUID_IP" tcp dport "$SQUID_PORT" counter accept
+      echo "nftables: ACCEPT for $SQUID_HOST ($SQUID_IP):$SQUID_PORT (bypass aproxy)"
+    fi
+
+    echo ""
     echo "=== controllers.yaml (before patching) ==="
     cat "$JUJU_CONTROLLERS"
     echo ""
 
-    # Each endpoint is ip:port (e.g. 10.246.154.178:443)
+    # Each endpoint is ip:port (e.g. 10.246.154.13:17070)
     ENDPOINTS=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" | sort -u)
     for endpoint in $ENDPOINTS; do
       IP="${endpoint%%:*}"
@@ -72,24 +87,16 @@ if [ -n "$APROXY_PORT" ]; then
 
       echo "--- Setting up tunnel for $endpoint → localhost:$TUNNEL_PORT ---"
 
-      # Diagnostic: test squid CONNECT (informational only — does NOT gate tunnel creation)
-      echo "  Testing squid CONNECT to $endpoint (diagnostic)..."
-      CONNECT_RESP=$( (echo -e "CONNECT ${endpoint} HTTP/1.1\r\nHost: ${endpoint}\r\n\r\n"; sleep 60) \
-        | nc -w 5 egress.ps7.internal 3128 | head -1 || true)
-      echo "  squid CONNECT response: '${CONNECT_RESP}'"
-      if echo "$CONNECT_RESP" | grep -q "200"; then
-        echo "  ✅ squid allows CONNECT"
-      elif [ -z "$CONNECT_RESP" ]; then
-        echo "  ⚠️  Empty response — proceeding anyway (may be nc timing issue)"
-      else
-        echo "  ⚠️  Unexpected response — proceeding anyway"
-      fi
+      # Diagnostic: test nc CONNECT directly (same method socat will use)
+      echo "  Testing: nc -X connect -x $SQUID_HOST:$SQUID_PORT $IP $PORT ..."
+      NC_TEST=$(echo "GET / HTTP/1.0" | timeout 5 nc -X connect -x "$SQUID_HOST:$SQUID_PORT" "$IP" "$PORT" 2>&1 | head -3 || true)
+      echo "  nc -X connect result: '${NC_TEST:-(empty)}'"
 
-      # Start socat listener that forks nc for each connection.
-      # nc -X connect -x proxy:port host port — sends HTTP CONNECT
-      # through squid, then bridges the tunnel bidirectionally.
+      # Start socat listener with SYSTEM (avoids colon-escaping issues
+      # that EXEC has with socat's address parser).
+      # SYSTEM runs through /bin/sh so no special escaping needed.
       socat "TCP-LISTEN:${TUNNEL_PORT},fork,reuseaddr,bind=127.0.0.1" \
-        "EXEC:nc -X connect -x egress.ps7.internal\\:3128 ${IP} ${PORT}" &
+        "SYSTEM:nc -X connect -x ${SQUID_HOST}:${SQUID_PORT} ${IP} ${PORT}" &
       SOCAT_PID=$!
 
       # Wait for socat to start listening
