@@ -53,44 +53,23 @@ jobs:
       - name: Route vSphere traffic through proxy (PS7 only)
         run: |
           # On PS7 runners, aproxy is a transparent HTTP/HTTPS proxy that
-          # intercepts outbound TLS via ClientHello SNI peek.  Two issues
-          # prevent using aproxy for Juju API traffic:
-          #
-          # 1) Juju connects by IP (no hostname) → TLS ClientHello has no
-          #    SNI → aproxy can't form a valid CONNECT → "connection reset"
-          #
-          # 2) Even bypassing aproxy via HTTPS_PROXY, squid has a bug:
-          #    ps7.conf line 864 denies ps7_github_runners CONNECT on
-          #    Juju_controller_port (17070) using ps7_instance_networks
-          #    (a SRC acl). Since all github runner IPs are inside
-          #    10.151.0.0/16, this matches the runner's SOURCE IP — acting
-          #    as a blanket deny for ALL runners on port 17070, regardless
-          #    of destination. The allow on line 1037 is never reached.
-          #
-          # Workaround: --config api-port=443 makes the controller listen
-          # on 443. The deny on line 864 doesn't fire (wrong port), and
-          # squid allows CONNECT on 443 via SSL_ports (line 1047).
+          # intercepts outbound TLS via ClientHello SNI peek.  Juju
+          # connects to the controller by IP (no hostname) → TLS
+          # ClientHello has no SNI → aproxy can't form a valid CONNECT.
           #
           # HTTPS_PROXY routes Go/curl through squid directly (port 3128),
-          # bypassing aproxy entirely. nftables redirect for 443 → aproxy
-          # remains as a fallback for programs that don't honor HTTPS_PROXY.
+          # bypassing aproxy entirely.  SSH uses ProxyCommand.
           APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
           if [ -n "$APROXY_PORT" ]; then
             echo "PS7 runner detected (aproxy port $APROXY_PORT)"
 
-            # 1) nftables fallback: redirect vSphere 443 through aproxy
-            #    for programs that don't honor HTTPS_PROXY.
-            sudo nft insert rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
-            echo "nftables: 10.246.152.0/21:443 → aproxy (:$APROXY_PORT)"
-
-            # 2) HTTPS_PROXY: Go (juju, govmomi) and curl use this to
-            #    route through squid directly on port 3128, bypassing both
-            #    aproxy and the nftables redirect.
+            # HTTPS_PROXY: Go (juju, govmomi) and curl use this to
+            # route through squid directly on port 3128, bypassing aproxy.
             echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
             echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
             echo "HTTPS_PROXY configured: http://egress.ps7.internal:3128"
 
-            # 3) SSH — ProxyCommand tunnels through squid via HTTP CONNECT.
+            # SSH — ProxyCommand tunnels through squid via HTTP CONNECT.
             mkdir -p ~/.ssh
             cat >> ~/.ssh/config <<'EOF'
           Host 10.246.152.* 10.246.153.* 10.246.154.* 10.246.155.* 10.246.156.* 10.246.157.* 10.246.158.* 10.246.159.*
@@ -100,16 +79,6 @@ jobs:
           EOF
             chmod 600 ~/.ssh/config
             echo "SSH ProxyCommand configured for 10.246.152.0/21"
-
-            # Verify: test squid CONNECT on port 443 to vSphere
-            CONNECT_RESP=$(echo -e "CONNECT 10.246.152.100:443 HTTP/1.1\r\nHost: 10.246.152.100:443\r\n\r\n" \
-              | nc -w 5 egress.ps7.internal 3128 | head -1 || true)
-            echo "squid CONNECT test (10.246.152.100:443): $CONNECT_RESP"
-            if echo "$CONNECT_RESP" | grep -q "200"; then
-              echo "squid ACL verified: CONNECT on port 443 is allowed"
-            else
-              echo "WARNING: squid CONNECT returned: $CONNECT_RESP"
-            fi
           else
             echo "No aproxy detected — assuming direct connectivity"
           fi
@@ -144,7 +113,6 @@ jobs:
             --config ssl-hostname-verification=false
             --config caas-image-repo=rocks.canonical.com/cdk/jujusolutions
             --config bootstrap-timeout=3600
-            --config api-port=443
             --bootstrap-image=juju-ci-root/templates/noble-test-template
             --bootstrap-base=ubuntu@24.04
             --model-default primary-network=VLAN_2764
