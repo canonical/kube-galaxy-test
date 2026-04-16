@@ -53,15 +53,26 @@ jobs:
       - name: Route vSphere traffic through proxy (PS7 only)
         run: |
           # On PS7 runners, aproxy is a transparent HTTP/HTTPS proxy that
-          # intercepts outbound TLS via ClientHello SNI peek.  Juju
-          # connects to the controller by IP (no hostname) → TLS
-          # ClientHello has no SNI → aproxy can't form a valid CONNECT.
+          # intercepts outbound TLS via ClientHello SNI peek.  There is no
+          # direct route to vSphere — all traffic must go through a proxy.
+          #
+          # For vCenter (port 443): nftables REDIRECT → aproxy works fine
+          # because vCenter TLS has proper SNI.
+          #
+          # For Juju controller API: Juju connects by IP (no hostname) →
+          # TLS ClientHello has no SNI → aproxy can't handle it.  The
+          # run-tests job uses socat+nc tunnels through squid instead.
           #
           # HTTPS_PROXY routes Go/curl through squid directly (port 3128),
           # bypassing aproxy entirely.  SSH uses ProxyCommand.
           APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
           if [ -n "$APROXY_PORT" ]; then
             echo "PS7 runner detected (aproxy port $APROXY_PORT)"
+
+            # nftables: redirect vSphere subnet port 443 through aproxy.
+            # Required — there is no direct route to vSphere from PS7.
+            sudo nft insert rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
+            echo "nftables: 10.246.152.0/21:443 → aproxy (:$APROXY_PORT)"
 
             # HTTPS_PROXY: Go (juju, govmomi) and curl use this to
             # route through squid directly on port 3128, bypassing aproxy.
