@@ -51,6 +51,15 @@ if [ -n "$APROXY_PORT" ]; then
 
   if [ -f "$JUJU_CONTROLLERS" ]; then
     echo ""
+    echo "=== Runner network identity ==="
+    ip -4 addr show | grep 'inet ' || true
+    echo ""
+
+    echo "=== Squid connectivity check ==="
+    getent hosts egress.ps7.internal || echo "  ❌ DNS: cannot resolve egress.ps7.internal"
+    nc -w 3 -zv egress.ps7.internal 3128 2>&1 || echo "  ❌ TCP: cannot connect to egress.ps7.internal:3128"
+    echo ""
+
     echo "=== controllers.yaml (before patching) ==="
     cat "$JUJU_CONTROLLERS"
     echo ""
@@ -63,20 +72,22 @@ if [ -n "$APROXY_PORT" ]; then
 
       echo "--- Setting up tunnel for $endpoint → localhost:$TUNNEL_PORT ---"
 
-      # Step 1: Verify squid allows CONNECT to this endpoint
-      echo "Testing squid CONNECT to $endpoint..."
-      CONNECT_RESP=$(echo -e "CONNECT ${endpoint} HTTP/1.1\r\nHost: ${endpoint}\r\n\r\n" \
+      # Diagnostic: test squid CONNECT (informational only — does NOT gate tunnel creation)
+      echo "  Testing squid CONNECT to $endpoint (diagnostic)..."
+      CONNECT_RESP=$( (echo -e "CONNECT ${endpoint} HTTP/1.1\r\nHost: ${endpoint}\r\n\r\n"; sleep 60) \
         | nc -w 5 egress.ps7.internal 3128 | head -1 || true)
-      echo "  squid response: $CONNECT_RESP"
-      if ! echo "$CONNECT_RESP" | grep -q "200"; then
-        echo "  ❌ squid DENIED CONNECT to $endpoint — tunnel will not work"
-        continue
+      echo "  squid CONNECT response: '${CONNECT_RESP}'"
+      if echo "$CONNECT_RESP" | grep -q "200"; then
+        echo "  ✅ squid allows CONNECT"
+      elif [ -z "$CONNECT_RESP" ]; then
+        echo "  ⚠️  Empty response — proceeding anyway (may be nc timing issue)"
+      else
+        echo "  ⚠️  Unexpected response — proceeding anyway"
       fi
 
-      # Step 2: Start socat listener that forks nc for each connection.
+      # Start socat listener that forks nc for each connection.
       # nc -X connect -x proxy:port host port — sends HTTP CONNECT
       # through squid, then bridges the tunnel bidirectionally.
-      # This is the SAME method that works for SSH ProxyCommand.
       socat "TCP-LISTEN:${TUNNEL_PORT},fork,reuseaddr,bind=127.0.0.1" \
         "EXEC:nc -X connect -x egress.ps7.internal\\:3128 ${IP} ${PORT}" &
       SOCAT_PID=$!
@@ -89,22 +100,13 @@ if [ -n "$APROXY_PORT" ]; then
 
       if ! ss -tln | grep -q ":${TUNNEL_PORT} "; then
         echo "  ❌ socat failed to listen on port $TUNNEL_PORT (PID $SOCAT_PID)"
+        echo "  Skipping this endpoint"
+        TUNNEL_PORT=$((TUNNEL_PORT + 1))
         continue
       fi
       echo "  ✅ socat PID $SOCAT_PID listening on localhost:$TUNNEL_PORT"
 
-      # Step 3: End-to-end tunnel test — connect through the tunnel
-      # and verify we get a TLS ServerHello (or at least bytes back).
-      echo "  Testing tunnel end-to-end..."
-      TUNNEL_TEST=$(echo "" | timeout 5 nc -w 3 127.0.0.1 "$TUNNEL_PORT" 2>&1 | xxd | head -2 || true)
-      if [ -n "$TUNNEL_TEST" ]; then
-        echo "  ✅ Tunnel works — received data through tunnel:"
-        echo "  $TUNNEL_TEST"
-      else
-        echo "  ⚠️  No data received through tunnel (may still work for TLS)"
-      fi
-
-      # Step 4: Patch controllers.yaml to use local tunnel
+      # Patch controllers.yaml to use local tunnel
       sed -i "s|${endpoint}|127.0.0.1:${TUNNEL_PORT}|g" "$JUJU_CONTROLLERS"
       echo "  ✅ Patched controllers.yaml: $endpoint → 127.0.0.1:$TUNNEL_PORT"
 
