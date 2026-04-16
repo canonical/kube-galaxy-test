@@ -7,32 +7,25 @@
 set -euo pipefail
 
 # ── 1. Install Juju snap ────────────────────────────────────────────
-# Match actions-operator: juju 3.x is installed WITHOUT --classic
-# (strict confinement). Pre-create the data dir as actions-operator does.
+# Use --devmode to bypass strict snap confinement entirely.
+# Strictly confined juju can't access externally-restored config files.
 echo "Installing juju snap..."
-sudo snap install juju --channel=3/stable
+sudo snap install juju --channel=3/stable --devmode
 juju version
 
 # ── 2. Restore Juju client state from artifact ─────────────────────
-# Use a non-hidden path that strictly confined juju can access.
-# Set JUJU_DATA to point juju at our restored state.
-JUJU_DATA_DIR="${HOME}/juju-data"
+# With --devmode, juju can access the standard ~/.local/share/juju path.
+JUJU_DATA_DIR="${HOME}/.local/share/juju"
 if [ -d "${PRE_SETUP_ARTIFACT_DIR:-}" ] && [ "$(ls -A "$PRE_SETUP_ARTIFACT_DIR")" ]; then
   echo "Restoring Juju client state from ${PRE_SETUP_ARTIFACT_DIR}..."
   mkdir -p "$JUJU_DATA_DIR"
   cp -a "${PRE_SETUP_ARTIFACT_DIR}/." "$JUJU_DATA_DIR/"
-  
-  # Make juju use this directory
-  export JUJU_DATA="$JUJU_DATA_DIR"
-  echo "JUJU_DATA=$JUJU_DATA_DIR" >> "$GITHUB_ENV"
-  echo "JUJU_DATA set to: $JUJU_DATA_DIR"
   
   # Verify contents
   echo "Restored files:"
   ls -la "$JUJU_DATA_DIR/"
 else
   echo "WARNING: PRE_SETUP_ARTIFACT_DIR is empty or unset — skipping state restore"
-  JUJU_DATA_DIR="${HOME}/.local/share/juju"
 fi
 
 # ── 3. Configure network (PS7 runners) ─────────────────────────────
