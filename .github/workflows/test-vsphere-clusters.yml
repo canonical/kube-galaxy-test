@@ -124,6 +124,7 @@ jobs:
             --config ssl-hostname-verification=false
             --config caas-image-repo=rocks.canonical.com/cdk/jujusolutions
             --config bootstrap-timeout=3600
+            --config api-port=443
             --bootstrap-image=juju-ci-root/templates/noble-test-template
             --bootstrap-base=ubuntu@24.04
             --model-default primary-network=VLAN_2764
@@ -186,6 +187,25 @@ jobs:
     runs-on: [self-hosted-linux-amd64-noble-private-endpoint-medium]
     if: always()
     steps:
+      - name: Checkout (for setup script)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Download Juju client state
+        uses: actions/download-artifact@v4
+        with:
+          name: juju-client-state
+          path: ${{ runner.temp }}/pre-setup/
+
+      - name: Restore Juju + proxy
+        shell: bash
+        env:
+          PRE_SETUP_ARTIFACT_DIR: ${{ runner.temp }}/pre-setup
+        run: |
+          chmod +x .github/scripts/setup-juju-provider.sh
+          .github/scripts/setup-juju-provider.sh
+
       - name: Destroy test model
         shell: bash
         run: |
@@ -203,3 +223,14 @@ jobs:
 
           echo "Destroying Juju model '${MODEL}'..."
           juju destroy-model "${MODEL}" --force --no-wait --destroy-storage -y 2>/dev/null || true
+
+      - name: Destroy controller
+        shell: bash
+        run: |
+          CONTROLLER=$(juju show-controller --format json 2>/dev/null | python3 -c "import sys,json; print(list(json.load(sys.stdin).keys())[0])" 2>/dev/null || true)
+          if [ -n "$CONTROLLER" ]; then
+            echo "Destroying Juju controller '${CONTROLLER}'..."
+            juju destroy-controller "${CONTROLLER}" --force --no-wait --destroy-all-models -y 2>/dev/null || true
+          else
+            echo "No controller found — skipping"
+          fi
