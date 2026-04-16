@@ -39,6 +39,12 @@ APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1 || true)
 if [ -n "$APROXY_PORT" ]; then
   echo "PS7 runner detected (aproxy port $APROXY_PORT)"
 
+  # nftables: redirect vSphere subnet port 443 through aproxy.
+  # Required — there is no direct route to vSphere from PS7.
+  # Mirrors the prepare runner's setup for vCenter connectivity.
+  sudo nft insert rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
+  echo "nftables: 10.246.152.0/21:443 → aproxy (:$APROXY_PORT)"
+
   # Install socat (for TCP listener with fork support)
   sudo apt-get install -y -qq socat >/dev/null 2>&1 || true
   echo "socat version: $(socat -V 2>&1 | head -2 | tail -1 || echo 'unknown')"
@@ -79,7 +85,7 @@ if [ -n "$APROXY_PORT" ]; then
     cat "$JUJU_CONTROLLERS"
     echo ""
 
-    # Each endpoint is ip:port (e.g. 10.246.154.13:17070)
+    # Each endpoint is ip:port (e.g. 10.246.154.13:443)
     ENDPOINTS=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" | sort -u)
     for endpoint in $ENDPOINTS; do
       IP="${endpoint%%:*}"
@@ -157,7 +163,7 @@ else
 fi
 
 # ── 4. Verify controller connectivity ──────────────────────────────
-if [ -d "$JUJU_DATA_DIR/controllers.yaml" ]; then
+if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
   echo ""
   echo "=== Juju controller connectivity test ==="
   echo "Active controller: $(juju show-controller --format json 2>/dev/null | head -1 || echo 'unknown')"
