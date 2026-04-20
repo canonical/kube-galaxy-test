@@ -24,6 +24,11 @@ _OVERLAY_OPTION = typer.Option(
         "Repeat to apply multiple overlays in order (later overlays win)."
     ),
 )
+_PROVIDER_IMAGE_OPTION = typer.Option(
+    None,
+    "--provider-image",
+    help="Override the provider base image (e.g. 'ubuntu:22.04').",
+)
 _MANIFEST_RECOVERY_OPTION = typer.Option(
     None,
     "--manifest",
@@ -139,6 +144,7 @@ def setup_cmd(
         help="Merge the 'kube-galaxy' context into ~/.kube/config without prompting",
     ),
     overlays: list[str] = _OVERLAY_OPTION,
+    provider_image: str | None = _PROVIDER_IMAGE_OPTION,
 ) -> None:
     """Provision a cluster from a manifest file.
 
@@ -146,8 +152,14 @@ def setup_cmd(
         kube-galaxy setup manifests/baseline-k8s-1.35.yaml
         kube-galaxy setup manifests/baseline-k8s-1.35.yaml --update-kubeconfig
         kube-galaxy setup manifests/baseline-k8s-1.35.yaml --overlay overlays/tweak.yaml
+        kube-galaxy setup manifests/baseline-k8s-1.35.yaml --provider-image ubuntu:22.04
     """
-    setup.setup(manifest, update_kubeconfig=update_kubeconfig, overlays=overlays or None)
+    setup.setup(
+        manifest,
+        update_kubeconfig=update_kubeconfig,
+        overlays=overlays or None,
+        provider_image=provider_image,
+    )
 
 
 @app.command(name="status")

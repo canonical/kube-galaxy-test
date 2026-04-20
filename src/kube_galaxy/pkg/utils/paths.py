@@ -29,7 +29,12 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
-def create_active_manifest(manifest_path: str, overlays: Sequence[str] | None = None) -> Path:
+def create_active_manifest(
+    manifest_path: str,
+    overlays: Sequence[str] | None = None,
+    *,
+    provider_image: str | None = None,
+) -> Path:
     """Write the active-manifest file, merging any overlays on top of the base.
 
     When *overlays* are provided they are deep-merged onto *manifest_path* in
@@ -42,6 +47,8 @@ def create_active_manifest(manifest_path: str, overlays: Sequence[str] | None = 
     Args:
         manifest_path: Path (relative or absolute) to the base manifest file.
         overlays: Optional ordered sequence of overlay YAML file paths.
+        provider_image: Optional override for the provider base image
+            (e.g. ``ubuntu:22.04``).  Applied after overlays.
 
     Returns:
         The :class:`~pathlib.Path` of the written active-manifest file.
@@ -55,6 +62,9 @@ def create_active_manifest(manifest_path: str, overlays: Sequence[str] | None = 
             merged = yaml.safe_load(f)
         manifest = deserialize_manifest(merged, base)
         validate_manifest(manifest)
+
+    if provider_image:
+        merged.setdefault("provider", {})["image"] = provider_image
 
     active = SystemPaths.active_manifest_path()
     active.parent.mkdir(parents=True, exist_ok=True)
