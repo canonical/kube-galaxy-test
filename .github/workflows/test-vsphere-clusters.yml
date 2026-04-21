@@ -12,7 +12,6 @@ on:
       - '.github/workflows/test-vsphere-clusters.yml'
       - '.github/workflows/reusable-cluster-test.yml'
       - 'pyproject.toml'
-  # Manual trigger for ad-hoc vSphere testing
   pull_request:
     paths:
       - 'src/**'
@@ -50,50 +49,6 @@ jobs:
     outputs:
       model-name: ${{ steps.model.outputs.name }}
     steps:
-      - name: Route vSphere traffic through proxy (PS7 only)
-        run: |
-          # On PS7 runners, aproxy is a transparent HTTP/HTTPS proxy that
-          # intercepts outbound TLS via ClientHello SNI peek.  There is no
-          # direct route to vSphere — all traffic must go through a proxy.
-          #
-          # For vCenter (port 443): nftables REDIRECT → aproxy works fine
-          # because vCenter TLS has proper SNI.
-          #
-          # For Juju controller API: Juju connects by IP (no hostname) →
-          # TLS ClientHello has no SNI → aproxy can't handle it.  The
-          # run-tests job uses socat+nc tunnels through squid instead.
-          #
-          # HTTPS_PROXY routes Go/curl through squid directly (port 3128),
-          # bypassing aproxy entirely.  SSH uses ProxyCommand.
-          APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1)
-          if [ -n "$APROXY_PORT" ]; then
-            echo "PS7 runner detected (aproxy port $APROXY_PORT)"
-
-            # nftables: redirect vSphere subnet port 443 through aproxy.
-            # Required — there is no direct route to vSphere from PS7.
-            sudo nft insert rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
-            echo "nftables: 10.246.152.0/21:443 → aproxy (:$APROXY_PORT)"
-
-            # HTTPS_PROXY: Go (juju, govmomi) and curl use this to
-            # route through squid directly on port 3128, bypassing aproxy.
-            echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
-            echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
-            echo "HTTPS_PROXY configured: http://egress.ps7.internal:3128"
-
-            # SSH — ProxyCommand tunnels through squid via HTTP CONNECT.
-            mkdir -p ~/.ssh
-            cat >> ~/.ssh/config <<'EOF'
-          Host 10.246.152.* 10.246.153.* 10.246.154.* 10.246.155.* 10.246.156.* 10.246.157.* 10.246.158.* 10.246.159.*
-            ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
-            StrictHostKeyChecking no
-            UserKnownHostsFile /dev/null
-          EOF
-            chmod 600 ~/.ssh/config
-            echo "SSH ProxyCommand configured for 10.246.152.0/21"
-          else
-            echo "No aproxy detected — assuming direct connectivity"
-          fi
-
       - name: Debug Network Connectivity
         run: |
           echo "=== Runner identity ==="
@@ -124,7 +79,6 @@ jobs:
             --config ssl-hostname-verification=false
             --config caas-image-repo=rocks.canonical.com/cdk/jujusolutions
             --config bootstrap-timeout=3600
-            --config api-port=443
             --bootstrap-image=juju-ci-root/templates/noble-test-template
             --bootstrap-base=ubuntu@24.04
             --model-default primary-network=VLAN_2764

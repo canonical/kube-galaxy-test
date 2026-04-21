@@ -51,62 +51,35 @@ else
   echo "WARNING: PRE_SETUP_ARTIFACT_DIR is empty or unset — skipping state restore"
 fi
 
-# ── 3. Configure network (PS7 runners) ─────────────────────────────
-# PS7 runners have no direct route to vSphere — all traffic must go
-# through a proxy.  Two separate paths are used:
-#
-#   vCenter (port 443, has SNI): nftables REDIRECT → aproxy.
-#   Juju API (controller, has no SNI): HTTPS_PROXY → squid (HTTP CONNECT).
-#     Juju's Go HTTP client respects HTTPS_PROXY, so API connections are
-#     tunnelled through squid without touching aproxy.
-#
-# SSH uses ProxyCommand through squid.
-APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1 || true)
-if [ -n "$APROXY_PORT" ]; then
-  echo "PS7 runner detected (aproxy port $APROXY_PORT)"
+# ── 3. Configure SSH for vSphere VMs ───────────────────────────────
+# SSH doesn't respect HTTPS_PROXY, so we configure ProxyCommand for
+# connections to vSphere subnets.
+JUJU_CONTROLLERS="$JUJU_DATA_DIR/controllers.yaml"
+if [ -f "$JUJU_CONTROLLERS" ]; then
+  echo ""
+  echo "=== controllers.yaml ==="
+  cat "$JUJU_CONTROLLERS"
+  echo ""
 
-  # nftables: redirect vSphere subnet port 443 through aproxy.
-  # This is the same approach the prepare runner uses for bootstrap.
-  sudo nft insert rule ip nat OUTPUT ip daddr 10.246.152.0/21 tcp dport 443 redirect to :"$APROXY_PORT"
-  echo "nftables: 10.246.152.0/21:443 → aproxy (:$APROXY_PORT)"
-
-  # SSH ProxyCommand for controller/worker subnet.
-  JUJU_CONTROLLERS="$JUJU_DATA_DIR/controllers.yaml"
   CONTROLLER_SUBNETS=""
-  if [ -f "$JUJU_CONTROLLERS" ]; then
-    echo ""
-    echo "=== controllers.yaml ==="
-    cat "$JUJU_CONTROLLERS"
-    echo ""
-
-    ENDPOINTS=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" | sort -u)
-    for endpoint in $ENDPOINTS; do
-      IP="${endpoint%%:*}"
-      CONTROLLER_SUBNETS="$CONTROLLER_SUBNETS ${IP%.*}"
-    done
-  fi
+  ENDPOINTS=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" | sort -u)
+  for endpoint in $ENDPOINTS; do
+    IP="${endpoint%%:*}"
+    CONTROLLER_SUBNETS="$CONTROLLER_SUBNETS ${IP%.*}"
+  done
 
   if [ -n "$CONTROLLER_SUBNETS" ]; then
     mkdir -p ~/.ssh
     for prefix in $(echo "$CONTROLLER_SUBNETS" | tr ' ' '\n' | sort -u); do
       cat >> ~/.ssh/config <<EOF
 Host ${prefix}.*
-  ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
 EOF
-      echo "SSH ProxyCommand configured for ${prefix}.*"
+      echo "SSH config added for ${prefix}.*"
     done
     chmod 600 ~/.ssh/config
   fi
-
-  # HTTPS_PROXY for general Go/HTTP traffic (cloud APIs, etc.)
-  export HTTPS_PROXY="http://egress.ps7.internal:3128"
-  export NO_PROXY="localhost,127.0.0.1,::1"
-  echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
-  echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
-else
-  echo "No aproxy detected — assuming direct connectivity"
 fi
 
 # ── 4. Verify controller connectivity ──────────────────────────────
