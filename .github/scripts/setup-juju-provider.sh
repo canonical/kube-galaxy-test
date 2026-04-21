@@ -51,9 +51,16 @@ else
   echo "WARNING: PRE_SETUP_ARTIFACT_DIR is empty or unset — skipping state restore"
 fi
 
-# ── 3. Configure SSH for vSphere VMs ───────────────────────────────
-# SSH doesn't respect HTTPS_PROXY, so we configure ProxyCommand for
-# connections to vSphere subnets.
+# ── 3. Configure proxy for vSphere access ──────────────────────────
+# PS7 runners have no direct route to vSphere — traffic must go through
+# squid proxy. HTTPS_PROXY is respected by Go clients (juju) for HTTPS.
+export HTTPS_PROXY="http://egress.ps7.internal:3128"
+export NO_PROXY="localhost,127.0.0.1,::1"
+echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
+echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
+echo "Configured HTTPS_PROXY for vSphere access"
+
+# SSH ProxyCommand for connections to controller/worker VMs
 JUJU_CONTROLLERS="$JUJU_DATA_DIR/controllers.yaml"
 if [ -f "$JUJU_CONTROLLERS" ]; then
   echo ""
@@ -73,10 +80,11 @@ if [ -f "$JUJU_CONTROLLERS" ]; then
     for prefix in $(echo "$CONTROLLER_SUBNETS" | tr ' ' '\n' | sort -u); do
       cat >> ~/.ssh/config <<EOF
 Host ${prefix}.*
+  ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
 EOF
-      echo "SSH config added for ${prefix}.*"
+      echo "SSH ProxyCommand configured for ${prefix}.*"
     done
     chmod 600 ~/.ssh/config
   fi
