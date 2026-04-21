@@ -207,6 +207,17 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
+          # Debug: verify proxy and juju environment
+          echo "=== Environment check ==="
+          echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
+          echo "JUJU_DATA=${JUJU_DATA:-<unset>}"
+          which juju || echo "juju not in PATH"
+          juju version || echo "juju version failed"
+          echo ""
+          echo "=== Controller info ==="
+          cat "${JUJU_DATA:-$HOME/.local/share/juju}/controllers.yaml" 2>/dev/null | head -20 || echo "No controllers.yaml"
+          echo ""
+
           # Sanitized name for artifact uploads
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"

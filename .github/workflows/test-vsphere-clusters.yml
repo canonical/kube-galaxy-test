@@ -79,7 +79,7 @@ jobs:
           ip route get 10.246.152.100 || true
 
           echo "=== Checking vCenter connectivity (via proxy) ==="
-          curl -sS --proxy "$HTTPS_PROXY" -o /dev/null -w "HTTP %{http_code}\n" --connect-timeout 10 https://10.246.152.100/sdk || echo "Connection failed"
+          curl -sSk --proxy "$HTTPS_PROXY" -o /dev/null -w "HTTP %{http_code}\n" --connect-timeout 10 https://10.246.152.100/sdk || echo "Connection failed"
 
           echo "=== nftables OUTPUT chain ==="
           sudo nft list chain ip nat OUTPUT 2>/dev/null || echo "Cannot read nftables"
