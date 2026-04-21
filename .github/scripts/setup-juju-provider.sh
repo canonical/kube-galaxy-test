@@ -47,25 +47,20 @@ if [ -d "${PRE_SETUP_ARTIFACT_DIR:-}" ] && [ "$(ls -A "$PRE_SETUP_ARTIFACT_DIR")
   else
     echo "  ❌ Invalid YAML"
   fi
-  
-  # What does juju see?
-  echo ""
-  echo "=== juju controllers (list all known controllers) ==="  
-  juju controllers --format yaml 2>&1 || echo "  (command failed)"
-  
-  echo ""
-  echo "=== juju show-controller (detailed view) ==="
-  juju show-controller --format yaml 2>&1 || echo "  (command failed)"
 else
   echo "WARNING: PRE_SETUP_ARTIFACT_DIR is empty or unset — skipping state restore"
 fi
 
 # ── 3. Configure network (PS7 runners) ─────────────────────────────
 # PS7 runners have no direct route to vSphere — all traffic must go
-# through a proxy.  The prepare runner uses a nftables REDIRECT to
-# route port 443 through aproxy (transparent proxy), and this works
-# even for Juju's IP-only TLS connections.  We replicate the same
-# setup here.  SSH uses ProxyCommand through squid.
+# through a proxy.  Two separate paths are used:
+#
+#   vCenter (port 443, has SNI): nftables REDIRECT → aproxy.
+#   Juju API (controller, has no SNI): HTTPS_PROXY → squid (HTTP CONNECT).
+#     Juju's Go HTTP client respects HTTPS_PROXY, so API connections are
+#     tunnelled through squid without touching aproxy.
+#
+# SSH uses ProxyCommand through squid.
 APROXY_PORT=$(ps aux | grep -oP 'aproxy.*--listen :\K[0-9]+' | head -1 || true)
 if [ -n "$APROXY_PORT" ]; then
   echo "PS7 runner detected (aproxy port $APROXY_PORT)"
@@ -121,8 +116,17 @@ if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
   echo "JUJU_DATA=${JUJU_DATA:-<not set>}"
   echo "Juju data dir contents:"
   ls -la "$JUJU_DATA_DIR/" || true
+
+  # What does juju see? (runs after proxy is configured)
   echo ""
-  echo "Active controller: $(juju show-controller --format json 2>/dev/null | head -1 || echo 'unknown')"
+  echo "=== juju controllers (list all known controllers) ==="
+  juju controllers --format yaml 2>&1 || echo "  (command failed)"
+
+  echo ""
+  echo "=== juju show-controller (detailed view) ==="
+  timeout 60 juju show-controller --format yaml 2>&1 || echo "  (command failed)"
+
+  echo ""
   echo "Running: juju status (timeout 60s)..."
   if timeout 60 juju status 2>&1; then
     echo "✅ juju status succeeded"
