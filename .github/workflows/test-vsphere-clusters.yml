@@ -49,6 +49,26 @@ jobs:
     outputs:
       model-name: ${{ steps.model.outputs.name }}
     steps:
+      - name: Configure proxy for vSphere access
+        run: |
+          # PS7 runners have no direct route to vSphere — traffic must go
+          # through squid proxy. HTTPS_PROXY is respected by Go clients
+          # (govmomi, juju) for HTTPS connections.
+          echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
+          echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
+          echo "Configured HTTPS_PROXY for vSphere access"
+
+          # SSH ProxyCommand for connections to vSphere VMs
+          mkdir -p ~/.ssh
+          cat >> ~/.ssh/config <<'EOF'
+          Host 10.246.152.* 10.246.153.* 10.246.154.* 10.246.155.* 10.246.156.* 10.246.157.* 10.246.158.* 10.246.159.*
+            ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+          chmod 600 ~/.ssh/config
+          echo "SSH ProxyCommand configured for 10.246.152.0/21"
+
       - name: Debug Network Connectivity
         run: |
           echo "=== Runner identity ==="
@@ -58,8 +78,8 @@ jobs:
           echo "=== Route to vCenter ==="
           ip route get 10.246.152.100 || true
 
-          echo "=== Checking vCenter connectivity ==="
-          nc -zv -w 10 10.246.152.100 443 || echo "TCP Port 443 is CLOSED or BLOCKED"
+          echo "=== Checking vCenter connectivity (via proxy) ==="
+          curl -sS --proxy "$HTTPS_PROXY" -o /dev/null -w "HTTP %{http_code}\n" --connect-timeout 10 https://10.246.152.100/sdk || echo "Connection failed"
 
           echo "=== nftables OUTPUT chain ==="
           sudo nft list chain ip nat OUTPUT 2>/dev/null || echo "Cannot read nftables"
