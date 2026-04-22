@@ -60,7 +60,18 @@ echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
 echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
 echo "Configured HTTPS_PROXY for vSphere access"
 
-# SSH ProxyCommand for connections to controller/worker VMs
+# Debug: which squid backend are we hitting?
+echo ""
+echo "=== Squid backend debug ==="
+echo "Runner IP: $(hostname -I | awk '{print $1}')"
+echo "Squid DNS resolution:"
+getent hosts egress.ps7.internal || echo "  DNS lookup failed"
+echo "Testing squid connectivity:"
+curl -s -o /dev/null -w "Squid backend IP: %{remote_ip}\n" --proxy http://egress.ps7.internal:3128 http://httpbin.org/ip 2>&1 || echo "  (test failed)"
+
+# SSH ProxyCommand for connections to controller/worker VMs.
+# Configure the FULL vSphere /21 subnet range (10.246.152.0/21) to match
+# what actions-operator sets up during bootstrap.
 JUJU_CONTROLLERS="$JUJU_DATA_DIR/controllers.yaml"
 if [ -f "$JUJU_CONTROLLERS" ]; then
   echo ""
@@ -68,26 +79,16 @@ if [ -f "$JUJU_CONTROLLERS" ]; then
   cat "$JUJU_CONTROLLERS"
   echo ""
 
-  CONTROLLER_SUBNETS=""
-  ENDPOINTS=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_CONTROLLERS" | sort -u)
-  for endpoint in $ENDPOINTS; do
-    IP="${endpoint%%:*}"
-    CONTROLLER_SUBNETS="$CONTROLLER_SUBNETS ${IP%.*}"
-  done
-
-  if [ -n "$CONTROLLER_SUBNETS" ]; then
-    mkdir -p ~/.ssh
-    for prefix in $(echo "$CONTROLLER_SUBNETS" | tr ' ' '\n' | sort -u); do
-      cat >> ~/.ssh/config <<EOF
-Host ${prefix}.*
+  # Configure SSH proxy for entire vSphere subnet, not just controller's /24
+  mkdir -p ~/.ssh
+  cat >> ~/.ssh/config <<EOF
+Host 10.246.152.* 10.246.153.* 10.246.154.* 10.246.155.* 10.246.156.* 10.246.157.* 10.246.158.* 10.246.159.*
   ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
   StrictHostKeyChecking no
   UserKnownHostsFile /dev/null
 EOF
-      echo "SSH ProxyCommand configured for ${prefix}.*"
-    done
-    chmod 600 ~/.ssh/config
-  fi
+  chmod 600 ~/.ssh/config
+  echo "SSH ProxyCommand configured for vSphere subnet 10.246.152.0/21"
 fi
 
 # ── 4. Verify controller connectivity ──────────────────────────────
@@ -98,6 +99,24 @@ if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
   echo "Juju data dir contents:"
   ls -la "$JUJU_DATA_DIR/" || true
 
+  # Extract controller endpoint for direct testing
+  CTRL_ENDPOINT=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "$JUJU_DATA_DIR/controllers.yaml" | head -1 || true)
+  CTRL_IP="${CTRL_ENDPOINT%:*}"
+  CTRL_PORT="${CTRL_ENDPOINT#*:}"
+  echo ""
+  echo "Controller endpoint: $CTRL_ENDPOINT"
+
+  # Test raw connectivity through proxy before juju
+  echo ""
+  echo "=== Testing proxy connectivity to controller ==="
+  echo "curl CONNECT $CTRL_IP:$CTRL_PORT through proxy..."
+  if curl -v --max-time 15 --proxy http://egress.ps7.internal:3128 \
+       --connect-timeout 10 "https://$CTRL_IP:$CTRL_PORT/" 2>&1 | head -30; then
+    echo "  (connection established, response above)"  
+  else
+    echo "  curl exit code: $?"
+  fi
+
   # What does juju see? (runs after proxy is configured)
   echo ""
   echo "=== juju controllers (list all known controllers) ==="
@@ -107,23 +126,40 @@ if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
   echo "=== juju show-controller (detailed view) ==="
   timeout 60 juju show-controller --format yaml 2>&1 || echo "  (command failed)"
 
+  # Retry juju status with exponential backoff
   echo ""
-  echo "Running: juju status (timeout 60s)..."
-  if timeout 60 juju status 2>&1; then
-    echo "✅ juju status succeeded"
-  else
-    EXIT_CODE=$?
-    echo "❌ juju status failed (exit code $EXIT_CODE)"
+  echo "=== juju status with retry ==="
+  RETRY_COUNT=0
+  MAX_RETRIES=3
+  JUJU_OK=false
+  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: juju status (timeout 60s)..."
+    if timeout 60 juju status 2>&1; then
+      echo "✅ juju status succeeded"
+      JUJU_OK=true
+      break
+    else
+      EXIT_CODE=$?
+      echo "  ❌ failed (exit code $EXIT_CODE)"
+      RETRY_COUNT=$((RETRY_COUNT + 1))
+      if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+        WAIT=$((10 * RETRY_COUNT))
+        echo "  Waiting ${WAIT}s before retry..."
+        sleep $WAIT
+      fi
+    fi
+  done
+
+  if [ "$JUJU_OK" = false ]; then
     echo ""
     echo "=== Diagnostic info ==="
-    echo "nftables OUTPUT chain:"
-    sudo nft list chain ip nat OUTPUT 2>/dev/null | head -20 || echo "  cannot read"
-    echo "Network identity:"
-    ip -4 addr show | grep 'inet ' || true
+    echo "Runner IP: $(hostname -I | awk '{print $1}')"
+    echo "Squid DNS: $(getent hosts egress.ps7.internal | head -1)"
     echo "Route to controller:"
-    CTRL_IP=$(grep -oP '\d+\.\d+\.\d+\.\d+' "$JUJU_DATA_DIR/controllers.yaml" | head -1 || true)
     [ -n "$CTRL_IP" ] && ip route get "$CTRL_IP" 2>/dev/null || true
     echo ""
-    echo "WARNING: juju status failed — controller may not be reachable"
+    echo "ERROR: juju status failed after $MAX_RETRIES attempts"
+    echo "This suggests the controller is not reachable from this runner."
+    echo "The prepare job ran on a different runner that could reach the controller."
   fi
 fi

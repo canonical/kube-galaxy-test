@@ -126,17 +126,19 @@ jobs:
         shell: bash
         run: |
           echo "=== Network config that works after bootstrap ==="
+          echo "--- Runner identity ---"
+          echo "Runner IP: $(hostname -I | awk '{print $1}')"
+          echo "Hostname: $(hostname)"
+          echo ""
+          echo "--- Squid backend ---"
+          echo "Squid DNS: $(getent hosts egress.ps7.internal)"
+          curl -s -o /dev/null -w "Squid backend: %{remote_ip}\n" --proxy http://egress.ps7.internal:3128 http://httpbin.org/ip 2>&1 || echo "  (test failed)"
+          echo ""
           echo "--- Environment ---"
           env | grep -iE 'proxy|http|https|no_proxy' | sort || echo "No proxy vars"
           echo ""
           echo "--- SSH config ---"
           cat ~/.ssh/config 2>/dev/null || echo "No SSH config"
-          echo ""
-          echo "--- nftables ---"
-          sudo nft list ruleset 2>/dev/null | head -50 || echo "No nftables"
-          echo ""
-          echo "--- IP routes ---"
-          ip route | head -20
           echo ""
           echo "--- Controller endpoint ---"
           CTRL=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' ~/.local/share/juju/controllers.yaml | head -1)
@@ -144,10 +146,6 @@ jobs:
           echo ""
           echo "--- Test juju status from prepare job ---"
           timeout 30 juju status --format json 2>&1 | head -20 || echo "juju status failed"
-          echo ""
-          echo "--- Test SSH to controller from prepare job ---"
-          CTRL_IP="${CTRL%:*}"
-          timeout 15 ssh -v -o ConnectTimeout=10 ubuntu@"$CTRL_IP" "echo 'SSH OK from prepare'" 2>&1 | tail -20 || echo "SSH failed"
 
       - name: Upload Juju client state
         uses: actions/upload-artifact@v7
