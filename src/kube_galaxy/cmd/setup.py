@@ -19,6 +19,7 @@ def setup(
     manifest_path: str,
     update_kubeconfig: bool = False,
     overlays: list[str] | None = None,
+    provider_image: str | None = None,
 ) -> None:
     """Provision a Kubernetes cluster from a manifest file.
 
@@ -31,8 +32,10 @@ def setup(
         overlays: Optional ordered list of overlay YAML file paths to
             deep-merge on top of *manifest_path* before provisioning.  Later
             overlays take precedence over earlier ones.
+        provider_image: Optional override for the provider base image
+            (e.g. ``ubuntu:22.04``).  Applied after overlays.
     """
-    active = create_active_manifest(manifest_path, overlays)
+    active = create_active_manifest(manifest_path, overlays, provider_image=provider_image)
     setup_cluster(active)
     _handle_kubeconfig_adjustment(update_kubeconfig)
 

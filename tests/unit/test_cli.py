@@ -212,7 +212,10 @@ class TestSetupCmd:
             result = _invoke("setup", "manifests/baseline-k8s-1.35.yaml")
         assert result.exit_code == 0
         mock_setup.assert_called_once_with(
-            "manifests/baseline-k8s-1.35.yaml", update_kubeconfig=False, overlays=None
+            "manifests/baseline-k8s-1.35.yaml",
+            update_kubeconfig=False,
+            overlays=None,
+            provider_image=None,
         )
 
     def test_overlay_option_forwarded(self) -> None:
@@ -228,4 +231,21 @@ class TestSetupCmd:
             "manifests/baseline-k8s-1.35.yaml",
             update_kubeconfig=False,
             overlays=["overlays/extra.yaml"],
+            provider_image=None,
+        )
+
+    def test_provider_image_option_forwarded(self) -> None:
+        with patch("kube_galaxy.cmd.setup.setup") as mock_setup:
+            result = _invoke(
+                "setup",
+                "manifests/baseline-k8s-1.35.yaml",
+                "--provider-image",
+                "ubuntu:22.04",
+            )
+        assert result.exit_code == 0
+        mock_setup.assert_called_once_with(
+            "manifests/baseline-k8s-1.35.yaml",
+            update_kubeconfig=False,
+            overlays=None,
+            provider_image="ubuntu:22.04",
         )

@@ -6,7 +6,7 @@ on:
       manifests-json:
         description: >
           JSON array of manifest objects, e.g.
-          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml", "overlays": []}]
+          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml", "overlays": ["manifests/overlays/ubuntu/ubuntu-24.04.yaml"]}]
         type: string
         required: true
       manifests-repo:
@@ -165,7 +165,8 @@ jobs:
         run: |
           echo "## Test Configuration"
           echo "- **Manifest**: ${{ matrix.manifest-file }}"
-          echo "- **Runner**: ubuntu-latest"
+          echo "- **Overlays**: ${{ toJson(matrix.overlays) }}"
+          echo "- **Runner**: ${{ inputs.runs-on }}"
           echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes"
 
       - name: Setup Cluster
@@ -179,6 +180,10 @@ jobs:
         run: |
           # Sanitized name for artifact uploads
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
+          # Append overlay basenames to make artifact names unique per matrix entry
+          for ov in $(echo '${{ toJson(matrix.overlays) }}' | jq -r '.[]? // empty'); do
+            ARTIFACT_NAME="${ARTIFACT_NAME}-$(basename "$ov" .yaml)"
+          done
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
 
           OVERLAY_FLAGS=""
