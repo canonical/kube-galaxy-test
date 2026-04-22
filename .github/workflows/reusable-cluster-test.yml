@@ -6,7 +6,7 @@ on:
       manifests-json:
         description: >
           JSON array of manifest objects, e.g.
-          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml", "overlays": [], "provider-image": "ubuntu:24.04"}]
+          [{"manifest-file": "manifests/baseline-k8s-1.35.yaml", "overlays": ["manifests/overlays/ubuntu/ubuntu-24.04.yaml"]}]
         type: string
         required: true
       manifests-repo:
@@ -165,7 +165,7 @@ jobs:
         run: |
           echo "## Test Configuration"
           echo "- **Manifest**: ${{ matrix.manifest-file }}"
-          echo "- **Provider image**: ${{ matrix.provider-image || 'default' }}"
+          echo "- **Overlays**: ${{ toJson(matrix.overlays) }}"
           echo "- **Runner**: ${{ inputs.runs-on }}"
           echo "- **Timeout**: ${{ inputs.timeout-minutes }} minutes"
 
@@ -180,9 +180,10 @@ jobs:
         run: |
           # Sanitized name for artifact uploads
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
-          if [ -n "${{ matrix.provider-image }}" ]; then
-            ARTIFACT_NAME="${ARTIFACT_NAME}-$(echo '${{ matrix.provider-image }}' | tr ':/' '--')"
-          fi
+          # Append overlay basenames to make artifact names unique per matrix entry
+          for ov in $(echo '${{ toJson(matrix.overlays) }}' | jq -r '.[]? // empty'); do
+            ARTIFACT_NAME="${ARTIFACT_NAME}-$(basename "$ov" .yaml)"
+          done
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
 
           OVERLAY_FLAGS=""
@@ -190,12 +191,7 @@ jobs:
             OVERLAY_FLAGS="$OVERLAY_FLAGS --overlay $ov"
           done
 
-          PROVIDER_IMAGE_FLAG=""
-          if [ -n "${{ matrix.provider-image }}" ]; then
-            PROVIDER_IMAGE_FLAG="--provider-image ${{ matrix.provider-image }}"
-          fi
-
-          kube-galaxy setup ${{ matrix.manifest-file }} $OVERLAY_FLAGS $PROVIDER_IMAGE_FLAG
+          kube-galaxy setup ${{ matrix.manifest-file }} $OVERLAY_FLAGS
 
       - name: Verify Cluster Health
         shell: bash
