@@ -106,16 +106,24 @@ if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
   echo ""
   echo "Controller endpoint: $CTRL_ENDPOINT"
 
-  # Test raw connectivity through proxy before juju
+  # Test BOTH squid IPs to rule out squid-specific issues
   echo ""
-  echo "=== Testing proxy connectivity to controller ==="
-  echo "curl CONNECT $CTRL_IP:$CTRL_PORT through proxy..."
-  if curl -v --max-time 15 --proxy http://egress.ps7.internal:3128 \
-       --connect-timeout 10 "https://$CTRL_IP:$CTRL_PORT/" 2>&1 | head -30; then
-    echo "  (connection established, response above)"  
-  else
-    echo "  curl exit code: $?"
-  fi
+  echo "=== Testing BOTH squid backends to controller ==="
+  for SQUID in 10.151.41.5 10.151.41.6 10.151.41.7; do
+    echo ""
+    echo "--- Testing via squid $SQUID ---"
+    if curl -s --max-time 8 --proxy "http://$SQUID:3128" \
+         --connect-timeout 5 "https://$CTRL_IP:$CTRL_PORT/" -o /dev/null -w "HTTP %{http_code}, time %{time_total}s\n" 2>&1; then
+      echo "  ✅ squid $SQUID: connection succeeded"
+    else
+      EXIT=$?
+      if [ $EXIT -eq 28 ]; then
+        echo "  ❌ squid $SQUID: TIMEOUT (exit $EXIT)"
+      else
+        echo "  ❌ squid $SQUID: failed (exit $EXIT)"
+      fi
+    fi
+  done
 
   # What does juju see? (runs after proxy is configured)
   echo ""

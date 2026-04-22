@@ -146,6 +146,9 @@ jobs:
           echo ""
           echo "--- Test juju status from prepare job ---"
           timeout 30 juju status --format json 2>&1 | head -20 || echo "juju status failed"
+          echo "--- see if there are rules on the controller VM ---"
+          juju ssh 0 -- sudo iptables -L -n 2>&1 | head -30
+          juju ssh 0 -- sudo ss -tlnp 2>&1
 
       - name: Upload Juju client state
         uses: actions/upload-artifact@v7
