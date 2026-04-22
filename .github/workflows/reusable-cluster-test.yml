@@ -243,6 +243,14 @@ jobs:
             "https://${CTRL_ENDPOINT}/api" -k 2>&1 | tail -30 || echo "curl CONNECT test failed (exit $?)"
           echo ""
 
+          # Test SSH connectivity to controller (uses ProxyCommand from ~/.ssh/config)
+          echo "=== Testing SSH to controller ==="
+          echo "SSH config:"
+          cat ~/.ssh/config 2>/dev/null || echo "No SSH config found"
+          CTRL_HOST="${CTRL_ENDPOINT%:*}"
+          timeout 15 ssh -v -o ConnectTimeout=10 ubuntu@"$CTRL_HOST" "echo 'SSH OK'; ss -tlnp | grep 17070 || echo 'Port 17070 not listening'" 2>&1 | tail -30 || echo "SSH test failed (exit $?)"
+          echo ""
+
           # Stop tcpdump and show summary
           sleep 2
           sudo kill $TCPDUMP_PID 2>/dev/null || true
