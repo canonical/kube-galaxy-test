@@ -229,9 +229,18 @@ jobs:
           TCPDUMP_PID=$!
           sleep 1
 
-          # Test juju status directly from shell (with proxy)
-          echo "=== Direct juju status test (timeout 10s) ==="
-          timeout 10 juju status --format json 2>&1 | head -50 || echo "juju status failed (exit $?)"
+          # Test juju status directly with verbose output
+          echo "=== Direct juju status test (timeout 30s, verbose) ==="
+          timeout 30 juju status --debug --format json 2>&1 | tail -100 || echo "juju status failed (exit $?)"
+          echo ""
+
+          # Also test basic controller connectivity via curl
+          echo "=== Testing CONNECT through proxy to controller ==="
+          CTRL_ENDPOINT=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "${JUJU_DATA:-$HOME/.local/share/juju}/controllers.yaml" | head -1)
+          echo "Controller endpoint: $CTRL_ENDPOINT"
+          # Use curl to test HTTP CONNECT tunnel to controller
+          curl -vvv --proxy "http://egress.ps7.internal:3128" --connect-timeout 10 \
+            "https://${CTRL_ENDPOINT}/api" -k 2>&1 | tail -30 || echo "curl CONNECT test failed (exit $?)"
           echo ""
 
           # Stop tcpdump and show summary
