@@ -53,7 +53,7 @@ jobs:
         run: |
           # PS7 runners have no direct route to vSphere — traffic must go
           # through squid proxy. HTTPS_PROXY is respected by Go clients
-          # (govmomi, juju) for HTTPS connections.
+          # (govmomi, juju) for HTTPS/TLS connections.
           echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
           echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
           echo "Configured HTTPS_PROXY for vSphere access"

@@ -218,6 +218,30 @@ jobs:
           cat "${JUJU_DATA:-$HOME/.local/share/juju}/controllers.yaml" 2>/dev/null | head -20 || echo "No controllers.yaml"
           echo ""
 
+          # Get controller IP for tcpdump filter
+          CTRL_IP=$(grep -oP '\d+\.\d+\.\d+\.\d+' "${JUJU_DATA:-$HOME/.local/share/juju}/controllers.yaml" | head -1)
+          echo "Controller IP: ${CTRL_IP:-unknown}"
+
+          # Start tcpdump in background to capture traffic
+          echo "=== Starting tcpdump (10s capture) ==="
+          PCAP_FILE="/tmp/juju-debug.pcap"
+          sudo tcpdump -i any -w "$PCAP_FILE" "host ${CTRL_IP:-10.246.0.0/16} or port 3128" &
+          TCPDUMP_PID=$!
+          sleep 1
+
+          # Test juju status directly from shell (with proxy)
+          echo "=== Direct juju status test (timeout 10s) ==="
+          timeout 10 juju status --format json 2>&1 | head -50 || echo "juju status failed (exit $?)"
+          echo ""
+
+          # Stop tcpdump and show summary
+          sleep 2
+          sudo kill $TCPDUMP_PID 2>/dev/null || true
+          sleep 1
+          echo "=== tcpdump summary ==="
+          sudo tcpdump -r "$PCAP_FILE" -n 2>/dev/null | head -30 || echo "No packets captured"
+          echo ""
+
           # Sanitized name for artifact uploads
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
