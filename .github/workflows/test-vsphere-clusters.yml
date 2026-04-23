@@ -154,6 +154,7 @@ jobs:
         with:
           sparse-checkout: |
             manifests
+            components
             .github
 
       - name: Setup kubectl
