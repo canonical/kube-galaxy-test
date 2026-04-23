@@ -11,3 +11,9 @@ provider:
   nodes:
     control-plane: 1
     worker: 1
+
+# Disable local registry mirror — VMs can't reach the orchestrator's localhost.
+# Images will be pulled from public registries (ghcr.io, registry.k8s.io).
+artifact:
+  registry:
+    enabled: false
