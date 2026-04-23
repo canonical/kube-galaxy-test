@@ -39,6 +39,28 @@ if [ -d "${PRE_SETUP_ARTIFACT_DIR:-}" ] && [ "$(ls -A "$PRE_SETUP_ARTIFACT_DIR")
   echo "USER=$(whoami)"
   echo "JUJU_DATA=$JUJU_DATA"
   
+  # Compare config checksums for debugging transfer issues
+  echo ""
+  echo "=== Config file checksums (for comparison with prepare job) ==="
+  for f in accounts.yaml controllers.yaml credentials.yaml models.yaml; do
+    if [ -f "$JUJU_DATA_DIR/$f" ]; then
+      MD5=$(md5sum "$JUJU_DATA_DIR/$f" | awk '{print $1}')
+      SIZE=$(stat -c%s "$JUJU_DATA_DIR/$f")
+      echo "  $f: $MD5 ($SIZE bytes)"
+    fi
+  done
+  
+  echo ""
+  echo "=== cookies/ directory ==="
+  ls -la "$JUJU_DATA_DIR/cookies/" 2>/dev/null || echo "  (no cookies dir)"
+  for f in "$JUJU_DATA_DIR/cookies/"*.json; do
+    [ -f "$f" ] && echo "  $(basename "$f"): $(wc -c < "$f") bytes" || true
+  done
+  
+  echo ""
+  echo "=== accounts.yaml content ==="
+  cat "$JUJU_DATA_DIR/accounts.yaml" 2>/dev/null || echo "  (not found)"
+  
   # Check if controllers.yaml is valid YAML
   echo ""
   echo "=== Validating controllers.yaml ==="

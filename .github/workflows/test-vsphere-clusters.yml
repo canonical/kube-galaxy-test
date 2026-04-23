@@ -146,22 +146,30 @@ jobs:
           CTRL_PORT="${CTRL#*:}"
           echo "Controller: $CTRL"
           echo ""
+          echo "--- Config checksums BEFORE upload (for comparison) ---"
+          for f in accounts.yaml controllers.yaml credentials.yaml models.yaml; do
+            if [ -f ~/.local/share/juju/$f ]; then
+              MD5=$(md5sum ~/.local/share/juju/$f | awk '{print $1}')
+              SIZE=$(stat -c%s ~/.local/share/juju/$f)
+              echo "  $f: $MD5 ($SIZE bytes)"
+            fi
+          done
+          echo ""
+          echo "--- cookies/ directory ---"
+          ls -la ~/.local/share/juju/cookies/ 2>/dev/null || echo "  (no cookies)"
+          for f in ~/.local/share/juju/cookies/*.json; do
+            [ -f "$f" ] && echo "  $(basename "$f"): $(wc -c < "$f") bytes" || true
+          done
+          echo ""
+          echo "--- accounts.yaml content ---"
+          cat ~/.local/share/juju/accounts.yaml 2>/dev/null || echo "  (not found)"
+          echo ""
           echo "--- Test juju status from prepare job ---"
           timeout 30 juju status --format json 2>&1 | head -20 || echo "juju status failed"
           echo ""
           echo "--- Testing controller stability over time ---"
           echo "Waiting 60s to see if controller stays reachable..."
           sleep 60
-          echo "Testing connectivity after 60s delay:"
-          for SQUID in 10.151.41.5 10.151.41.6 10.151.41.7; do
-            if curl -s --max-time 8 --proxy "http://$SQUID:3128" \
-                 --connect-timeout 5 "https://$CTRL_IP:$CTRL_PORT/" -o /dev/null -w "squid $SQUID: HTTP %{http_code}, time %{time_total}s\n" 2>&1; then
-              echo "  ✅ squid $SQUID: reachable"
-            else
-              echo "  ❌ squid $SQUID: TIMEOUT/FAILED"
-            fi
-          done
-          echo ""
           echo "Testing juju status after delay:"
           timeout 30 juju status --format json 2>&1 | head -5 || echo "juju status failed after delay"
 
