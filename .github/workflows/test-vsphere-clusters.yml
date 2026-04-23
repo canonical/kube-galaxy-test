@@ -179,6 +179,19 @@ jobs:
           echo ""
           echo "Testing juju status after delay:"
           timeout 30 juju status --format json 2>&1 | head -5 || echo "juju status failed after delay"
+          echo ""
+          echo "--- Extended stability test (checking every 30s for 5 min) ---"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            echo ""
+            echo "Check $i/10 ($(( i * 30 ))s elapsed):"
+            sleep 30
+            if timeout 20 juju status --format json 2>&1 | head -2; then
+              echo "  ✅ Controller reachable"
+            else
+              echo "  ❌ Controller unreachable at $(( i * 30 ))s mark"
+              break
+            fi
+          done
 
       - name: Upload Juju client state
         uses: actions/upload-artifact@v7
