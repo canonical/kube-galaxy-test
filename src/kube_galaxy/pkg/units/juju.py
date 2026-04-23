@@ -284,7 +284,9 @@ class JujuUnit(Unit):
 
     def put(self, local: Path, remote: str) -> None:
         self.run(["mkdir", "-p", str(Path(remote).parent)], check=True)
-        cmd = f"juju scp {local} root@{self.name}:{remote}"
+        # Use --proxy to route through the Juju controller instead of direct SSH
+        # (PS7 runners have no direct route to vSphere VMs)
+        cmd = f"juju scp --proxy {local} root@{self.name}:{remote}"
         result = subprocess.run(shlex.split(cmd), capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ComponentError(
@@ -294,7 +296,8 @@ class JujuUnit(Unit):
 
     def get(self, remote: str, local: Path) -> None:
         ensure_dir(local.parent)
-        cmd = f"juju scp root@{self._name}:{remote} {local}"
+        # Use --proxy to route through the Juju controller instead of direct SSH
+        cmd = f"juju scp --proxy root@{self._name}:{remote} {local}"
         result = subprocess.run(shlex.split(cmd), capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ComponentError(
