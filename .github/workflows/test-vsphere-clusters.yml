@@ -122,149 +122,81 @@ jobs:
           juju switch "${MODEL_NAME}"
           echo "name=${MODEL_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Debug working network config
+      - name: Verify bootstrap succeeded
         shell: bash
         run: |
-          echo "=== Network config that works after bootstrap ==="
-          echo "--- Runner identity ---"
+          echo "=== Bootstrap verification ==="
           echo "Runner IP: $(hostname -I | awk '{print $1}')"
-          echo "Hostname: $(hostname)"
           echo ""
-          echo "--- Squid backend ---"
-          echo "Squid DNS: $(getent hosts egress.ps7.internal)"
-          curl -s -o /dev/null -w "Squid backend: %{remote_ip}\n" --proxy http://egress.ps7.internal:3128 http://httpbin.org/ip 2>&1 || echo "  (test failed)"
+          echo "Controller endpoint:"
+          grep -oP '\d+\.\d+\.\d+\.\d+:\d+' ~/.local/share/juju/controllers.yaml | head -1
           echo ""
-          echo "--- Environment ---"
-          env | grep -iE 'proxy|http|https|no_proxy' | sort || echo "No proxy vars"
+          echo "Controller machine status:"
+          juju machines -m controller --format yaml 2>&1 | head -20 || echo "  (failed)"
           echo ""
-          echo "--- SSH config ---"
-          cat ~/.ssh/config 2>/dev/null || echo "No SSH config"
-          echo ""
-          echo "--- Controller endpoint ---"
-          CTRL=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' ~/.local/share/juju/controllers.yaml | head -1)
-          CTRL_IP="${CTRL%:*}"
-          CTRL_PORT="${CTRL#*:}"
-          echo "Controller: $CTRL"
-          echo ""
-          echo "--- Config checksums BEFORE upload (for comparison) ---"
-          for f in accounts.yaml controllers.yaml credentials.yaml models.yaml; do
-            if [ -f ~/.local/share/juju/$f ]; then
-              MD5=$(md5sum ~/.local/share/juju/$f | awk '{print $1}')
-              SIZE=$(stat -c%s ~/.local/share/juju/$f)
-              echo "  $f: $MD5 ($SIZE bytes)"
-            fi
-          done
-          echo ""
-          echo "--- cookies/ directory ---"
-          ls -la ~/.local/share/juju/cookies/ 2>/dev/null || echo "  (no cookies)"
-          for f in ~/.local/share/juju/cookies/*.json; do
-            [ -f "$f" ] && echo "  $(basename "$f"): $(wc -c < "$f") bytes" || true
-          done
-          echo ""
-          echo "--- accounts.yaml content ---"
-          cat ~/.local/share/juju/accounts.yaml 2>/dev/null || echo "  (not found)"
-          echo ""
-          echo "--- Controller machine status ---"
-          juju machines -m controller --format yaml 2>&1 | head -30 || echo "  (failed)"
-          echo ""
-          echo "--- Test juju status from prepare job ---"
-          timeout 30 juju status --format json 2>&1 | head -20 || echo "juju status failed"
-          echo ""
-          echo "--- Testing controller stability over time ---"
-          echo "Waiting 60s to see if controller stays reachable..."
-          sleep 60
-          echo ""
-          echo "--- Controller machine status AFTER delay ---"
-          juju machines -m controller --format yaml 2>&1 | head -30 || echo "  (failed)"
-          echo ""
-          echo "Testing juju status after delay:"
-          timeout 30 juju status --format json 2>&1 | head -5 || echo "juju status failed after delay"
-          echo ""
-          echo "--- Fresh TCP connection test (after 30s idle) ---"
-          echo "Sleeping 30s with NO juju activity..."
-          sleep 30
-          echo "Testing fresh TCP connections via nc through each squid:"
-          for SQUID in 10.151.41.5 10.151.41.6 10.151.41.7; do
-            echo -n "  squid $SQUID: "
-            if timeout 10 nc -X connect -x "$SQUID:3128" "$CTRL_IP" "$CTRL_PORT" < /dev/null 2>&1 | head -1; then
-              echo "✅ TCP connected"
-            else
-              echo "❌ TCP failed/timeout"
-            fi
-          done
-          echo ""
-          echo "--- Final juju check after idle ---"
-          timeout 20 juju status --format json 2>&1 | head -3 || echo "juju status failed"
+          echo "Juju status:"
+          timeout 30 juju status --format json 2>&1 | head -10 || echo "juju status failed"
 
+      # Run kube-galaxy in the SAME job to maintain juju's persistent connection.
+      # NOTE: juju uses HTTP keepalive connections established during bootstrap.
+      # Fresh connections through squid to the controller CANNOT be established,
+      # so we must run kube-galaxy here, not in a separate job/runner.
+      - name: Install kube-galaxy
+        run: |
+          uv tool install "git+https://github.com/${{ github.repository }}.git@${{ github.head_ref || github.ref_name }}"
+          kube-galaxy --version
+
+      - name: Checkout manifests
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            manifests
+            .github
+
+      - name: Run kube-galaxy setup
+        env:
+          GITHUB_ACTOR: cdkbot
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+          JUJU_DATA: ~/.local/share/juju
+        run: |
+          echo "=== Environment ==="
+          echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
+          echo "JUJU_DATA=${JUJU_DATA:-<unset>}"
+          juju status --format json | head -5
+          echo ""
+          kube-galaxy setup manifests/smoketest.yaml --overlay manifests/overlays/vsphere-juju.yaml
+
+      - name: Verify cluster health
+        run: |
+          kube-galaxy status --wait --timeout 300
+
+      # Upload artifact for debugging before cleanup
       - name: Upload Juju client state
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: juju-client-state
           path: ~/.local/share/juju/
           retention-days: 1
 
-  # -------------------------------------------------------------------
-  # Run the actual cluster test via the reusable workflow
-  # -------------------------------------------------------------------
-  run-tests:
-    name: Run cluster tests on vSphere
-    needs: prepare
-    uses: ./.github/workflows/reusable-cluster-test.yml
-    with:
-      manifests-repo: ${{ github.repository }}
-      manifests-ref: ${{ github.head_ref || github.ref_name }}
-      kube-galaxy-ref: ${{ github.head_ref || github.ref_name }}
-      manifests-json: >-
-        [{"manifest-file":"manifests/smoketest.yaml","overlays":["manifests/overlays/vsphere-juju.yaml"]}]
-      runs-on: "self-hosted-linux-amd64-noble-private-endpoint-medium"
-      timeout-minutes: 120
-      pre-setup-artifact: "juju-client-state"
-      pre-setup-script: ".github/scripts/setup-juju-provider.sh"
-      create-issues-on-failure: ${{ github.event_name != 'pull_request' }}
-    secrets:
-      REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-
-  # -------------------------------------------------------------------
-  # Teardown: destroy the Juju model (always runs)
-  # -------------------------------------------------------------------
-  teardown:
-    name: Cleanup vSphere model
-    needs: [prepare, run-tests]
-    runs-on: [self-hosted-linux-amd64-noble-private-endpoint-medium]
-    if: always()
-    steps:
-      - name: Checkout (for setup script)
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github/scripts
-
-      - name: Download Juju client state
-        uses: actions/download-artifact@v4
-        with:
-          name: juju-client-state
-          path: ${{ runner.temp }}/pre-setup/
-
-      - name: Restore Juju + proxy
-        shell: bash
-        env:
-          PRE_SETUP_ARTIFACT_DIR: ${{ runner.temp }}/pre-setup
-        run: |
-          chmod +x .github/scripts/setup-juju-provider.sh
-          .github/scripts/setup-juju-provider.sh
-
+      # -------------------------------------------------------------------
+      # Teardown (inline) - must run in same job to use persistent connection
+      # NOTE: juju uses HTTP keepalive connections established during bootstrap.
+      # Fresh connections through squid to the controller CANNOT be established,
+      # so cleanup must run here, not in a separate job/runner.
+      # -------------------------------------------------------------------
       - name: Destroy test model
+        if: always()
         shell: bash
         run: |
-          MODEL="${{ needs.prepare.outputs.model-name }}"
+          MODEL="${{ steps.model.outputs.name }}"
           if [ -z "$MODEL" ]; then
-            echo "No model name found — skipping teardown"
+            echo "No model name found — skipping model teardown"
             exit 0
           fi
 
           # On success + cleanup-on-success=false, skip
-          if [ "${{ needs.run-tests.result }}" = "success" ] && [ "${{ inputs.cleanup-on-success }}" = "false" ]; then
+          if [ "${{ job.status }}" = "success" ] && [ "${{ inputs.cleanup-on-success }}" = "false" ]; then
             echo "Tests passed and cleanup-on-success is false — keeping model '${MODEL}'"
             exit 0
           fi
@@ -273,6 +205,7 @@ jobs:
           juju destroy-model "${MODEL}" --force --no-wait --destroy-storage -y 2>/dev/null || true
 
       - name: Destroy controller
+        if: always()
         shell: bash
         run: |
           CONTROLLER=$(juju show-controller --format json 2>/dev/null | python3 -c "import sys,json; print(list(json.load(sys.stdin).keys())[0])" 2>/dev/null || true)
