@@ -184,6 +184,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Run kube-galaxy setup
+        id: setup
         env:
           GITHUB_ACTOR: cdkbot
           GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
@@ -196,6 +197,70 @@ jobs:
           juju status --format json | head -5
           echo ""
           kube-galaxy setup manifests/smoketest.yaml --overlay manifests/overlays/vsphere-juju.yaml
+
+      - name: Debug failed tasks
+        if: failure() && steps.setup.outcome == 'failure'
+        run: |
+          export JUJU_DATA="$HOME/.local/share/juju"
+          echo "=== Juju Status ==="
+          juju status --format yaml || true
+          echo ""
+
+          echo "=== Recent Failed Operations ==="
+          # Get the last 20 operations and show details for failed ones
+          juju operations --format json 2>/dev/null | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              for op in data[:20]:
+                  if op.get('status') == 'failed':
+                      print(f\"Operation {op['id']}: {op.get('summary', 'no summary')} - {op['status']}\")
+          except: pass
+          " || true
+
+          echo ""
+          echo "=== Failed Task Details ==="
+          # Show details for recent failed tasks
+          for task_id in $(juju operations --format json 2>/dev/null | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              for op in data[:10]:
+                  if op.get('status') == 'failed':
+                      # Get task IDs from the operation
+                      for task in op.get('tasks', []):
+                          if task.get('status') == 'failed':
+                              print(task['id'])
+          except: pass
+          " 2>/dev/null); do
+            echo "--- Task $task_id ---"
+            juju show-task "$task_id" 2>/dev/null || true
+            echo ""
+          done
+
+          echo "=== VM Service Status ==="
+          for unit in $(juju status --format json | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              for app, info in data.get('applications', {}).items():
+                  for unit_name in info.get('units', {}).keys():
+                      print(unit_name)
+          except: pass
+          " 2>/dev/null); do
+            echo "--- $unit ---"
+            juju exec --unit "$unit" -- bash -c '
+              echo "containerd: $(systemctl is-active containerd 2>/dev/null || echo not-found)"
+              echo "kubelet: $(systemctl is-active kubelet 2>/dev/null || echo not-found)"
+              echo ""
+              echo "containerd logs (last 20):"
+              journalctl -u containerd --no-pager -n 20 2>/dev/null || true
+              echo ""
+              echo "kubelet logs (last 20):"
+              journalctl -u kubelet --no-pager -n 20 2>/dev/null || true
+            ' 2>/dev/null || true
+            echo ""
+          done
 
       - name: Verify cluster health
         run: |
