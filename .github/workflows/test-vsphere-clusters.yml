@@ -16,10 +16,12 @@ on:
     paths:
       - 'src/**'
       - 'manifests/*.yaml'
+      - 'manifests/overlays/vsphere-juju.yaml'
       - 'components/**'
       - 'tests/**'
-      - '.github/workflows/test-baseline-clusters.yml'
+      - '.github/workflows/test-vsphere-clusters.yml'
       - '.github/workflows/reusable-cluster-test.yml'
+      - '.github/scripts/**'
       - 'pyproject.toml'
   workflow_dispatch:
     inputs:
