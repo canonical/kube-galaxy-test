@@ -11,8 +11,9 @@ import time
 from functools import cached_property
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
-from kube_galaxy.pkg.literals import Ports, Timeouts
+from kube_galaxy.pkg.literals import Ports, SystemPaths, Timeouts
 from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
@@ -245,6 +246,41 @@ class JujuUnit(Unit):
     ) -> RunResult:
         # Juju machines run as root; privileged flag is intentionally ignored
         return self._juju_exec(cmd, check=check, env=env, timeout=timeout)
+
+    def download(self, url: str, dest: str) -> None:
+        """Push a file from the orchestrator to the unit via juju scp.
+
+        For Juju units, we can't use curl because the VMs typically cannot
+        reach the orchestrator's artifact server. Instead, we extract the
+        local path from the URL and use ``juju scp`` to push the file.
+
+        Supports:
+        - ``file://`` URLs pointing to local files
+        - Artifact server URLs (``http://kube-galaxy.orchestrator:...``)
+
+        Args:
+            url: URL to "download" (actually pushed via scp)
+            dest: Destination path on the unit
+        """
+        parsed = urlparse(url)
+
+        if parsed.scheme == "file":
+            # file:///opt/kube-galaxy/... -> /opt/kube-galaxy/...
+            local_path = Path(parsed.path)
+        elif parsed.scheme in ("http", "https"):
+            # http://kube-galaxy.orchestrator:8765/opt/kube-galaxy/... -> /opt/kube-galaxy/...
+            # The URL path IS the local filesystem path on the orchestrator
+            local_path = SystemPaths.staging_root() / parsed.path.lstrip("/")
+        else:
+            raise ComponentError(f"Unsupported URL scheme for JujuUnit.download: {url}")
+
+        if not local_path.exists():
+            raise ComponentError(
+                f"Cannot push file to unit: local path '{local_path}' does not exist "
+                f"(derived from URL: {url})"
+            )
+
+        self.put(local_path, dest)
 
     def put(self, local: Path, remote: str) -> None:
         self.run(["mkdir", "-p", str(Path(remote).parent)], check=True)
