@@ -153,6 +153,10 @@ if [ -f "$JUJU_DATA_DIR/controllers.yaml" ]; then
   juju controllers --format yaml 2>&1 || echo "  (command failed)"
 
   echo ""
+  echo "=== Controller machine status ==="
+  timeout 30 juju machines -m controller --format yaml 2>&1 | head -40 || echo "  (command failed)"
+
+  echo ""
   echo "=== juju show-controller (detailed view) ==="
   timeout 60 juju show-controller --format yaml 2>&1 || echo "  (command failed)"
 
