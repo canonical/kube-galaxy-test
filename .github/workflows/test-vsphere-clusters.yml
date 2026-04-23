@@ -141,6 +141,9 @@ jobs:
       # NOTE: juju uses HTTP keepalive connections established during bootstrap.
       # Fresh connections through squid to the controller CANNOT be established,
       # so we must run kube-galaxy here, not in a separate job/runner.
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7.2.1
+
       - name: Install kube-galaxy
         run: |
           uv tool install "git+https://github.com/${{ github.repository }}.git@${{ github.head_ref || github.ref_name }}"
