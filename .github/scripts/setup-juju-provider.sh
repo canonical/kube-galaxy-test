@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Setup script for Juju-based providers (vSphere, etc.)
+# Setup script for Juju-based providers (vSphere, etc.) 
 #
 # Called by the reusable cluster-test workflow via `pre-setup-script`.
 # Expects PRE_SETUP_ARTIFACT_DIR to point to the downloaded artifact
