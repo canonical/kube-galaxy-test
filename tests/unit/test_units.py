@@ -1022,7 +1022,8 @@ def test_juju_unit_open_tunnel_spawns_process(monkeypatch):
 
     assert len(spawned) == 1
     cmd = spawned[0]
-    assert cmd[:3] == ["juju", "ssh", "--no-host-key-checks"]
+    # --proxy routes through the Juju controller for restricted networks
+    assert cmd[:4] == ["juju", "ssh", "--proxy", "--no-host-key-checks"]
     assert "myapp/0" in cmd
     assert "-N" in cmd
     assert "-R" in cmd
