@@ -160,8 +160,9 @@ jobs:
         env:
           GITHUB_ACTOR: cdkbot
           GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
-          JUJU_DATA: ~/.local/share/juju
         run: |
+          # Set JUJU_DATA explicitly (~ doesn't expand in env block)
+          export JUJU_DATA="$HOME/.local/share/juju"
           echo "=== Environment ==="
           echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
           echo "JUJU_DATA=${JUJU_DATA:-<unset>}"
@@ -171,6 +172,7 @@ jobs:
 
       - name: Verify cluster health
         run: |
+          export JUJU_DATA="$HOME/.local/share/juju"
           kube-galaxy status --wait --timeout 300
 
       # Upload artifact for debugging before cleanup
