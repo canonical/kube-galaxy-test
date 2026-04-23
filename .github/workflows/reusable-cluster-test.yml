@@ -128,7 +128,7 @@ jobs:
         run: go install github.com/canonical/spread/cmd/spread@latest
 
       - name: Setup LXD
-        uses: canonical/setup-lxd@d492474f6c8ceed1b716bb34c8f575a428871c70 # main
+        uses: canonical/setup-lxd@a517a5346a08c624d81953578813a4fc0fe46e0b # main
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@15650b3ad78fff148532a140b8a4c821796b2d7b # v5
