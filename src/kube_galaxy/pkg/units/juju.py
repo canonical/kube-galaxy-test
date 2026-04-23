@@ -160,7 +160,9 @@ class JujuUnit(Unit):
             return  # already alive
         if not self._tunnel_ports:
             return
-        cmd = ["juju", "ssh", "--no-host-key-checks", self._name, "-N"]
+        # --proxy routes SSH through the Juju controller instead of direct SSH,
+        # required when the orchestrator has no direct route to VM IPs (e.g., vSphere).
+        cmd = ["juju", "ssh", "--proxy", "--no-host-key-checks", self._name, "-N"]
         for port in self._tunnel_ports:
             cmd += ["-R", f"{port}:localhost:{port}"]
         self._tunnel = subprocess.Popen(cmd)
