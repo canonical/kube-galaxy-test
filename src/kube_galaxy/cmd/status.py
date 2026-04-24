@@ -8,6 +8,7 @@ import typer
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.units import Unit
+from kube_galaxy.pkg.units.juju import JujuUnit
 from kube_galaxy.pkg.units.provider import provider_factory
 from kube_galaxy.pkg.utils.client import (
     get_cluster_info,
@@ -31,14 +32,19 @@ def status(manifest_path: str, wait: bool = False, timeout: int = 300) -> None:
     # Locate the orchestrator unit via the manifest's provider (no new provisioning)
     provider = provider_factory(manifest)
     lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
+    provider.open_tunnels()
 
-    _print_dependency_status()
-    _print_active_manifest(manifest_path)
-    _print_cluster_context(lead_unit)
+    try:
+        _print_dependency_status()
+        _print_active_manifest(manifest_path)
+        _print_cluster_context(lead_unit)
+        _print_tunnel_status(provider.locate_all())
 
-    if wait:
-        _verify_cluster_health(lead_unit, timeout)
-        success("Cluster is healthy")
+        if wait:
+            _verify_cluster_health(lead_unit, timeout)
+            success("Cluster is healthy")
+    finally:
+        provider.stop_tunnels()
 
 
 def _print_dependency_status() -> None:
@@ -70,6 +76,18 @@ def _print_cluster_context(unit: Unit) -> None:
                     info(f"    {line}")
     except ClusterError:
         info("Active Cluster: error checking")
+
+
+def _print_tunnel_status(units: list[Unit]) -> None:
+    """Print SSH reverse tunnel health for Juju units; no-op for other unit types."""
+    juju_units = [u for u in units if isinstance(u, JujuUnit)]
+    if not juju_units:
+        return
+    info("")
+    info("SSH Tunnel Status:")
+    for unit in juju_units:
+        status_str = "\u2713 alive" if unit.tunnel_alive() else "\u2717 dead"
+        info(f"    {unit.name}: {status_str}")
 
 
 def _verify_cluster_health(unit: Unit, timeout: int) -> None:
