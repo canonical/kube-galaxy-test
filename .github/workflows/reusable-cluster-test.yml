@@ -207,58 +207,6 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          # Debug: verify proxy and juju environment
-          echo "=== Environment check ==="
-          echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
-          echo "JUJU_DATA=${JUJU_DATA:-<unset>}"
-          which juju || echo "juju not in PATH"
-          juju version || echo "juju version failed"
-          echo ""
-          echo "=== Controller info ==="
-          cat "${JUJU_DATA:-$HOME/.local/share/juju}/controllers.yaml" 2>/dev/null | head -20 || echo "No controllers.yaml"
-          echo ""
-
-          # Get controller IP for tcpdump filter
-          CTRL_IP=$(grep -oP '\d+\.\d+\.\d+\.\d+' "${JUJU_DATA:-$HOME/.local/share/juju}/controllers.yaml" | head -1)
-          echo "Controller IP: ${CTRL_IP:-unknown}"
-
-          # Start tcpdump in background to capture traffic
-          echo "=== Starting tcpdump (10s capture) ==="
-          PCAP_FILE="/tmp/juju-debug.pcap"
-          sudo tcpdump -i any -w "$PCAP_FILE" "host ${CTRL_IP:-10.246.0.0/16} or port 3128" &
-          TCPDUMP_PID=$!
-          sleep 1
-
-          # Test juju status directly with verbose output
-          echo "=== Direct juju status test (timeout 30s, verbose) ==="
-          timeout 30 juju status --debug --format json 2>&1 | tail -100 || echo "juju status failed (exit $?)"
-          echo ""
-
-          # Also test basic controller connectivity via curl
-          echo "=== Testing CONNECT through proxy to controller ==="
-          CTRL_ENDPOINT=$(grep -oP '\d+\.\d+\.\d+\.\d+:\d+' "${JUJU_DATA:-$HOME/.local/share/juju}/controllers.yaml" | head -1)
-          echo "Controller endpoint: $CTRL_ENDPOINT"
-          # Use curl to test HTTP CONNECT tunnel to controller
-          curl -vvv --proxy "http://egress.ps7.internal:3128" --connect-timeout 10 \
-            "https://${CTRL_ENDPOINT}/api" -k 2>&1 | tail -30 || echo "curl CONNECT test failed (exit $?)"
-          echo ""
-
-          # Test SSH connectivity to controller (uses ProxyCommand from ~/.ssh/config)
-          echo "=== Testing SSH to controller ==="
-          echo "SSH config:"
-          cat ~/.ssh/config 2>/dev/null || echo "No SSH config found"
-          CTRL_HOST="${CTRL_ENDPOINT%:*}"
-          timeout 15 ssh -v -o ConnectTimeout=10 ubuntu@"$CTRL_HOST" "echo 'SSH OK'; ss -tlnp | grep 17070 || echo 'Port 17070 not listening'" 2>&1 | tail -30 || echo "SSH test failed (exit $?)"
-          echo ""
-
-          # Stop tcpdump and show summary
-          sleep 2
-          sudo kill $TCPDUMP_PID 2>/dev/null || true
-          sleep 1
-          echo "=== tcpdump summary ==="
-          sudo tcpdump -r "$PCAP_FILE" -n 2>/dev/null | head -30 || echo "No packets captured"
-          echo ""
-
           # Sanitized name for artifact uploads
           ARTIFACT_NAME=$(echo "${{ matrix.manifest-file }}" | sed 's/\//-/g')
           echo "artifact-name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
