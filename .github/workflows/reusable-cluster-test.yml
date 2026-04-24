@@ -39,20 +39,6 @@ on:
         description: "Runner labels for test jobs (e.g. 'ubuntu-latest' or 'self-hosted,linux,x64')"
         type: string
         default: "ubuntu-latest"
-      pre-setup-artifact:
-        description: >
-          Name of an artifact (uploaded by a preceding job) to download before
-          running the pre-setup script.  Downloaded to $RUNNER_TEMP/pre-setup/.
-        type: string
-        default: ""
-      pre-setup-script:
-        description: >
-          Path (relative to repo root) to a shell script executed after the
-          artifact is downloaded but before kube-galaxy setup.  Use this for
-          provider-specific setup (e.g. installing Juju, restoring client
-          state, configuring proxy).  Receives PRE_SETUP_ARTIFACT_DIR env var.
-        type: string
-        default: ""
     secrets:
       REPO_ACCESS_TOKEN:
         description: "GitHub token used as GITHUB_TOKEN for container registry auth and kube-galaxy setup"
@@ -173,22 +159,6 @@ jobs:
         run: |
           uv tool install "git+https://github.com/${{ inputs.kube-galaxy-repo }}.git@${{ inputs.kube-galaxy-ref }}"
           kube-galaxy --version
-
-      - name: Download pre-setup artifact
-        if: inputs.pre-setup-artifact != ''
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.pre-setup-artifact }}
-          path: ${{ runner.temp }}/pre-setup/
-
-      - name: Run pre-setup script
-        if: inputs.pre-setup-script != ''
-        shell: bash
-        env:
-          PRE_SETUP_ARTIFACT_DIR: ${{ runner.temp }}/pre-setup
-        run: |
-          chmod +x "${{ inputs.pre-setup-script }}"
-          "${{ inputs.pre-setup-script }}"
 
       - name: Display Cluster Configuration
         shell: bash
