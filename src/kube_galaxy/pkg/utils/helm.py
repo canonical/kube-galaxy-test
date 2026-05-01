@@ -62,7 +62,7 @@ def helm_install_from_repo(unit: Unit, release: str, chart: str) -> None:
     """
     try:
         info(f"Installing helm release: {release} (chart: {chart})")
-        helm(unit, "install", release, chart, check=True)
+        helm(unit, "install", release, chart, "--create-namespace", check=True)
         success(f"Helm release installed: {release}")
     except ShellError as exc:
         raise ClusterError(f"Failed to install helm release {release}: {exc}") from exc
@@ -85,27 +85,9 @@ def helm_install_from_archive(unit: Unit, release: str, chart_path: Path) -> Non
     try:
         info(f"Installing helm release: {release} (chart: {chart_path.name})")
         unit.put(chart_path, remote_chart)
-        helm(unit, "install", release, remote_chart, check=True)
+        helm(unit, "install", release, remote_chart, "--create-namespace", check=True)
         success(f"Helm release installed: {release}")
     except ShellError as exc:
         raise ClusterError(f"Failed to install helm release {release}: {exc}") from exc
     finally:
         unit.run(["rm", "-f", remote_chart], check=False)
-
-
-def helm_uninstall(unit: Unit, release: str) -> None:
-    """Uninstall a helm release.
-
-    Args:
-        unit: Unit on which to run helm
-        release: Release name to uninstall
-
-    Raises:
-        ClusterError: If helm uninstall fails
-    """
-    try:
-        info(f"Uninstalling helm release: {release}")
-        helm(unit, "uninstall", release, check=True)
-        success(f"Helm release uninstalled: {release}")
-    except ShellError as exc:
-        raise ClusterError(f"Failed to uninstall helm release {release}: {exc}") from exc
