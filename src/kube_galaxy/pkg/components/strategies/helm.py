@@ -25,18 +25,13 @@ if TYPE_CHECKING:
 def _download(comp: ComponentBase) -> None:
     """Download helm chart artifacts.
 
-    When helm_repo is True, adds the chart repository from repo.base_url so
-    the chart reference in source_format can be resolved during bootstrap.
-    Otherwise, downloads the chart archive (.tgz) from the rendered source_format URL.
+    When helm_repo is False, downloads the chart archive (.tgz) from the
+    rendered source_format URL. When helm_repo is True, nothing is done here;
+    the repo is added during bootstrap when the helm binary is available.
     """
     install_cfg = comp.config.installation
 
-    if install_cfg.helm_repo:
-        # source_format is a chart ref like "projectcalico/tigera-operator"
-        # repo name is the prefix before "/"
-        repo_name = install_cfg.source_format.split("/")[0]
-        helm_repo_add(comp.unit, repo_name, install_cfg.repo.base_url)
-    else:
+    if not install_cfg.helm_repo:
         comp.chart_path = _fetch_to_temp(comp)
 
 
@@ -44,15 +39,16 @@ def _download(comp: ComponentBase) -> None:
 def _bootstrap(comp: ComponentBase) -> None:
     """Install the helm chart.
 
-    Uses helm_install_from_repo when helm_repo is True (chart reference from
-    an added repository), otherwise installs from the locally downloaded
-    chart archive.
+    When helm_repo is True, adds the chart repository and installs the chart
+    by reference. Otherwise installs from the locally downloaded chart archive.
     """
     comp_name = comp.config.name
     install_cfg = comp.config.installation
 
     try:
         if install_cfg.helm_repo:
+            repo_name = install_cfg.source_format.split("/")[0]
+            helm_repo_add(comp.unit, repo_name, install_cfg.repo.base_url)
             helm_install_from_repo(comp.unit, comp_name, install_cfg.source_format)
         else:
             if not comp.chart_path or not comp.chart_path.exists():

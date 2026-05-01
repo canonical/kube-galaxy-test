@@ -86,6 +86,16 @@ components:
         base-url: https://github.com/kubernetes/kubernetes
       source-format: "https://dl.k8s.io/release/v{{ release }}/bin/linux/{{ arch }}/kubectl"
 
+  - name: helm
+    category: helm/helm
+    release: "4.1.4"
+    installation:
+      method: binary-archive
+      bin-path: "./linux-{{ arch }}/helm"
+      repo:
+        base-url: https://github.com/helm/helm
+      source-format: "https://get.helm.sh/helm-v{{ release }}-linux-{{ arch }}.tar.gz"
+
   # Kubernetes control plane components
   - name: kube-apiserver
     category: kubernetes/kubernetes
