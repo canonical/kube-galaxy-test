@@ -170,14 +170,23 @@ components:
       retag-format: "{{ mirror.base-url }}/coredns:{{ release }}"
 
   # Calico - required for cluster networking
-  - name: calico
+  - name: calico-crds
     category: projectcalico/calico
-    release:  &calico-version "3.30.6"
+    release: &calico-version "3.32.0"
     installation:
-      method: container-manifest
+      method: helm
       repo:
         base-url: https://github.com/projectcalico/calico
-      source-format: "https://api.github.com/repos/projectcalico/calico/contents/manifests/calico.yaml?ref=v{{ release }}"
+      source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/crd.projectcalico.org.v1-v{{ release }}.tgz"
+
+  - name: calico
+    category: projectcalico/calico
+    release: *calico-version
+    installation:
+      method: helm
+      repo:
+        base-url: https://github.com/projectcalico/calico
+      source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/tigera-operator-v{{ release }}.tgz"
 
   # CSI Driver Host Path - lightweight CSI for testing
   - name: csi-hostpath
