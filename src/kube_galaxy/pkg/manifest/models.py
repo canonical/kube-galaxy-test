@@ -67,7 +67,7 @@ class InstallConfig:
     retag_format: str  # e.g. format string for retagging container images to pull through registry
     bin_path: str  # Default path inside archive where binaries
     repo: RepoInfo = field(default_factory=RepoInfo)  # Repository for this install artefact
-    helm_repo: bool = False  # If True, source_format is a chart ref and repo.base_url is the helm repo URL
+    helm_repo: bool = False  # Use chart repo instead of archive
 
 
 @dataclass
