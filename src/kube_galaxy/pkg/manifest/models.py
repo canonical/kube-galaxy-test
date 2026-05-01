@@ -31,7 +31,7 @@ class InstallMethod(StrEnum):
     CONTAINER_IMAGE = "container-image"  # Container image from registry
     CONTAINER_IMAGE_ARCHIVE = "container-image-archive"  # Container image in tar archive
     CONTAINER_MANIFEST = "container-manifest"  # Kubernetes YAML manifest file
-    HELM = "helm" # Helm char from a chart repository
+    HELM = "helm"  # Helm chart from a chart repository
     NONE = "none"  # No installation, component has no installable artifacts
 
 
