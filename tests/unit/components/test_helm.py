@@ -1,6 +1,5 @@
 """Unit tests for helm install method."""
 
-from pathlib import Path
 
 import pytest
 
@@ -15,7 +14,8 @@ from kube_galaxy.pkg.manifest.models import (
     RepoInfo,
 )
 from kube_galaxy.pkg.units._base import RunResult
-from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
+from kube_galaxy.pkg.utils.errors import ComponentError
+from kube_galaxy.pkg.utils.shell import ShellError
 from tests.unit.components.conftest import MockUnit
 
 
@@ -51,7 +51,10 @@ def helm_archive_config():
     repo = RepoInfo(base_url="https://github.com/org/chart")
     install = InstallConfig(
         method=InstallMethod.HELM,
-        source_format="https://github.com/org/chart/releases/download/v{{ release }}/chart-{{ release }}.tgz",
+        source_format=(
+            "https://github.com/org/chart/releases/download/"
+            "v{{ release }}/chart-{{ release }}.tgz"
+        ),
         bin_path="",
         repo=repo,
         retag_format="",
@@ -210,15 +213,20 @@ metadata:
     # Rollout status calls
     rollout_calls = [c for c, _ in mock_unit.run_calls if "rollout" in c and "status" in c]
     assert len(rollout_calls) == 2
-    assert ["kubectl", "rollout", "status", "deployment/calico-controller", "-n", "kube-system"] in rollout_calls
-    assert ["kubectl", "rollout", "status", "daemonset/calico-node", "-n", "kube-system"] in rollout_calls
+    expected_deploy = [
+        "kubectl", "rollout", "status", "deployment/calico-controller", "-n", "kube-system",
+    ]
+    expected_ds = [
+        "kubectl", "rollout", "status", "daemonset/calico-node", "-n", "kube-system",
+    ]
+    assert expected_deploy in rollout_calls
+    assert expected_ds in rollout_calls
 
 
 def test_verify_raises_on_helm_failure(helm_repo_component, monkeypatch):
     """When helm get manifest fails, verify raises ComponentError."""
-    from kube_galaxy.pkg.utils.shell import ShellError
-
     mock_unit = MockUnit()
+
     # Make the helm call raise
     def exploding_run(cmd, **kwargs):
         raise ShellError(cmd, 1, "", "helm not found")
