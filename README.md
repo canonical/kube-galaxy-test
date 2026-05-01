@@ -177,6 +177,31 @@ installation:
   source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/tool-{{ release }}-linux-{{ arch }}.tar.gz"
 ```
 
+### Helm Installation Method
+
+Components can be installed via Helm charts using `method: helm`. The `helm`
+binary must be present as a `binary-archive` component earlier in the manifest.
+
+| Field         | Description                                                                 |
+|---------------|-----------------------------------------------------------------------------|
+| `method`      | Set to `helm`                                                               |
+| `helm-repo`   | `true` to use a chart repository; omit/`false` to download a `.tgz` archive |
+| `repo.base-url` | Chart repo URL (when `helm-repo: true`) or base URL for archive download  |
+| `source-format` | Chart reference `<repo>/<chart>` (repo mode) or URL to `.tgz` (archive mode) |
+
+**Example (archive):**
+
+```yaml
+- name: calico
+  category: projectcalico/calico
+  release: "3.32.0"
+  installation:
+    method: helm
+    repo:
+      base-url: https://github.com/projectcalico/calico
+    source-format: "{{ repo.base-url }}/releases/download/v{{ release }}/tigera-operator-v{{ release }}.tgz"
+```
+
 ### GitHub Actions Artifact Sources
 
 A component whose test suite is uploaded as a GitHub Actions artifact in a
