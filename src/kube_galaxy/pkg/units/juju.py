@@ -8,11 +8,13 @@ import json
 import shlex
 import subprocess
 import time
+from functools import cached_property
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
-from kube_galaxy.pkg.literals import Timeouts
-from kube_galaxy.pkg.manifest.models import NodeRole
+from kube_galaxy.pkg.literals import Ports, SystemPaths, Timeouts
+from kube_galaxy.pkg.manifest.models import NodeRole, NodesConfig
 from kube_galaxy.pkg.units._base import RunResult, Unit, UnitProvider
 from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.logging import info, warning
@@ -38,9 +40,27 @@ def print_dependency_status() -> None:
         )
 
 
-def _get_state(name: str = "", timeout: float = 10) -> dict[str, Any]:
+def _get_state(name: str = "", timeout: float = 30) -> dict[str, Any]:
     cmd = f"juju status {name} --format json"
-    result = run(shlex.split(cmd), check=False, capture_output=True, text=True, timeout=timeout)
+    try:
+        result = run(shlex.split(cmd), check=False, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        stdout_raw = exc.stdout or b""
+        stderr_raw = exc.stderr or b""
+        if isinstance(stdout_raw, bytes):
+            partial_out = stdout_raw.decode(errors="replace")
+        else:
+            partial_out = stdout_raw
+        if isinstance(stderr_raw, bytes):
+            partial_err = stderr_raw.decode(errors="replace")
+        else:
+            partial_err = stderr_raw
+        warning(f"juju status timed out after {timeout}s")
+        if partial_out:
+            warning(f"  partial stdout: {partial_out[:500]}")
+        if partial_err:
+            warning(f"  partial stderr: {partial_err[:500]}")
+        return {}
     if result.returncode == 0:
         parsed = None
         try:
@@ -86,6 +106,18 @@ def _get_workload_status(unit: str, timeout: float = 10) -> tuple[str, str] | No
     return None
 
 
+def _expose(unit: str) -> None:
+    """Expose the Juju unit's application via 'juju expose'."""
+    app = unit.split("/")[0]
+    run(["juju", "expose", app], check=True)
+
+
+def _open_ports(unit: Unit, *ports: int) -> None:
+    """Open the given ports on the Juju machine via 'juju open-port'."""
+    for port in ports:
+        unit.run(["open-port", str(port)], check=True)
+
+
 class JujuUnit(Unit):
     """Unit backed by a Juju machine.
 
@@ -95,9 +127,13 @@ class JujuUnit(Unit):
 
     JUJU_PATIENT_TIMEOUT = 900  # Juju machines can be slow to provision and become ready
 
-    def __init__(self, machine_name: str, role: NodeRole, index: int) -> None:
+    def __init__(
+        self, machine_name: str, role: NodeRole, index: int, tunnel_ports: list[int] | None = None
+    ) -> None:
         super().__init__(role, index)
         self._name = machine_name
+        self._tunnel_ports: list[int] = tunnel_ports or []
+        self._tunnel: subprocess.Popen[bytes] | None = None
 
     @property
     def name(self) -> str:
@@ -106,6 +142,44 @@ class JujuUnit(Unit):
     @staticmethod
     def application(unit: str) -> str:
         return unit.split("/")[0]
+
+    @cached_property
+    def public_address(self) -> str:
+        """Return the unit's public IP address from Juju status."""
+        status = _get_unit_status(self._name)
+        return status.get("public-address") or self.private_address
+
+    def open_tunnel(self) -> None:
+        """Open (or re-open) the SSH reverse tunnel for this unit.
+
+        Idempotent: no-op if the tunnel process is already running.
+        Uses ``juju ssh`` so that Juju handles host-key verification and
+        identity management.
+        """
+        if self._tunnel is not None and self._tunnel.poll() is None:
+            return  # already alive
+        if not self._tunnel_ports:
+            return
+        # --proxy routes SSH through the Juju controller instead of direct SSH,
+        # required when the orchestrator has no direct route to VM IPs (e.g., vSphere).
+        cmd = ["juju", "ssh", "--proxy", "--no-host-key-checks", self._name, "-N"]
+        for port in self._tunnel_ports:
+            cmd += ["-R", f"{port}:localhost:{port}"]
+        self._tunnel = subprocess.Popen(cmd)
+
+    def stop_tunnel(self) -> None:
+        """Terminate the SSH reverse tunnel if it is running."""
+        if self._tunnel is not None:
+            self._tunnel.terminate()
+            try:
+                self._tunnel.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._tunnel.kill()
+            self._tunnel = None
+
+    def tunnel_alive(self) -> bool:
+        """Return True if the SSH reverse tunnel process is currently running."""
+        return self._tunnel is not None and self._tunnel.poll() is None
 
     def _enable_root_ssh(self) -> None:
         # Juju machines don't have root SSH access by default,
@@ -116,7 +190,7 @@ class JujuUnit(Unit):
             check=True,
         )
 
-    def enlist(self, timeout: float | None = None) -> None:
+    def enlist(self, orchestrator_ip: str, timeout: float | None = None) -> None:
         # Juju machines can take a while to come up, so instead we wait for active/idle
         effective_timeout = self.JUJU_PATIENT_TIMEOUT if timeout is None else timeout
         deadline = time.monotonic() + effective_timeout
@@ -129,7 +203,10 @@ class JujuUnit(Unit):
                 )
             time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
         self._enable_root_ssh()
-        self.update_etc_hosts()
+        self.open_tunnel()
+        self.update_etc_hosts(orchestrator_ip)
+        _expose(self.name)
+        _open_ports(self, Ports.KUBE_API_SERVER)
 
     def _juju_exec(
         self,
@@ -172,9 +249,46 @@ class JujuUnit(Unit):
         # Juju machines run as root; privileged flag is intentionally ignored
         return self._juju_exec(cmd, check=check, env=env, timeout=timeout)
 
+    def download(self, url: str, dest: str) -> None:
+        """Push a file from the orchestrator to the unit via juju scp.
+
+        For Juju units, we can't use curl because the VMs typically cannot
+        reach the orchestrator's artifact server. Instead, we extract the
+        local path from the URL and use ``juju scp`` to push the file.
+
+        Supports:
+        - ``file://`` URLs pointing to local files
+        - Artifact server URLs (``http://kube-galaxy.orchestrator:...``)
+
+        Args:
+            url: URL to "download" (actually pushed via scp)
+            dest: Destination path on the unit
+        """
+        parsed = urlparse(url)
+
+        if parsed.scheme == "file":
+            # file:///opt/kube-galaxy/... -> /opt/kube-galaxy/...
+            local_path = Path(parsed.path)
+        elif parsed.scheme in ("http", "https"):
+            # http://kube-galaxy.orchestrator:8765/opt/kube-galaxy/... -> /opt/kube-galaxy/...
+            # The URL path IS the local filesystem path on the orchestrator
+            local_path = SystemPaths.staging_root() / parsed.path.lstrip("/")
+        else:
+            raise ComponentError(f"Unsupported URL scheme for JujuUnit.download: {url}")
+
+        if not local_path.exists():
+            raise ComponentError(
+                f"Cannot push file to unit: local path '{local_path}' does not exist "
+                f"(derived from URL: {url})"
+            )
+
+        self.put(local_path, dest)
+
     def put(self, local: Path, remote: str) -> None:
         self.run(["mkdir", "-p", str(Path(remote).parent)], check=True)
-        cmd = f"juju scp {local} root@{self.name}:{remote}"
+        # Use --proxy to route through the Juju controller instead of direct SSH
+        # (PS7 runners have no direct route to vSphere VMs)
+        cmd = f"juju scp --proxy {local} root@{self.name}:{remote}"
         result = subprocess.run(shlex.split(cmd), capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ComponentError(
@@ -184,7 +298,8 @@ class JujuUnit(Unit):
 
     def get(self, remote: str, local: Path) -> None:
         ensure_dir(local.parent)
-        cmd = f"juju scp root@{self._name}:{remote} {local}"
+        # Use --proxy to route through the Juju controller instead of direct SSH
+        cmd = f"juju scp --proxy root@{self._name}:{remote} {local}"
         result = subprocess.run(shlex.split(cmd), capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ComponentError(
@@ -194,6 +309,16 @@ class JujuUnit(Unit):
 
 class JujuUnitProvider(UnitProvider):
     """Provisions and destroys Juju machines."""
+
+    def __init__(
+        self, node_cfg: NodesConfig, image: str, tunnel_ports: list[int] | None = None
+    ) -> None:
+        super().__init__(node_cfg, image)
+        self._tunnel_ports: list[int] = tunnel_ports or []
+
+    def orchestrator_ip(self) -> str:
+        """Return 127.0.0.1 — Juju units reach the orchestrator via reverse SSH tunnel."""
+        return "127.0.0.1"
 
     @property
     def is_ephemeral(self) -> bool:
@@ -253,9 +378,23 @@ class JujuUnitProvider(UnitProvider):
             time.sleep(5)
         # the unit with the highest index should be the one we just launched
         unit_name = sorted(app["units"].keys())[index]
-        return JujuUnit(unit_name, role, index)
+        return JujuUnit(unit_name, role, index, tunnel_ports=self._tunnel_ports)
+
+    def open_tunnels(self) -> None:
+        """Open SSH reverse tunnels for all tracked Juju units."""
+        for unit in self._units:
+            if isinstance(unit, JujuUnit):
+                unit.open_tunnel()
+
+    def stop_tunnels(self) -> None:
+        """Close SSH reverse tunnels for all tracked Juju units."""
+        for unit in self._units:
+            if isinstance(unit, JujuUnit):
+                unit.stop_tunnel()
 
     def deprovision(self, unit: Unit) -> None:
+        if isinstance(unit, JujuUnit):
+            unit.stop_tunnel()
         info(f"Deprovisioning Juju machine '{unit.name}'...")
         if unit.index == 0:
             cmd = ["juju", "remove-application", "--force", "--no-prompt", unit.name.split("/")[0]]

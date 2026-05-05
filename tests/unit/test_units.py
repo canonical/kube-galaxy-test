@@ -1,6 +1,7 @@
 """Unit tests for the units package: Unit ABC, LocalUnit."""
 
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -231,8 +232,8 @@ def test_lxd_unit_implements_unit_abc():
 def test_local_unit_enlist_is_noop():
     """LocalUnit.enlist() returns immediately without error."""
     u = LocalUnit()
-    u.enlist()  # must not raise
-    u.enlist(timeout=60)  # also no-op with explicit timeout
+    u.enlist("127.0.0.1")  # must not raise
+    u.enlist("127.0.0.1", timeout=60)  # also no-op with explicit timeout
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +252,7 @@ def test_lxd_unit_enlist_returns_immediately_when_agent_up(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
 
     unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
-    unit.enlist(timeout=30)
+    unit.enlist("10.0.0.1", timeout=30)
 
     # Only one lxc exec call was needed
     assert len(calls) == 3
@@ -267,7 +268,7 @@ def test_lxd_unit_enlist_zero_timeout_succeeds_if_ready(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.units.lxdvm.subprocess.run", fake_run)
 
     unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
-    unit.enlist(timeout=0)  # must not raise
+    unit.enlist("10.0.0.1", timeout=0)  # must not raise
 
 
 def test_lxd_unit_enlist_retries_on_failure(monkeypatch):
@@ -287,7 +288,7 @@ def test_lxd_unit_enlist_retries_on_failure(monkeypatch):
     monkeypatch.setattr("kube_galaxy.pkg.units._base.time.sleep", lambda _: None)
 
     unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
-    unit.enlist(timeout=60)
+    unit.enlist("10.0.0.1", timeout=60)
 
     assert attempt["count"] == 3
 
@@ -308,7 +309,7 @@ def test_lxd_unit_enlist_raises_on_timeout(monkeypatch):
 
     unit = LXDUnit("test-vm", NodeRole.CONTROL_PLANE, 0)
     with pytest.raises(ClusterError, match="Timed out waiting for unit 'test-vm'"):
-        unit.enlist(timeout=120)
+        unit.enlist("10.0.0.1", timeout=120)
 
 
 # ---------------------------------------------------------------------------
@@ -765,10 +766,10 @@ def test_juju_unit_enlist_returns_immediately_when_active_idle(monkeypatch):
         "kube_galaxy.pkg.units.juju.subprocess.run",
         lambda cmd, **kw: _make_run_result(),
     )
-    monkeypatch.setattr("kube_galaxy.pkg.units._base.Unit.update_etc_hosts", lambda self: None)
+    monkeypatch.setattr("kube_galaxy.pkg.units._base.Unit.update_etc_hosts", lambda self, ip: None)
 
     unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0)
-    unit.enlist(timeout=30)  # must not raise
+    unit.enlist("127.0.0.1", timeout=30)  # must not raise
 
 
 def test_juju_unit_enlist_retries_until_active_idle(monkeypatch):
@@ -798,11 +799,11 @@ def test_juju_unit_enlist_retries_until_active_idle(monkeypatch):
         "kube_galaxy.pkg.units.juju.subprocess.run",
         lambda cmd, **kw: _make_run_result(),
     )
-    monkeypatch.setattr("kube_galaxy.pkg.units._base.Unit.update_etc_hosts", lambda self: None)
+    monkeypatch.setattr("kube_galaxy.pkg.units._base.Unit.update_etc_hosts", lambda self, ip: None)
     monkeypatch.setattr("kube_galaxy.pkg.units.juju.time.sleep", lambda _: None)
 
     unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0)
-    unit.enlist(timeout=60)
+    unit.enlist("127.0.0.1", timeout=60)
 
     assert attempt["count"] >= 3
 
@@ -820,7 +821,7 @@ def test_juju_unit_enlist_raises_on_timeout(monkeypatch):
 
     unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0)
     with pytest.raises(ClusterError, match="Timed out waiting for unit 'myapp/0'"):
-        unit.enlist(timeout=120)
+        unit.enlist("127.0.0.1", timeout=120)
 
 
 # ---------------------------------------------------------------------------
@@ -984,3 +985,282 @@ def test_juju_provider_deprovision_untracks_unit(monkeypatch):
 
     p.deprovision(unit)
     assert len(p._units) == 0
+
+
+# ---------------------------------------------------------------------------
+# JujuUnit — tunnel helpers
+# ---------------------------------------------------------------------------
+
+
+def test_juju_unit_tunnel_alive_false_when_no_tunnel():
+    """`tunnel_alive()` returns False when no tunnel has been opened."""
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    assert unit.tunnel_alive() is False
+
+
+def test_juju_unit_open_tunnel_noop_when_no_ports():
+    """`open_tunnel()` is a no-op when tunnel_ports is empty."""
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[])
+    unit.open_tunnel()  # must not raise
+    assert unit._tunnel is None
+
+
+def test_juju_unit_open_tunnel_spawns_process(monkeypatch):
+    """`open_tunnel()` spawns a subprocess with juju ssh -R flags."""
+    spawned: list[list[str]] = []
+
+    class FakePopen:
+        def __init__(self, cmd: list[str]) -> None:
+            spawned.append(cmd)
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.juju.subprocess.Popen", FakePopen)
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765, 5000])
+    unit.open_tunnel()
+
+    assert len(spawned) == 1
+    cmd = spawned[0]
+    # --proxy routes through the Juju controller for restricted networks
+    assert cmd[:4] == ["juju", "ssh", "--proxy", "--no-host-key-checks"]
+    assert "myapp/0" in cmd
+    assert "-N" in cmd
+    assert "-R" in cmd
+    assert "8765:localhost:8765" in cmd
+    assert "5000:localhost:5000" in cmd
+
+
+def test_juju_unit_open_tunnel_idempotent(monkeypatch):
+    """`open_tunnel()` is a no-op if the tunnel is already alive."""
+    spawned: list[list[str]] = []
+
+    class FakePopen:
+        def __init__(self, cmd: list[str]) -> None:
+            spawned.append(cmd)
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.juju.subprocess.Popen", FakePopen)
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    unit.open_tunnel()
+    unit.open_tunnel()  # second call should be a no-op
+
+    assert len(spawned) == 1
+
+
+def test_juju_unit_tunnel_alive_true_when_running(monkeypatch):
+    """`tunnel_alive()` returns True while the tunnel process is running."""
+
+    class FakePopen:
+        def __init__(self, cmd: list[str]) -> None:
+            pass
+
+        def poll(self) -> None:
+            return None  # still running
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.juju.subprocess.Popen", FakePopen)
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    unit.open_tunnel()
+    assert unit.tunnel_alive() is True
+
+
+def test_juju_unit_stop_tunnel_terminates_process(monkeypatch):
+    """`stop_tunnel()` terminates the tunnel process and sets _tunnel to None."""
+    terminated: list[bool] = []
+
+    class FakePopen:
+        def __init__(self, cmd: list[str]) -> None:
+            pass
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            terminated.append(True)
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.juju.subprocess.Popen", FakePopen)
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    unit.open_tunnel()
+    unit.stop_tunnel()
+
+    assert terminated == [True]
+    assert unit._tunnel is None
+    assert unit.tunnel_alive() is False
+
+
+def test_juju_unit_stop_tunnel_noop_when_no_tunnel():
+    """`stop_tunnel()` is a no-op when the tunnel is not running."""
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    unit.stop_tunnel()  # must not raise
+    assert unit._tunnel is None
+
+
+def test_juju_unit_stop_tunnel_kills_on_timeout(monkeypatch):
+    """`stop_tunnel()` kills the process if wait() times out."""
+    killed: list[bool] = []
+
+    class FakePopen:
+        def __init__(self, cmd: list[str]) -> None:
+            pass
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            raise subprocess.TimeoutExpired(cmd="juju", timeout=5)
+
+        def kill(self) -> None:
+            killed.append(True)
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.juju.subprocess.Popen", FakePopen)
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    unit.open_tunnel()
+    unit.stop_tunnel()
+
+    assert killed == [True]
+    assert unit._tunnel is None
+
+
+# ---------------------------------------------------------------------------
+# JujuUnitProvider — orchestrator_ip, open_tunnels, stop_tunnels
+# ---------------------------------------------------------------------------
+
+
+def test_juju_provider_orchestrator_ip_returns_loopback():
+    """`JujuUnitProvider.orchestrator_ip()` always returns '127.0.0.1'."""
+    p = JujuUnitProvider(NodesConfig(control_plane=1, worker=0), image="ubuntu:22.04")
+    assert p.orchestrator_ip() == "127.0.0.1"
+
+
+def test_juju_provider_open_tunnels_calls_open_on_juju_units(monkeypatch):
+    """`open_tunnels()` calls `open_tunnel()` on each tracked JujuUnit."""
+    opened: list[str] = []
+
+    monkeypatch.setattr(JujuUnit, "open_tunnel", lambda self: opened.append(self.name))
+
+    p = JujuUnitProvider(NodesConfig(control_plane=1, worker=1), image="ubuntu:22.04")
+    for name, role, idx in [
+        ("kube-galaxy-control-plane/0", NodeRole.CONTROL_PLANE, 0),
+        ("kube-galaxy-worker/0", NodeRole.WORKER, 0),
+    ]:
+        unit = JujuUnit(name, role, idx, tunnel_ports=[8765])
+        p._track(unit)
+
+    p.open_tunnels()
+
+    assert sorted(opened) == sorted(
+        [
+            "kube-galaxy-control-plane/0",
+            "kube-galaxy-worker/0",
+        ]
+    )
+
+
+def test_juju_provider_stop_tunnels_calls_stop_on_juju_units(monkeypatch):
+    """`stop_tunnels()` calls `stop_tunnel()` on each tracked JujuUnit."""
+    stopped: list[str] = []
+
+    monkeypatch.setattr(JujuUnit, "stop_tunnel", lambda self: stopped.append(self.name))
+
+    p = JujuUnitProvider(NodesConfig(control_plane=1, worker=0), image="ubuntu:22.04")
+    unit = JujuUnit("kube-galaxy-control-plane/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    p._track(unit)
+
+    p.stop_tunnels()
+
+    assert stopped == ["kube-galaxy-control-plane/0"]
+
+
+def test_juju_provider_deprovision_stops_tunnel(monkeypatch):
+    """`deprovision()` calls `stop_tunnel()` on the unit before removing it."""
+    stopped: list[str] = []
+
+    monkeypatch.setattr(JujuUnit, "stop_tunnel", lambda self: stopped.append(self.name))
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units.juju.subprocess.run",
+        lambda cmd, **kw: _make_run_result(),
+    )
+
+    p = JujuUnitProvider(NodesConfig(control_plane=1, worker=0), image="ubuntu:22.04")
+    unit = JujuUnit("kube-galaxy-control-plane/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    p._track(unit)
+    p.deprovision(unit)
+
+    assert stopped == ["kube-galaxy-control-plane/0"]
+
+
+def test_juju_unit_enlist_opens_tunnel_before_etc_hosts(monkeypatch):
+    """`enlist()` opens the tunnel before writing /etc/hosts."""
+    call_order: list[str] = []
+
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units.juju.run",
+        lambda cmd, **kw: _make_run_result(stdout=json.dumps(_FULL_STATE)),
+    )
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units.juju.subprocess.run",
+        lambda cmd, **kw: _make_run_result(),
+    )
+    monkeypatch.setattr(JujuUnit, "open_tunnel", lambda self: call_order.append("open_tunnel"))
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units._base.Unit.update_etc_hosts",
+        lambda self, ip: call_order.append("update_etc_hosts"),
+    )
+
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765])
+    unit.enlist("127.0.0.1", timeout=30)
+
+    assert call_order == ["open_tunnel", "update_etc_hosts"]
+
+
+# ---------------------------------------------------------------------------
+# JujuUnit — public_address
+# ---------------------------------------------------------------------------
+
+_STATE_WITH_PUBLIC_IP = {
+    "applications": {
+        "myapp": {
+            "units": {
+                "myapp/0": {
+                    "workload-status": {"current": "active"},
+                    "juju-status": {"current": "idle"},
+                    "public-address": "203.0.113.42",
+                },
+            }
+        }
+    }
+}
+
+
+def test_juju_unit_public_address_returns_field_from_status(monkeypatch):
+    """public_address returns `public-address` field when present in Juju status."""
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units.juju.run",
+        lambda cmd, **kw: _make_run_result(stdout=json.dumps(_STATE_WITH_PUBLIC_IP)),
+    )
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0)
+    assert unit.public_address == "203.0.113.42"
+
+
+def test_juju_unit_public_address_falls_back_to_private_address(monkeypatch):
+    """public_address falls back to private_address when `public-address` is absent."""
+    monkeypatch.setattr(
+        "kube_galaxy.pkg.units.juju.run",
+        lambda cmd, **kw: _make_run_result(stdout=json.dumps(_FULL_STATE)),
+    )
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0)
+    # private_address is a cached_property backed by run(); stub it directly
+    monkeypatch.setattr(
+        JujuUnit,
+        "private_address",
+        property(lambda self: "10.0.0.5"),
+    )
+    assert unit.public_address == "10.0.0.5"

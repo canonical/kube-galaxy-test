@@ -138,18 +138,21 @@ class Unit(ABC):
         """Return the hex SHA-256 digest of a file at ``path`` on the unit."""
         return self.run(["sha256sum", path]).stdout.split()[0]
 
-    def update_etc_hosts(self) -> None:
+    def update_etc_hosts(self, orchestrator_ip: str) -> None:
         """Ensure the unit's /etc/hosts contains entries for the orchestrator.
 
         Each unit's /etc/hosts is updated with entries for the orchestrator's
         hostname and IP address, both pointing to the orchestrator's IP.
+
+        Args:
+            orchestrator_ip: The IP address that cluster nodes should use to
+                reach the orchestrator.
         """
         if self.path_exists("/etc/hosts"):
             hosts_path = "/etc/hosts"
         else:
             # Some minimal images (e.g. Ubuntu cloud images) may not have /etc/hosts
             hosts_path = "/etc/hosts.new"
-        orchestrator_ip = detect_ip()
         self.run(
             [
                 "sh",
@@ -167,13 +170,29 @@ class Unit(ABC):
         result = self.run(["hostname"], check=False)
         return result.stdout.strip() if result.returncode == 0 else ""
 
-    def enlist(self, timeout: float | None = None) -> None:
+    @cached_property
+    def private_address(self) -> str:
+        """Return the unit's primary private IP address."""
+        result = self.run(["hostname", "-I"], check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split()[0]
+        return ""
+
+    @cached_property
+    def public_address(self) -> str:
+        """Return the unit's public IP address (defaults to private_address)."""
+        return self.private_address
+
+    def enlist(self, orchestrator_ip: str, timeout: float | None = None) -> None:
         """Block until the unit agent is responsive.
 
         Polls the unit with a simple command (``hostname``) until it exits
         successfully, or until *timeout* seconds have elapsed.
 
         Args:
+            orchestrator_ip: The IP address that cluster nodes should use to
+                reach the orchestrator.  Written into ``/etc/hosts`` once the
+                unit becomes responsive.
             timeout: Maximum seconds to wait.  ``None`` uses the default
                 ``Timeouts.UNIT_READY_TIMEOUT``.
 
@@ -190,7 +209,7 @@ class Unit(ABC):
                     f"after {effective_timeout:.0f}s"
                 )
             time.sleep(min(Timeouts.UNIT_READY_INTERVAL, remaining))
-        self.update_etc_hosts()
+        self.update_etc_hosts(orchestrator_ip)
 
     def set_cluster_context(self, cxt: ClusterContext) -> None:
         """Configure the artifact server URL for this unit.
@@ -237,6 +256,20 @@ class UnitProvider(ABC):
         self._image = image
         self._units: list[Unit] = []
         self._node_cfg = node_cfg
+
+    def orchestrator_ip(self) -> str:
+        """Return the IP address that cluster nodes should use to reach the orchestrator.
+
+        Override in provider subclasses where the default local IP detection is
+        incorrect (e.g. Juju running on remote cloud infrastructure).
+        """
+        return detect_ip()
+
+    def open_tunnels(self) -> None:  # noqa: B027
+        """Open connectivity tunnels for all tracked units (no-op for most providers)."""
+
+    def stop_tunnels(self) -> None:  # noqa: B027
+        """Close connectivity tunnels for all tracked units (no-op for most providers)."""
 
     def _track(self, unit: Unit) -> None:
         """Add *unit* to the tracked set if not already present."""
