@@ -1017,18 +1017,46 @@ def test_juju_unit_open_tunnel_spawns_process(monkeypatch):
             return None
 
     monkeypatch.setattr("kube_galaxy.pkg.units.juju.subprocess.Popen", FakePopen)
+    # Ensure proxy is disabled (default for local machines)
+    monkeypatch.delenv("KUBE_GALAXY_JUJU_PROXY", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
     unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765, 5000])
     unit.open_tunnel()
 
     assert len(spawned) == 1
     cmd = spawned[0]
-    # --proxy routes through the Juju controller for restricted networks
-    assert cmd[:4] == ["juju", "ssh", "--proxy", "--no-host-key-checks"]
+    # Without proxy env vars, --proxy should not be in the command
+    assert cmd[:3] == ["juju", "ssh", "--no-host-key-checks"]
+    assert "--proxy" not in cmd
     assert "myapp/0" in cmd
     assert "-N" in cmd
     assert "-R" in cmd
     assert "8765:localhost:8765" in cmd
     assert "5000:localhost:5000" in cmd
+
+
+def test_juju_unit_open_tunnel_uses_proxy_when_env_set(monkeypatch):
+    """`open_tunnel()` includes --proxy when KUBE_GALAXY_JUJU_PROXY=1."""
+    spawned: list[list[str]] = []
+
+    class FakePopen:
+        def __init__(self, cmd: list[str]) -> None:
+            spawned.append(cmd)
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr("kube_galaxy.pkg.units.juju.subprocess.Popen", FakePopen)
+    monkeypatch.setenv("KUBE_GALAXY_JUJU_PROXY", "1")
+    unit = JujuUnit("myapp/0", NodeRole.CONTROL_PLANE, 0, tunnel_ports=[8765, 5000])
+    unit.open_tunnel()
+
+    assert len(spawned) == 1
+    cmd = spawned[0]
+    # With KUBE_GALAXY_JUJU_PROXY=1, --proxy should be included
+    assert "--proxy" in cmd
+    assert "--no-host-key-checks" in cmd
+    assert "myapp/0" in cmd
 
 
 def test_juju_unit_open_tunnel_idempotent(monkeypatch):
