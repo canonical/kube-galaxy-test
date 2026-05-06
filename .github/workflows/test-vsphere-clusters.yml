@@ -57,7 +57,9 @@ jobs:
           # (govmomi, juju) for HTTPS/TLS connections.
           echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
           echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
-          echo "Configured HTTPS_PROXY for vSphere access"
+          # Route juju ssh/scp through the Juju controller (no direct VM access)
+          echo "KUBE_GALAXY_JUJU_PROXY=1" >> "$GITHUB_ENV"
+          echo "Configured HTTPS_PROXY and KUBE_GALAXY_JUJU_PROXY for vSphere access"
 
           # SSH ProxyCommand for connections to vSphere VMs
           mkdir -p ~/.ssh
@@ -171,8 +173,6 @@ jobs:
           GITHUB_ACTOR: cdkbot
           GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
         run: |
-          # Set JUJU_DATA explicitly (~ doesn't expand in env block)
-          export JUJU_DATA="$HOME/.local/share/juju"
           echo "=== Environment ==="
           echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
           echo "JUJU_DATA=${JUJU_DATA:-<unset>}"
@@ -180,48 +180,15 @@ jobs:
           echo ""
           kube-galaxy setup manifests/smoketest.yaml --overlay manifests/overlays/vsphere-juju.yaml
 
-      - name: Debug failed tasks
+      - name: Debug failed setup
         if: failure() && steps.setup.outcome == 'failure'
         run: |
-          export JUJU_DATA="$HOME/.local/share/juju"
           echo "=== Juju Status ==="
           juju status --format yaml || true
           echo ""
 
-          echo "=== Recent Failed Operations ==="
-          # Get the last 20 operations and show details for failed ones
-          juju operations --format json 2>/dev/null | python3 -c "
-          import sys, json
-          try:
-              data = json.load(sys.stdin)
-              for op in data[:20]:
-                  if op.get('status') == 'failed':
-                      print(f\"Operation {op['id']}: {op.get('summary', 'no summary')} - {op['status']}\")
-          except: pass
-          " || true
-
-          echo ""
-          echo "=== Failed Task Details ==="
-          # Show details for recent failed tasks
-          for task_id in $(juju operations --format json 2>/dev/null | python3 -c "
-          import sys, json
-          try:
-              data = json.load(sys.stdin)
-              for op in data[:10]:
-                  if op.get('status') == 'failed':
-                      # Get task IDs from the operation
-                      for task in op.get('tasks', []):
-                          if task.get('status') == 'failed':
-                              print(task['id'])
-          except: pass
-          " 2>/dev/null); do
-            echo "--- Task $task_id ---"
-            juju show-task "$task_id" 2>/dev/null || true
-            echo ""
-          done
-
           echo "=== VM Service Status ==="
-          for unit in $(juju status --format json | python3 -c "
+          for unit in $(juju status --format json 2>/dev/null | python3 -c "
           import sys, json
           try:
               data = json.load(sys.stdin)
@@ -245,9 +212,7 @@ jobs:
           done
 
       - name: Verify cluster health
-        run: |
-          export JUJU_DATA="$HOME/.local/share/juju"
-          kube-galaxy status --wait --timeout 300
+        run: kube-galaxy status --wait --timeout 300
 
       # Upload artifact for debugging before cleanup
       - name: Upload Juju client state

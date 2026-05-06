@@ -5,6 +5,7 @@ Juju machines run as root so the ``privileged`` flag is ignored.
 """
 
 import json
+import os
 import shlex
 import subprocess
 import time
@@ -20,6 +21,23 @@ from kube_galaxy.pkg.utils.errors import ClusterError, ComponentError
 from kube_galaxy.pkg.utils.logging import info, warning
 from kube_galaxy.pkg.utils.paths import ensure_dir
 from kube_galaxy.pkg.utils.shell import ShellError, check_version, run
+
+
+def _use_juju_proxy() -> bool:
+    """Check if juju commands should use --proxy for SSH routing.
+
+    Returns True if:
+    - KUBE_GALAXY_JUJU_PROXY=1 is set explicitly, OR
+    - HTTPS_PROXY points to the PS7 egress proxy (ps7.internal)
+
+    On PS7 runners, there's no direct route to vSphere VMs, so SSH must
+    route through the Juju controller. Local machines typically have
+    direct connectivity and don't need the proxy hop.
+    """
+    if os.environ.get("KUBE_GALAXY_JUJU_PROXY", "").lower() in ("1", "true", "yes"):
+        return True
+    https_proxy = os.environ.get("HTTPS_PROXY", "")
+    return "ps7.internal" in https_proxy
 
 
 def print_dependency_status() -> None:
@@ -162,7 +180,9 @@ class JujuUnit(Unit):
             return
         # --proxy routes SSH through the Juju controller instead of direct SSH,
         # required when the orchestrator has no direct route to VM IPs (e.g., vSphere).
-        cmd = ["juju", "ssh", "--proxy", "--no-host-key-checks", self._name, "-N"]
+        cmd = ["juju", "ssh", "--no-host-key-checks", self._name, "-N"]
+        if _use_juju_proxy():
+            cmd.insert(2, "--proxy")
         for port in self._tunnel_ports:
             cmd += ["-R", f"{port}:localhost:{port}"]
         self._tunnel = subprocess.Popen(cmd)
@@ -286,9 +306,8 @@ class JujuUnit(Unit):
 
     def put(self, local: Path, remote: str) -> None:
         self.run(["mkdir", "-p", str(Path(remote).parent)], check=True)
-        # Use --proxy to route through the Juju controller instead of direct SSH
-        # (PS7 runners have no direct route to vSphere VMs)
-        cmd = f"juju scp --proxy {local} root@{self.name}:{remote}"
+        proxy_flag = "--proxy " if _use_juju_proxy() else ""
+        cmd = f"juju scp {proxy_flag}{local} root@{self.name}:{remote}"
         result = subprocess.run(shlex.split(cmd), capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ComponentError(
@@ -298,8 +317,8 @@ class JujuUnit(Unit):
 
     def get(self, remote: str, local: Path) -> None:
         ensure_dir(local.parent)
-        # Use --proxy to route through the Juju controller instead of direct SSH
-        cmd = f"juju scp --proxy root@{self._name}:{remote} {local}"
+        proxy_flag = "--proxy " if _use_juju_proxy() else ""
+        cmd = f"juju scp {proxy_flag}root@{self._name}:{remote} {local}"
         result = subprocess.run(shlex.split(cmd), capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ComponentError(
