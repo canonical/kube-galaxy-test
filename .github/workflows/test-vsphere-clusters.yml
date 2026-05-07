@@ -214,6 +214,17 @@ jobs:
       - name: Verify cluster health
         run: kube-galaxy status --wait --timeout 300
 
+      - name: Run Spread Tests
+        id: run-tests
+        env:
+          GITHUB_ACTOR: cdkbot
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+        run: kube-galaxy test
+
+      - name: Collect Logs
+        if: always()
+        run: kube-galaxy logs || true
+
       # Upload artifact for debugging before cleanup
       - name: Upload Juju client state
         if: always()
