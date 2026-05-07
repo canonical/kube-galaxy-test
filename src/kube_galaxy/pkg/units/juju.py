@@ -24,20 +24,8 @@ from kube_galaxy.pkg.utils.shell import ShellError, check_version, run
 
 
 def _use_juju_proxy() -> bool:
-    """Check if juju commands should use --proxy for SSH routing.
-
-    Returns True if:
-    - KUBE_GALAXY_JUJU_PROXY=1 is set explicitly, OR
-    - HTTPS_PROXY points to the PS7 egress proxy (ps7.internal)
-
-    On PS7 runners, there's no direct route to vSphere VMs, so SSH must
-    route through the Juju controller. Local machines typically have
-    direct connectivity and don't need the proxy hop.
-    """
-    if os.environ.get("KUBE_GALAXY_JUJU_PROXY", "").lower() in ("1", "true", "yes"):
-        return True
-    https_proxy = os.environ.get("HTTPS_PROXY", "")
-    return "ps7.internal" in https_proxy
+    """Return True when ``KUBE_GALAXY_JUJU_PROXY=1``."""
+    return os.environ.get("KUBE_GALAXY_JUJU_PROXY") == "1"
 
 
 def print_dependency_status() -> None:
@@ -63,21 +51,7 @@ def _get_state(name: str = "", timeout: float = 30) -> dict[str, Any]:
     try:
         result = run(shlex.split(cmd), check=False, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        stdout_raw = exc.stdout or b""
-        stderr_raw = exc.stderr or b""
-        if isinstance(stdout_raw, bytes):
-            partial_out = stdout_raw.decode(errors="replace")
-        else:
-            partial_out = stdout_raw
-        if isinstance(stderr_raw, bytes):
-            partial_err = stderr_raw.decode(errors="replace")
-        else:
-            partial_err = stderr_raw
-        warning(f"juju status timed out after {timeout}s")
-        if partial_out:
-            warning(f"  partial stdout: {partial_out[:500]}")
-        if partial_err:
-            warning(f"  partial stderr: {partial_err[:500]}")
+        warning(f"juju status timed out after {timeout}s. \n\tstdout={exc.stdout!r} \n\tstderr={exc.stderr!r}")
         return {}
     if result.returncode == 0:
         parsed = None
