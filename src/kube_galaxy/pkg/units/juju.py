@@ -51,7 +51,11 @@ def _get_state(name: str = "", timeout: float = 30) -> dict[str, Any]:
     try:
         result = run(shlex.split(cmd), check=False, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        warning(f"juju status timed out after {timeout}s. \n\tstdout={exc.stdout!r} \n\tstderr={exc.stderr!r}")
+        warning(
+            f"juju status timed out after {timeout}s."
+            f"\n\tstdout={exc.stdout!r}"
+            f"\n\tstderr={exc.stderr!r}"
+        )
         return {}
     if result.returncode == 0:
         parsed = None
