@@ -151,7 +151,15 @@ jobs:
       - name: Setup Skopeo
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo
+          sudo apt-get install -y skopeo 
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ">=1.22"
+      
+      - name: Install Spread
+        run: go install github.com/canonical/spread/cmd/spread@latest
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
