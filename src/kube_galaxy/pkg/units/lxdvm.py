@@ -140,6 +140,8 @@ class LXDUnitProvider(UnitProvider):
                 "limits.cpu=2",
                 "-c",
                 "limits.memory=4GB",
+                "-c",
+                "security.nesting=true",
             ],
             capture_output=True,
             text=True,
