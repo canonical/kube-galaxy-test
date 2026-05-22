@@ -229,7 +229,7 @@ jobs:
 
       - name: Tmate debugging session
         if: failure() && github.event_name == 'pull_request'
-        uses: canonical/action-tmate@main
+        uses: canonical/action-tmate@5f11b26528699b78dadfb61273f4c859ac7145cf  # main
         timeout-minutes: 30
 
       - name: Create Issue on Failure
