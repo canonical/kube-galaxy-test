@@ -19,6 +19,13 @@ HOSTS_D = Path("/etc/containerd/hosts.d")
 CONF_D = Path("/etc/containerd/conf.d")
 
 
+def _registry_server(host: str) -> str:
+    """Map a registry host to its server URL."""
+    if host == "docker.io":
+        return "https://registry-1.docker.io"
+    return f"https://{host}"
+
+
 def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
     """
     Write a hosts.toml file for containerd registry authentication.
@@ -36,9 +43,10 @@ def _registry_auth(component: "ComponentBase", host: str, auth: str) -> None:
     strip_basic = auth.split(" ", 1)[-1] if auth.startswith("Basic ") else None
     if strip_basic:
         info(f"  Found Basic auth for {host}, writing containerd hosts.toml with credentials")
-        content = hosts_tmpl.read_text().format(host=host, authorization=strip_basic)
-        host_auth_toml = CONF_D / f"{host}.toml"
-        component.write_config_file(content, host_auth_toml, mode=Permissions.PRIVATE)
+        server = _registry_server(host)
+        content = hosts_tmpl.read_text().format(server=server, authorization=strip_basic)
+        hosts_toml = HOSTS_D / host / "hosts.toml"
+        component.write_config_file(content, hosts_toml, mode=Permissions.PRIVATE)
 
 
 def _registry_mirror(component: "ComponentBase") -> None:

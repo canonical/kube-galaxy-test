@@ -1,2 +1,6 @@
-[plugins."io.containerd.grpc.v1.cri".registry.configs."{host}".auth]
-  auth = "{authorization}"
+server = "{server}"
+
+[host."{server}"]
+  capabilities = ["pull", "resolve"]
+  [host."{server}".header]
+    Authorization = ["Basic {authorization}"]
