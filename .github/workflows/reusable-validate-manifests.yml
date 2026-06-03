@@ -34,20 +34,20 @@ jobs:
       # Internal call (manifests live in this repo): use the caller's own context.
       - name: Checkout kube-galaxy-test (internal)
         if: inputs.manifests-repo == ''
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
       # External call (manifests live in a separate repo): check out
       # canonical/kube-galaxy-test at the caller-specified ref.
       - name: Checkout kube-galaxy-test (external)
         if: inputs.manifests-repo != ''
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: canonical/kube-galaxy-test
           ref: ${{ inputs.kube-galaxy-ref }}
 
       - name: Checkout manifests repo
         if: inputs.manifests-repo != ''
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           repository: ${{ inputs.manifests-repo }}
           ref: ${{ inputs.manifests-ref }}
