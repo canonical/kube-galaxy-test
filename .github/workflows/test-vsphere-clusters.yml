@@ -233,7 +233,7 @@ jobs:
           set -euo pipefail
 
           KUBECONFIG_PATH="${GITHUB_WORKSPACE}/tmp/opt/kube-galaxy/tests/kubeconfig"
-          if [ ! -f "${KUBECONFIG_PATH}"; then
+          if [ ! -f "${KUBECONFIG_PATH}" ]; then
             echo "Expected kubeconfig not found: ${KUBECONFIG_PATH}"
             exit 1
           fi
@@ -253,23 +253,57 @@ jobs:
             exit 1
           fi
 
-          # Expose a host-side TCP proxy so spread's LXD container can reach the API server.
+          # socat needs to reach the real API server through the squid proxy
+          # (PS7 runners have no direct route to 10.246.x.x).
+          # Use a two-hop: socat binds locally, and uses PROXY CONNECT via squid.
           sudo nohup socat \
             "TCP-LISTEN:16443,bind=${LXD_BRIDGE_IP},fork,reuseaddr" \
-            "TCP:${API_HOST}:${API_PORT}" \
+            "PROXY:egress.ps7.internal:${API_HOST}:${API_PORT},proxyport=3128" \
             > /tmp/kgt-apiserver-proxy.log 2>&1 &
-          echo $! | sudo tee /tmp/kgt-apiserver-proxy.pid >/dev/null
+          SOCAT_PID=$!
+          echo "${SOCAT_PID}" | sudo tee /tmp/kgt-apiserver-proxy.pid >/dev/null
+          sleep 1
+          if ! kill -0 "${SOCAT_PID}" 2>/dev/null; then
+            echo "socat failed to start — check /tmp/kgt-apiserver-proxy.log"
+            cat /tmp/kgt-apiserver-proxy.log
+            exit 1
+          fi
 
-          sed -i -E "s#^([[:space:]]*server:[[:space:]]*).*#\1https://${LXD_BRIDGE_IP}:16443#" "${KUBECONFIG_PATH}"
-          sed -i -E "/^[[:space:]]*certificate-authority(-data)?:/d" "${KUBECONFIG_PATH}"
-          sed -i -E "/^[[:space:]]*insecure-skip-tls-verify:/d" "${KUBECONFIG_PATH}"
-          sed -i -E "/^[[:space:]]*server:/a\    insecure-skip-tls-verify: true" "${KUBECONFIG_PATH}"
+          # Rewrite kubeconfig to point at the local bridge endpoint
+          python3 -c "
+          import yaml; from pathlib import Path
+          path = Path('${KUBECONFIG_PATH}')
+          data = yaml.safe_load(path.read_text())
+          for cluster in data.get('clusters', []):
+              cluster.setdefault('cluster', {})['server'] = 'https://${LXD_BRIDGE_IP}:16443'
+              cluster['cluster']['insecure-skip-tls-verify'] = True
+              cluster['cluster'].pop('certificate-authority', None)
+              cluster['cluster'].pop('certificate-authority-data', None)
+          path.write_text(yaml.safe_dump(data, default_flow_style=False))
+          "
 
+          # Preflight: verify the bridge is reachable without going through HTTPS_PROXY
           echo "Running API preflight checks"
           timeout 10 bash -c "cat < /dev/null > /dev/tcp/${LXD_BRIDGE_IP}/16443"
-          kubectl --kubeconfig "${KUBECONFIG_PATH}" version --request-timeout=10s >/dev/null
-          kubectl --kubeconfig "${KUBECONFIG_PATH}" get --raw='/livez?verbose' --request-timeout=10s >/dev/null
+          API_STATUS=$(curl -sk --noproxy '*' -o /dev/null -w '%{http_code}' --connect-timeout 10 "https://${LXD_BRIDGE_IP}:16443/livez")
+          case "${API_STATUS}" in
+            200|401|403)
+              echo "API endpoint reachable via bridge (HTTP ${API_STATUS})"
+              ;;
+            000)
+              echo "Could not connect to bridge endpoint — socat may not reach API through proxy"
+              cat /tmp/kgt-apiserver-proxy.log
+              exit 1
+              ;;
+            *)
+              echo "Unexpected API status from bridge endpoint: ${API_STATUS}"
+              exit 1
+              ;;
+          esac
+          # kubectl must also bypass the proxy for the local bridge address
+          NO_PROXY="${LXD_BRIDGE_IP}" kubectl --kubeconfig "${KUBECONFIG_PATH}" get nodes --request-timeout=15s
 
+          echo "Preflight passed"
           echo "API_SERVER=${API_SERVER}"
           echo "LXD_BRIDGE_IP=${LXD_BRIDGE_IP}"
 
@@ -278,6 +312,10 @@ jobs:
         env:
           GITHUB_ACTOR: cdkbot
           GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+          # Spread LXD containers must not route local bridge traffic through squid
+          NO_PROXY: "localhost,127.0.0.1,::1,10.0.0.0/8"
+          HTTPS_PROXY: ""
+          HTTP_PROXY: ""
         run: kube-galaxy test
 
       - name: Stop API proxy for Spread
