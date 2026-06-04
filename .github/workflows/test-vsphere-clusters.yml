@@ -153,6 +153,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y skopeo 
 
+      - name: Setup socat
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y socat
+
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
@@ -222,12 +227,67 @@ jobs:
       - name: Verify cluster health
         run: kube-galaxy status --wait --timeout 300
 
+      - name: Prepare API access for Spread LXD backend
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          KUBECONFIG_PATH="${GITHUB_WORKSPACE}/tmp/opt/kube-galaxy/tests/kubeconfig"
+          if [ ! -f "${KUBECONFIG_PATH}"; then
+            echo "Expected kubeconfig not found: ${KUBECONFIG_PATH}"
+            exit 1
+          fi
+
+          API_SERVER=$(python3 -c "import yaml; from pathlib import Path; cfg = yaml.safe_load(Path('${KUBECONFIG_PATH}').read_text()); print(cfg['clusters'][0]['cluster']['server'])")
+
+          API_HOST=$(python3 -c "from urllib.parse import urlparse; print(urlparse('${API_SERVER}').hostname or '')")
+          API_PORT=$(python3 -c "from urllib.parse import urlparse; u = urlparse('${API_SERVER}'); print(u.port or 6443)")
+          if [ -z "${API_HOST}" ]; then
+            echo "Failed to parse API host from kubeconfig server: ${API_SERVER}"
+            exit 1
+          fi
+
+          LXD_BRIDGE_IP=$(ip -4 -o addr show lxdbr0 | awk '{print $4}' | cut -d/ -f1 | head -n1)
+          if [ -z "${LXD_BRIDGE_IP}" ]; then
+            echo "Could not detect lxdbr0 IPv4 address"
+            exit 1
+          fi
+
+          # Expose a host-side TCP proxy so spread's LXD container can reach the API server.
+          sudo nohup socat \
+            "TCP-LISTEN:16443,bind=${LXD_BRIDGE_IP},fork,reuseaddr" \
+            "TCP:${API_HOST}:${API_PORT}" \
+            > /tmp/kgt-apiserver-proxy.log 2>&1 &
+          echo $! | sudo tee /tmp/kgt-apiserver-proxy.pid >/dev/null
+
+          sed -i -E "s#^([[:space:]]*server:[[:space:]]*).*#\1https://${LXD_BRIDGE_IP}:16443#" "${KUBECONFIG_PATH}"
+          sed -i -E "/^[[:space:]]*certificate-authority(-data)?:/d" "${KUBECONFIG_PATH}"
+          sed -i -E "/^[[:space:]]*insecure-skip-tls-verify:/d" "${KUBECONFIG_PATH}"
+          sed -i -E "/^[[:space:]]*server:/a\    insecure-skip-tls-verify: true" "${KUBECONFIG_PATH}"
+
+          echo "Running API preflight checks"
+          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${LXD_BRIDGE_IP}/16443"
+          kubectl --kubeconfig "${KUBECONFIG_PATH}" version --request-timeout=10s >/dev/null
+          kubectl --kubeconfig "${KUBECONFIG_PATH}" get --raw='/livez?verbose' --request-timeout=10s >/dev/null
+
+          echo "API_SERVER=${API_SERVER}"
+          echo "LXD_BRIDGE_IP=${LXD_BRIDGE_IP}"
+
       - name: Run Spread Tests
         id: run-tests
         env:
           GITHUB_ACTOR: cdkbot
           GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
         run: kube-galaxy test
+
+      - name: Stop API proxy for Spread
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/kgt-apiserver-proxy.pid ]; then
+            sudo kill "$(cat /tmp/kgt-apiserver-proxy.pid)" 2>/dev/null || true
+            sudo rm -f /tmp/kgt-apiserver-proxy.pid
+          fi
 
       - name: Collect Logs
         if: always()
