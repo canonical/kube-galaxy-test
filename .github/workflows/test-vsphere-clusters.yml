@@ -255,10 +255,11 @@ jobs:
 
           # socat needs to reach the real API server through the squid proxy
           # (PS7 runners have no direct route to 10.246.x.x).
-          # Use a two-hop: socat binds locally, and uses PROXY CONNECT via squid.
+          # Use EXEC:nc which does HTTP CONNECT through squid — the same mechanism
+          # as the SSH ProxyCommand that already works in this workflow.
           sudo nohup socat \
             "TCP-LISTEN:16443,bind=${LXD_BRIDGE_IP},fork,reuseaddr" \
-            "PROXY:egress.ps7.internal:${API_HOST}:${API_PORT},proxyport=3128" \
+            "EXEC:nc -X connect -x egress.ps7.internal\\:3128 ${API_HOST} ${API_PORT}" \
             > /tmp/kgt-apiserver-proxy.log 2>&1 &
           SOCAT_PID=$!
           echo "${SOCAT_PID}" | sudo tee /tmp/kgt-apiserver-proxy.pid >/dev/null
