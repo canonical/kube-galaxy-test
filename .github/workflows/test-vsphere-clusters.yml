@@ -253,22 +253,28 @@ jobs:
             exit 1
           fi
 
-          # socat needs to reach the real API server through the squid proxy
-          # (PS7 runners have no direct route to 10.246.x.x).
-          # Use EXEC:nc which does HTTP CONNECT through squid — the same mechanism
-          # as the SSH ProxyCommand that already works in this workflow.
-          sudo nohup socat \
-            "TCP-LISTEN:16443,bind=${LXD_BRIDGE_IP},fork,reuseaddr" \
-            "EXEC:nc -X connect -x egress.ps7.internal\\:3128 ${API_HOST} ${API_PORT}" \
-            > /tmp/kgt-apiserver-proxy.log 2>&1 &
-          SOCAT_PID=$!
-          echo "${SOCAT_PID}" | sudo tee /tmp/kgt-apiserver-proxy.pid >/dev/null
-          sleep 1
-          if ! kill -0 "${SOCAT_PID}" 2>/dev/null; then
-            echo "socat failed to start — check /tmp/kgt-apiserver-proxy.log"
-            cat /tmp/kgt-apiserver-proxy.log
+          # Use SSH local port forwarding to bridge the API server onto lxdbr0.
+          # The ~/.ssh/config ProxyCommand (nc -X connect through squid) handles
+          # routing to 10.246.x.x, and juju's SSH key is already authorized on the VM.
+          JUJU_SSH_KEY=$(find ~/.local/share/juju/ssh -name 'juju_id_*' ! -name '*.pub' | head -n1)
+          if [ -z "${JUJU_SSH_KEY}" ]; then
+            echo "Could not find juju SSH private key"
+            ls -la ~/.local/share/juju/ssh/ || true
             exit 1
           fi
+          echo "Using SSH key: ${JUJU_SSH_KEY}"
+
+          ssh -f -N \
+            -i "${JUJU_SSH_KEY}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes \
+            -L "${LXD_BRIDGE_IP}:16443:localhost:${API_PORT}" \
+            "ubuntu@${API_HOST}"
+
+          SSH_PID=$(pgrep -f "ssh.*-L.*${LXD_BRIDGE_IP}:16443" | head -n1)
+          echo "${SSH_PID}" > /tmp/kgt-apiserver-proxy.pid
+          echo "SSH tunnel PID: ${SSH_PID}"
 
           # Rewrite kubeconfig to point at the local bridge endpoint
           python3 -c "
@@ -283,25 +289,24 @@ jobs:
           path.write_text(yaml.safe_dump(data, default_flow_style=False))
           "
 
-          # Preflight: verify the bridge is reachable without going through HTTPS_PROXY
+          # Preflight: verify the tunnel works
           echo "Running API preflight checks"
+          sleep 2
           timeout 10 bash -c "cat < /dev/null > /dev/tcp/${LXD_BRIDGE_IP}/16443"
           API_STATUS=$(curl -sk --noproxy '*' -o /dev/null -w '%{http_code}' --connect-timeout 10 "https://${LXD_BRIDGE_IP}:16443/livez")
           case "${API_STATUS}" in
             200|401|403)
-              echo "API endpoint reachable via bridge (HTTP ${API_STATUS})"
+              echo "API endpoint reachable via SSH tunnel (HTTP ${API_STATUS})"
               ;;
             000)
-              echo "Could not connect to bridge endpoint — socat may not reach API through proxy"
-              cat /tmp/kgt-apiserver-proxy.log
+              echo "Could not connect to tunnel endpoint"
               exit 1
               ;;
             *)
-              echo "Unexpected API status from bridge endpoint: ${API_STATUS}"
+              echo "Unexpected API status from tunnel endpoint: ${API_STATUS}"
               exit 1
               ;;
           esac
-          # kubectl must also bypass the proxy for the local bridge address
           NO_PROXY="${LXD_BRIDGE_IP}" kubectl --kubeconfig "${KUBECONFIG_PATH}" get nodes --request-timeout=15s
 
           echo "Preflight passed"
@@ -319,13 +324,13 @@ jobs:
           HTTP_PROXY: ""
         run: kube-galaxy test
 
-      - name: Stop API proxy for Spread
+      - name: Stop API tunnel for Spread
         if: always()
         shell: bash
         run: |
           if [ -f /tmp/kgt-apiserver-proxy.pid ]; then
-            sudo kill "$(cat /tmp/kgt-apiserver-proxy.pid)" 2>/dev/null || true
-            sudo rm -f /tmp/kgt-apiserver-proxy.pid
+            kill "$(cat /tmp/kgt-apiserver-proxy.pid)" 2>/dev/null || true
+            rm -f /tmp/kgt-apiserver-proxy.pid
           fi
 
       - name: Collect Logs
