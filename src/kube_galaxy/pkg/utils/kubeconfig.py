@@ -4,8 +4,11 @@ import copy
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import yaml
+
+from kube_galaxy.pkg.literals import Ports
 
 __all__ = [
     "KUBE_GALAXY_CONTEXT",
@@ -13,6 +16,7 @@ __all__ = [
     "is_interactive",
     "merge_kube_galaxy_context",
     "remove_kube_galaxy_context",
+    "rewrite_cluster_server",
 ]
 
 KUBE_GALAXY_CONTEXT = "kube-galaxy"
@@ -54,6 +58,11 @@ def _write_kubeconfig(config: dict[str, Any], path: Path) -> None:
     path.chmod(0o600)
 
 
+def _resolve_path(path: Path | None) -> Path:
+    """Return *path* if given, otherwise the default ``~/.kube/config``."""
+    return path if path is not None else _HOME_KUBE_CONFIG
+
+
 def _replace_or_add(
     entries: list[dict[str, Any]], new_entry: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -62,6 +71,29 @@ def _replace_or_add(
     filtered = [item for item in entries if item.get("name") != name]
     filtered.append(new_entry)
     return filtered
+
+
+def rewrite_cluster_server(path: Path, host: str) -> None:
+    """Rewrite all cluster server URLs in a kubeconfig file to use *host*.
+
+    The port from the original URL is preserved.  If the original URL has no
+    explicit port, port 6443 (the kubeadm default) is used.
+
+    This is useful when the kubeconfig was produced on a node with a private
+    address and the caller needs it to point at the node's public IP instead.
+
+    Args:
+        path: Path to the kubeconfig file to modify (written in-place).
+        host: The IP address or hostname to substitute into each server URL.
+    """
+    kube_cfg = _read_kubeconfig(path)
+    for cluster in kube_cfg.get("clusters") or []:
+        if server := (cluster.get("cluster") or {}).get("server"):
+            parsed = urlparse(server)
+            cluster["cluster"]["server"] = urlunparse(
+                parsed._replace(netloc=f"{host}:{parsed.port or Ports.KUBE_API_SERVER}")
+            )
+    _write_kubeconfig(kube_cfg, path)
 
 
 def context_exists(
@@ -78,7 +110,7 @@ def context_exists(
     Returns:
         ``True`` if the context is present, ``False`` otherwise.
     """
-    path = config_path if config_path is not None else _HOME_KUBE_CONFIG
+    path = _resolve_path(config_path)
     if not path.exists():
         return False
     config = _read_kubeconfig(path)
@@ -110,7 +142,7 @@ def merge_kube_galaxy_context(
     Raises:
         ValueError: If *source_path* is missing required sections.
     """
-    dest = dest_path if dest_path is not None else _HOME_KUBE_CONFIG
+    dest = _resolve_path(dest_path)
 
     source = _read_kubeconfig(source_path)
 
@@ -177,7 +209,7 @@ def remove_kube_galaxy_context(
         context_name: The context to remove (default: ``kube-galaxy``).
         dest_path: Kubeconfig to modify.  Defaults to ``$HOME/.kube/config``.
     """
-    dest = dest_path if dest_path is not None else _HOME_KUBE_CONFIG
+    dest = _resolve_path(dest_path)
 
     if not dest.exists():
         return
@@ -185,14 +217,14 @@ def remove_kube_galaxy_context(
     config = _read_kubeconfig(dest)
 
     contexts: list[dict[str, Any]] = config.get("contexts") or []
-    ctx_entry = next((c for c in contexts if c.get("name") == context_name), None)
 
     # Determine the cluster and user names referenced by this context
     ctx_cluster: str | None = None
     ctx_user: str | None = None
-    if ctx_entry is not None:
-        ctx_cluster = (ctx_entry.get("context") or {}).get("cluster")
-        ctx_user = (ctx_entry.get("context") or {}).get("user")
+    if ctx_entry := next((c for c in contexts if c.get("name") == context_name), None):
+        ctx_details = ctx_entry.get("context") or {}
+        ctx_cluster = ctx_details.get("cluster")
+        ctx_user = ctx_details.get("user")
 
     new_contexts = [c for c in contexts if c.get("name") != context_name]
 

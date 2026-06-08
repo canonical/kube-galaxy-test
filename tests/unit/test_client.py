@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kube_galaxy.pkg.literals import Ports
 from kube_galaxy.pkg.units._base import RunResult
 from kube_galaxy.pkg.utils.client import (
     apply_manifest,
@@ -177,7 +178,9 @@ class TestGetClusterInfo:
 
     def test_get_cluster_info_success(self):
         """Test successful cluster info retrieval."""
-        unit = _mock_unit(stdout="Kubernetes control plane is running at https://localhost:6443")
+        unit = _mock_unit(
+            stdout=f"Kubernetes control plane is running at https://localhost:{Ports.KUBE_API_SERVER}\n"
+        )
         result = get_cluster_info(unit)
         assert "Kubernetes control plane" in result
         cmd, _ = unit.run_calls[0]

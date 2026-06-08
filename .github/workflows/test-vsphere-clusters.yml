@@ -1,0 +1,379 @@
+name: Test vSphere Clusters
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'manifests/*.yaml'
+      - 'manifests/overlays/vsphere-juju.yaml'
+      - 'components/**'
+      - '.github/workflows/test-vsphere-clusters.yml'
+      - '.github/workflows/reusable-cluster-test.yml'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'manifests/*.yaml'
+      - 'manifests/overlays/vsphere-juju.yaml'
+      - 'components/**'
+      - 'tests/**'
+      - '.github/workflows/test-vsphere-clusters.yml'
+      - '.github/workflows/reusable-cluster-test.yml'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      cleanup-on-success:
+        description: 'Destroy Juju model after a successful run'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------------------------
+  # Create a fresh Juju model on the existing vSphere controller, then
+  # delegate to the reusable cluster-test workflow.The actions operator
+  # allows for automatic deployment of a vsphere controller.
+  # -------------------------------------------------------------------
+  prepare:
+    name: Bootstrap Juju on vSphere
+    runs-on: [self-hosted-linux-amd64-noble-private-endpoint-medium]
+    outputs:
+      model-name: ${{ steps.model.outputs.name }}
+    steps:
+      - name: Configure proxy for vSphere access
+        run: |
+          # PS7 runners have no direct route to vSphere — traffic must go
+          # through squid proxy. HTTPS_PROXY is respected by Go clients
+          # (govmomi, juju) for HTTPS/TLS connections.
+          echo "HTTPS_PROXY=http://egress.ps7.internal:3128" >> "$GITHUB_ENV"
+          echo "NO_PROXY=localhost,127.0.0.1,::1" >> "$GITHUB_ENV"
+          # Route juju ssh/scp through the Juju controller (no direct VM access)
+          echo "KUBE_GALAXY_JUJU_PROXY=1" >> "$GITHUB_ENV"
+          echo "Configured HTTPS_PROXY and KUBE_GALAXY_JUJU_PROXY for vSphere access"
+
+          # SSH ProxyCommand for connections to vSphere VMs
+          mkdir -p ~/.ssh
+          cat >> ~/.ssh/config <<'EOF'
+          Host 10.246.152.* 10.246.153.* 10.246.154.* 10.246.155.* 10.246.156.* 10.246.157.* 10.246.158.* 10.246.159.*
+            ProxyCommand nc -X connect -x egress.ps7.internal:3128 %h %p
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+          chmod 600 ~/.ssh/config
+          echo "SSH ProxyCommand configured for 10.246.152.0/21"
+
+      - name: Debug Network Connectivity
+        run: |
+          echo "=== Runner identity ==="
+          hostname -f || hostname
+          ip -4 addr show | grep 'inet ' || true
+
+          echo "=== Route to vCenter ==="
+          ip route get 10.246.152.100 || true
+
+          echo "=== Checking vCenter connectivity (via proxy) ==="
+          curl -sSk --proxy "$HTTPS_PROXY" -o /dev/null -w "HTTP %{http_code}\n" --connect-timeout 10 https://10.246.152.100/sdk || echo "Connection failed"
+
+          echo "=== nftables OUTPUT chain ==="
+          sudo nft list chain ip nat OUTPUT 2>/dev/null || echo "Cannot read nftables"
+
+          echo "=== Proxy env vars ==="
+          echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
+          echo "NO_PROXY=${NO_PROXY:-<unset>}"
+
+      - name: Setup Juju
+        uses: charmed-kubernetes/actions-operator@d8217ad61c15f746727a9d41563c13e9b9fe56e3 # main
+        with:
+          provider: vsphere
+          credentials-yaml: ${{ secrets.VSPHERE_CREDS }}
+          clouds-yaml: ${{ secrets.VSPHERE_CLOUDS }}
+          bootstrap-constraints: "arch=amd64"
+          bootstrap-options: >-
+            --config ssl-hostname-verification=false
+            --config caas-image-repo=rocks.canonical.com/cdk/jujusolutions
+            --config bootstrap-timeout=3600
+            --bootstrap-image=juju-ci-root/templates/noble-test-template
+            --bootstrap-base=ubuntu@24.04
+            --model-default primary-network=VLAN_2764
+            --model-default external-network=VLAN_2764
+            --model-default datastore=iSCSI-Datastore-B
+            --model-default disk-provisioning-type=thin
+            --model-default force-vm-hardware-version=17
+
+      - name: Create test model
+        id: model
+        shell: bash
+        run: |
+          MODEL_NAME="kube-galaxy-${GITHUB_RUN_ID}"
+          juju add-model \
+            --config logging-config='<root>=DEBUG' \
+            --config datastore=iSCSI-Datastore-B \
+            --config disk-provisioning-type=thin \
+            --config primary-network=VLAN_2764 \
+            "${MODEL_NAME}" \
+            vsphere/Boston || true  # tolerate "already exists"
+          juju switch "${MODEL_NAME}"
+          echo "name=${MODEL_NAME}" >> "$GITHUB_OUTPUT"
+
+      # Run kube-galaxy in the SAME job to maintain juju's persistent connection.
+      # NOTE: juju uses HTTP keepalive connections established during bootstrap.
+      # Fresh connections through squid to the controller CANNOT be established,
+      # so we must run kube-galaxy here, not in a separate job/runner.
+      - name: Setup uv
+        uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
+
+      - name: Install kube-galaxy
+        run: |
+          uv tool install "git+https://github.com/${{ github.repository }}.git@${{ github.head_ref || github.ref_name }}"
+          kube-galaxy --version
+
+      - name: Checkout manifests
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: |
+            manifests
+            components
+            .github
+
+      - name: Setup kubectl
+        run: sudo snap install kubectl --classic
+
+      - name: Setup Skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo 
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: ">=1.22"
+      
+      - name: Install Spread
+        run: go install github.com/canonical/spread/cmd/spread@latest
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: cdkbot
+          password: ${{ secrets.REPO_ACCESS_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Run kube-galaxy setup
+        id: setup
+        env:
+          GITHUB_ACTOR: cdkbot
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+        run: |
+          echo "=== Environment ==="
+          echo "HTTPS_PROXY=${HTTPS_PROXY:-<unset>}"
+          echo "JUJU_DATA=${JUJU_DATA:-<unset>}"
+          juju status --format json | head -5
+          echo ""
+          kube-galaxy setup manifests/smoketest.yaml --overlay manifests/overlays/vsphere-juju.yaml
+
+      - name: Debug failed setup
+        if: failure() && steps.setup.outcome == 'failure'
+        run: |
+          echo "=== Juju Status ==="
+          juju status --format yaml || true
+          echo ""
+
+          echo "=== VM Service Status ==="
+          for unit in $(juju status --format json 2>/dev/null | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              for app, info in data.get('applications', {}).items():
+                  for unit_name in info.get('units', {}).keys():
+                      print(unit_name)
+          except: pass
+          " 2>/dev/null); do
+            echo "--- $unit ---"
+            juju exec --unit "$unit" -- bash -c '
+              echo "containerd: $(systemctl is-active containerd 2>/dev/null || echo not-found)"
+              echo "kubelet: $(systemctl is-active kubelet 2>/dev/null || echo not-found)"
+              echo ""
+              echo "containerd logs (last 20):"
+              journalctl -u containerd --no-pager -n 20 2>/dev/null || true
+              echo ""
+              echo "kubelet logs (last 20):"
+              journalctl -u kubelet --no-pager -n 20 2>/dev/null || true
+            ' 2>/dev/null || true
+            echo ""
+          done
+
+      - name: Verify cluster health
+        run: kube-galaxy status --wait --timeout 300
+
+      - name: Prepare API access for Spread LXD backend
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          KUBECONFIG_PATH="${GITHUB_WORKSPACE}/tmp/opt/kube-galaxy/tests/kubeconfig"
+          if [ ! -f "${KUBECONFIG_PATH}" ]; then
+            echo "Expected kubeconfig not found: ${KUBECONFIG_PATH}"
+            exit 1
+          fi
+
+          API_SERVER=$(python3 -c "import yaml; from pathlib import Path; cfg = yaml.safe_load(Path('${KUBECONFIG_PATH}').read_text()); print(cfg['clusters'][0]['cluster']['server'])")
+
+          API_HOST=$(python3 -c "from urllib.parse import urlparse; print(urlparse('${API_SERVER}').hostname or '')")
+          API_PORT=$(python3 -c "from urllib.parse import urlparse; u = urlparse('${API_SERVER}'); print(u.port or 6443)")
+          if [ -z "${API_HOST}" ]; then
+            echo "Failed to parse API host from kubeconfig server: ${API_SERVER}"
+            exit 1
+          fi
+
+          LXD_BRIDGE_IP=$(ip -4 -o addr show lxdbr0 | awk '{print $4}' | cut -d/ -f1 | head -n1)
+          if [ -z "${LXD_BRIDGE_IP}" ]; then
+            echo "Could not detect lxdbr0 IPv4 address"
+            exit 1
+          fi
+
+          # Use SSH local port forwarding to bridge the API server onto lxdbr0.
+          # The ~/.ssh/config ProxyCommand (nc -X connect through squid) handles
+          # routing to 10.246.x.x, and juju's SSH key is already authorized on the VM.
+          JUJU_SSH_KEY=$(find ~/.local/share/juju/ssh -name 'juju_id_*' ! -name '*.pub' | head -n1)
+          if [ -z "${JUJU_SSH_KEY}" ]; then
+            echo "Could not find juju SSH private key"
+            ls -la ~/.local/share/juju/ssh/ || true
+            exit 1
+          fi
+          echo "Using SSH key: ${JUJU_SSH_KEY}"
+
+          ssh -f -N \
+            -i "${JUJU_SSH_KEY}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes \
+            -L "${LXD_BRIDGE_IP}:16443:localhost:${API_PORT}" \
+            "ubuntu@${API_HOST}"
+
+          SSH_PID=$(pgrep -f "ssh.*-L.*${LXD_BRIDGE_IP}:16443" | head -n1)
+          echo "${SSH_PID}" > /tmp/kgt-apiserver-proxy.pid
+          echo "SSH tunnel PID: ${SSH_PID}"
+
+          # Rewrite kubeconfig to point at the local bridge endpoint
+          python3 -c "
+          import yaml; from pathlib import Path
+          path = Path('${KUBECONFIG_PATH}')
+          data = yaml.safe_load(path.read_text())
+          for cluster in data.get('clusters', []):
+              cluster.setdefault('cluster', {})['server'] = 'https://${LXD_BRIDGE_IP}:16443'
+              cluster['cluster']['insecure-skip-tls-verify'] = True
+              cluster['cluster'].pop('certificate-authority', None)
+              cluster['cluster'].pop('certificate-authority-data', None)
+          path.write_text(yaml.safe_dump(data, default_flow_style=False))
+          "
+
+          # Preflight: verify the tunnel works
+          echo "Running API preflight checks"
+          sleep 2
+          timeout 10 bash -c "cat < /dev/null > /dev/tcp/${LXD_BRIDGE_IP}/16443"
+          API_STATUS=$(curl -sk --noproxy '*' -o /dev/null -w '%{http_code}' --connect-timeout 10 "https://${LXD_BRIDGE_IP}:16443/livez")
+          case "${API_STATUS}" in
+            200|401|403)
+              echo "API endpoint reachable via SSH tunnel (HTTP ${API_STATUS})"
+              ;;
+            000)
+              echo "Could not connect to tunnel endpoint"
+              exit 1
+              ;;
+            *)
+              echo "Unexpected API status from tunnel endpoint: ${API_STATUS}"
+              exit 1
+              ;;
+          esac
+          NO_PROXY="${LXD_BRIDGE_IP}" kubectl --kubeconfig "${KUBECONFIG_PATH}" get nodes --request-timeout=15s
+
+          echo "Preflight passed"
+          echo "API_SERVER=${API_SERVER}"
+          echo "LXD_BRIDGE_IP=${LXD_BRIDGE_IP}"
+
+      - name: Run Spread Tests
+        id: run-tests
+        env:
+          GITHUB_ACTOR: cdkbot
+          GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+          # Only bypass proxy for lxdbr0 subnet (typically 10.x.0.0/24).
+          # Do NOT add 10.0.0.0/8 — juju controller is also on 10.246.x.x
+          # and needs HTTPS_PROXY to stay reachable.
+          NO_PROXY: "localhost,127.0.0.1,::1,10.139.0.0/16"
+        run: kube-galaxy test
+
+      - name: Stop API tunnel for Spread
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/kgt-apiserver-proxy.pid ]; then
+            kill "$(cat /tmp/kgt-apiserver-proxy.pid)" 2>/dev/null || true
+            rm -f /tmp/kgt-apiserver-proxy.pid
+          fi
+
+      - name: Collect Logs
+        if: always()
+        run: kube-galaxy logs || true
+
+      # Upload artifact for debugging before cleanup
+      - name: Upload Juju client state
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: juju-client-state
+          path: ~/.local/share/juju/
+          retention-days: 1
+
+      # -------------------------------------------------------------------
+      # Teardown (inline) - must run in same job to use persistent connection
+      # NOTE: juju uses HTTP keepalive connections established during bootstrap.
+      # Fresh connections through squid to the controller CANNOT be established,
+      # so cleanup must run here, not in a separate job/runner.
+      # -------------------------------------------------------------------
+      - name: Destroy test model
+        if: always()
+        shell: bash
+        run: |
+          MODEL="${{ steps.model.outputs.name }}"
+          if [ -z "$MODEL" ]; then
+            echo "No model name found — skipping model teardown"
+            exit 0
+          fi
+
+          # On success + cleanup-on-success=false, skip
+          if [ "${{ job.status }}" = "success" ] && [ "${{ inputs.cleanup-on-success }}" = "false" ]; then
+            echo "Tests passed and cleanup-on-success is false — keeping model '${MODEL}'"
+            exit 0
+          fi
+
+          echo "Destroying Juju model '${MODEL}'..."
+          juju destroy-model "${MODEL}" --force --no-wait --destroy-storage -y 2>/dev/null || true
+
+      - name: Destroy controller
+        if: always()
+        shell: bash
+        run: |
+          CONTROLLER=$(juju show-controller --format json 2>/dev/null | python3 -c "import sys,json; print(list(json.load(sys.stdin).keys())[0])" 2>/dev/null || true)
+          if [ -n "$CONTROLLER" ]; then
+            echo "Destroying Juju controller '${CONTROLLER}'..."
+            juju destroy-controller "${CONTROLLER}" --force --no-wait --destroy-all-models -y 2>/dev/null || true
+          else
+            echo "No controller found — skipping"
+          fi

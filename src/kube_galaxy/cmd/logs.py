@@ -1,4 +1,4 @@
-"""log command handler."""
+"""log command handler. """
 
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import NodeRole

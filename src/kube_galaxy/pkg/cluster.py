@@ -64,9 +64,10 @@ def setup_cluster(manifest_path: Path | str) -> None:
         # Provision the orchestrator unit via the manifest's provider
         provider = provider_factory(manifest)
         units = provider.provision_all()
+        orchestrator_ip = provider.orchestrator_ip()
         info("Waiting for Units to become ready...")
         for unit in units:
-            unit.enlist()
+            unit.enlist(orchestrator_ip)
 
         lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
         info(f"Lead Control-Plane unit '{lead_unit.name}' is ready")
@@ -90,7 +91,7 @@ def setup_cluster(manifest_path: Path | str) -> None:
         # teardown_cluster stops it, so cluster nodes can pull images at any time.
         reg_cfg = manifest.artifact.registry
         if reg_cfg.enabled:
-            mirror = RegistryMirror(reg_cfg)
+            mirror = RegistryMirror(reg_cfg, orchestrator_ip=orchestrator_ip)
             mirror.start()
             ctx.registry_mirror = mirror
 
@@ -111,6 +112,8 @@ def setup_cluster(manifest_path: Path | str) -> None:
                 for unit in units:
                     _run_hook(unit, ctx, hook)
         ctx.artifact_server = None
+
+        provider.stop_tunnels()
 
         section("Cluster Setup Complete!")
         success("Kubeconfig: /opt/kube-galaxy/kubeconfig")
@@ -147,6 +150,7 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         # Locate the orchestrator unit via the manifest's provider (no new provisioning)
         provider = provider_factory(manifest)
         units = list(reversed(provider.locate_all()))
+        provider.open_tunnels()
 
         # Create all component resources
         ctx = ClusterContext(components={})
@@ -168,6 +172,8 @@ def teardown_cluster(manifest_path: str, force: bool = False) -> None:
         reg_cfg = manifest.artifact.registry
         if reg_cfg.enabled:
             RegistryMirror(reg_cfg).stop(force)
+
+        provider.stop_tunnels()
 
         # Deprovision all nodes (no-op for non-ephemeral providers)
         _deprovision(provider, force)

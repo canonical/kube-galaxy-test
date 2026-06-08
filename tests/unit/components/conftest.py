@@ -67,7 +67,7 @@ class MockUnit(Unit):
     def sha256(self, path):  # type: ignore[override]
         return "abc123"
 
-    def enlist(self, timeout: float | None = None) -> None:  # type: ignore[override]
+    def enlist(self, orchestrator_ip: str = "", timeout: float | None = None) -> None:  # type: ignore[override]
         pass
 
     def __post_init__(self) -> None:

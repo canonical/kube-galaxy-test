@@ -85,17 +85,21 @@ class CNIPlugins(ComponentBase):
         """
         Remove cni-plugin binaries, symlinks, and configuration files.
         """
-        # Remove symlinks from /opt/cni/bin/ for each binary in the component bin dir
+        # Remove symlinks from /opt/cni/bin/ that point to our component binaries
         comp_bin_dir = SystemPaths.component_bin_dir(self.name)
-        result = self.unit.run(["ls", str(comp_bin_dir)], privileged=True, check=False)
-        if result.returncode == 0:
-            for binary_name in result.stdout.splitlines():
-                info(f"    Removed {self.name} binary: {binary_name}")
-                self.unit.run(
-                    ["rm", "-rf", str(self.OPT_CNI_PLUGINS_DIR / binary_name)],
-                    privileged=True,
-                    check=False,
-                )
+        info(f"    Removing {self.name} symlinks from {self.OPT_CNI_PLUGINS_DIR}")
+        self.unit.run(
+            [
+                "find",
+                str(self.OPT_CNI_PLUGINS_DIR),
+                "-maxdepth", "1",
+                "-type", "l",
+                "-lname", f"{comp_bin_dir}/*",
+                "-delete",
+            ],
+            privileged=True,
+            check=False,
+        )
 
         # This will handle alternatives and binaries
         super().delete_hook()

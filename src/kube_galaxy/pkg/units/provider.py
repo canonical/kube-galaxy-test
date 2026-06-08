@@ -7,6 +7,7 @@ import kube_galaxy.pkg.units.ssh as ssh
 from kube_galaxy.pkg.manifest.models import Manifest, NodesConfig, ProviderConfig
 from kube_galaxy.pkg.units._base import UnitProvider
 from kube_galaxy.pkg.units.local import LocalUnitProvider
+from kube_galaxy.pkg.utils.artifact_server import ArtifactServer
 
 
 def provider_factory(manifest: Manifest) -> UnitProvider:
@@ -31,6 +32,9 @@ def provider_factory(manifest: Manifest) -> UnitProvider:
             return ssh.SSHUnitProvider(node_cfg, image="", hosts=cfg.hosts)
         case "juju":
             juju.print_dependency_status()
-            return juju.JujuUnitProvider(node_cfg, image=cfg.image)
+            tunnel_ports: list[int] = [ArtifactServer.DEFAULT_PORT]
+            if manifest.artifact.registry.enabled:
+                tunnel_ports.append(manifest.artifact.registry.port)
+            return juju.JujuUnitProvider(node_cfg, image=cfg.image, tunnel_ports=tunnel_ports)
         case _:
             raise ValueError(f"Unknown provider type: {cfg.type!r}")
