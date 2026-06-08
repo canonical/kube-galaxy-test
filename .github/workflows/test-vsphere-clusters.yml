@@ -153,11 +153,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y skopeo 
 
-      - name: Setup socat
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y socat
-
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
@@ -318,10 +313,10 @@ jobs:
         env:
           GITHUB_ACTOR: cdkbot
           GITHUB_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
-          # Spread LXD containers must not route local bridge traffic through squid
-          NO_PROXY: "localhost,127.0.0.1,::1,10.0.0.0/8"
-          HTTPS_PROXY: ""
-          HTTP_PROXY: ""
+          # Only bypass proxy for lxdbr0 subnet (typically 10.x.0.0/24).
+          # Do NOT add 10.0.0.0/8 — juju controller is also on 10.246.x.x
+          # and needs HTTPS_PROXY to stay reachable.
+          NO_PROXY: "localhost,127.0.0.1,::1,10.139.0.0/16"
         run: kube-galaxy test
 
       - name: Stop API tunnel for Spread

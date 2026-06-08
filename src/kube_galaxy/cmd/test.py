@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 import yaml
 
+from kube_galaxy.pkg.literals import SystemPaths
 from kube_galaxy.pkg.manifest.loader import load_manifest
 from kube_galaxy.pkg.manifest.models import NodeRole
 from kube_galaxy.pkg.manifest.validator import validate_manifest
@@ -13,6 +14,7 @@ from kube_galaxy.pkg.units.provider import provider_factory
 from kube_galaxy.pkg.utils.client import get_context, verify_connectivity
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.logging import error, exception, info, section, success, warning
+from kube_galaxy.pkg.utils.shell import run as shell_run
 
 
 def spread(manifest_path: str) -> None:
@@ -23,19 +25,41 @@ def spread(manifest_path: str) -> None:
     info("")
     validate(manifest_path)
 
+    provider = None
     try:
         # Provision the orchestrator unit via the manifest's provider
         manifest = load_manifest(manifest_path)
-        provider = provider_factory(manifest)
-        lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
-        provider.open_tunnels()
+        try:
+            provider = provider_factory(manifest)
+            lead_unit = provider.locate(NodeRole.CONTROL_PLANE, 0)
+            provider.open_tunnels()
 
-        # Check if kubectl can connect
-        verify_connectivity(lead_unit)
+            # Check if kubectl can connect
+            verify_connectivity(lead_unit)
 
-        # Get cluster context
-        cluster_context = get_context(lead_unit)
-        success(f"Connected to cluster: {cluster_context}")
+            # Get cluster context
+            cluster_context = get_context(lead_unit)
+            success(f"Connected to cluster: {cluster_context}")
+        except Exception as provider_exc:
+            # Provider unavailable (e.g. juju connection expired) — fall back
+            # to verifying connectivity via the existing kubeconfig directly.
+            warning(f"Provider unavailable ({provider_exc}), checking kubeconfig directly")
+
+            kube_cfg = SystemPaths.local_kube_config()
+            if not kube_cfg.exists():
+                raise ClusterError(
+                    f"Provider failed and no kubeconfig found at {kube_cfg}"
+                ) from provider_exc
+            result = shell_run(
+                ["kubectl", "--kubeconfig", str(kube_cfg), "get", "nodes",
+                 "--request-timeout=15s"],
+                check=False,
+            )
+            if result.returncode != 0:
+                raise ClusterError(
+                    f"Provider failed and kubectl cannot reach cluster: {result.stderr}"
+                ) from provider_exc
+            success("Connected to cluster via kubeconfig (provider bypassed)")
 
         # Run spread tests from manifest
         if not manifest_path:
@@ -55,7 +79,8 @@ def spread(manifest_path: str) -> None:
         exception("Spread tests failed", e)
         raise typer.Exit(code=1) from e
     finally:
-        provider.stop_tunnels()
+        if provider is not None:
+            provider.stop_tunnels()
 
 
 def validate(manifest_path: str | None = None) -> None:
