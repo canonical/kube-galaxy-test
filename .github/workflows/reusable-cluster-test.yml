@@ -131,7 +131,7 @@ jobs:
         uses: canonical/setup-lxd@da2ac84e727dc534215fd14cd088b9209d65893b # main
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@15650b3ad78fff148532a140b8a4c821796b2d7b # v5
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
         with:
           version: "latest"
 
