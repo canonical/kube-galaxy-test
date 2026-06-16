@@ -12,6 +12,7 @@ on:
       - '.github/workflows/test-baseline-clusters.yml'
       - '.github/workflows/reusable-cluster-test.yml'
       - 'pyproject.toml'
+      - 'uv.lock'
   pull_request:
     paths:
       - 'src/**'
@@ -21,6 +22,7 @@ on:
       - '.github/workflows/test-baseline-clusters.yml'
       - '.github/workflows/reusable-cluster-test.yml'
       - 'pyproject.toml'
+      - 'uv.lock'
   workflow_dispatch:
     inputs:
       k8s-version:
