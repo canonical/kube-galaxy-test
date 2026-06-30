@@ -18,6 +18,7 @@ Typical flow::
 
 import json
 import os
+import tarfile
 import time
 from pathlib import Path
 
@@ -34,6 +35,50 @@ from kube_galaxy.pkg.utils.shell import ShellError
 _CONTAINER_NAME = "registry-cache"
 _REGISTRY_IMAGE = "registry:3"
 _REQUIRED_TOOLS = ("docker", "skopeo")
+
+
+def _docker_archive_repo_tag(image_ref: str) -> str:
+    """Return the first ``RepoTags`` entry from a docker-archive's manifest.
+
+    ``skopeo inspect`` only populates the ``Name`` field when the reference
+    resolves to a docker reference; a ``docker-archive:<path>`` reference with no
+    command-line ``:reference`` part resolves to none, so ``Name`` is absent.
+    The archive's ``manifest.json`` instead records a ``RepoTags`` list whose
+    entries are full ``repository:tag`` references (e.g.
+    ``"docker.io/library/foo:latest"``); this returns the first such entry
+    verbatim, leaving any host/tag parsing to the caller.
+
+    Args:
+        image_ref: A ``docker-archive:<path>[:reference]`` transport string.
+
+    Returns:
+        The first ``RepoTags`` entry (a ``repository:tag`` reference, e.g.
+        ``"local/etcd:build"``), or ``""`` when the archive cannot be read or
+        carries no ``RepoTags``.
+    """
+    spec = image_ref[len("docker-archive:") :]
+    path = spec
+    if not Path(path).exists() and ":" in spec:
+        # Strip an explicit ":reference" suffix. The reference may itself contain
+        # a ':' (e.g. "local/etcd:build"), so try successively shorter prefixes.
+        parts = spec.split(":")
+        for i in range(len(parts) - 1, 0, -1):
+            candidate = ":".join(parts[:i])
+            if Path(candidate).exists():
+                path = candidate
+                break
+    try:
+        with tarfile.open(path) as archive:
+            member = archive.extractfile("manifest.json")
+            if member is None:
+                return ""
+            items = json.load(member)
+    except (OSError, tarfile.TarError, json.JSONDecodeError, KeyError):
+        return ""
+    if not items:
+        return ""
+    tags = items[0].get("RepoTags") or []
+    return tags[0] if tags else ""
 
 
 def _print_dependency_status() -> None:
@@ -145,26 +190,40 @@ class RegistryMirror:
         shell.run(["docker", "rm", "-f", _CONTAINER_NAME], check=not force)
 
     def inspect(self, image_ref: str) -> str:
-        """Return the image name embedded in a skopeo source reference.
+        """Return a registry path (without host) for use as a *mirror_path*.
 
-        Runs ``skopeo inspect`` against *image_ref* (e.g.
-        ``"docker-archive:/path/image.tar"``) and returns the ``Name`` field
-        from the resulting JSON, with the registry hostname prefix stripped so
-        the result is suitable as a :meth:`preload` *mirror_path*.
+        Runs ``skopeo inspect`` against *image_ref* and uses its ``Name`` field
+        -- the registry-qualified **repository**, with any tag/digest stripped
+        (e.g. ``"registry.k8s.io/pause"``). ``skopeo`` only sets ``Name`` when the
+        reference resolves to a docker reference, which a bare
+        ``docker-archive:<path>`` reference (no command-line ``:reference`` part)
+        does not, so for archives ``Name`` is absent. In that case the value is
+        taken from the first entry of the archive's ``manifest.json``
+        ``RepoTags`` -- a full ``repository:tag`` reference such as
+        ``"local/pause:build"``.
 
-        Returns an empty string if the ``Name`` field is absent or blank.
+        Whichever source is used, only the leading registry host is stripped;
+        a tag, if present in the source, is preserved. Returns an empty string
+        when neither source yields a value.
 
         Args:
             image_ref: Any skopeo source transport reference.
 
         Returns:
-            The image path without registry host, e.g. ``"pause:3.10"``.
+            The source value with its leading registry host stripped, e.g.
+            ``"pause"`` (repository from ``Name``) or ``"local/pause:build"``
+            (``repository:tag`` from an archive's ``RepoTags``).
         """
         result = shell.run(["skopeo", "inspect", image_ref], capture_output=True)
         name: str = json.loads(result.stdout).get("Name", "")
+        if not name and image_ref.startswith("docker-archive:"):
+            # No command-line reference is supplied here, so skopeo reports no
+            # Name for the archive; derive the path from its RepoTags instead.
+            name = _docker_archive_repo_tag(image_ref)
         if not name:
             return ""
-        # Strip leading registry hostname (e.g. "registry.k8s.io/pause:3.10" -> "pause:3.10")
+        # Strip leading registry host (e.g. "registry.k8s.io/pause" -> "pause",
+        # "ghcr.io/org/pause:tag" -> "org/pause:tag").
         return name.split("/", 1)[-1] if "/" in name else name
 
     def registry_address(self, local: bool = False) -> str:
