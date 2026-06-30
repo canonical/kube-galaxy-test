@@ -1,7 +1,10 @@
 """Tests for RegistryMirror."""
 
+import io
+import json
 import os
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -14,6 +17,17 @@ from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror, _print_dependency_status
 
 _FAKE_IP = "10.0.0.1"
+
+
+def _write_docker_archive(path: Path, repo_tags: list[str]) -> Path:
+    """Write a minimal docker-save style tar whose manifest.json has RepoTags."""
+    manifest = [{"Config": "config.json", "RepoTags": repo_tags, "Layers": []}]
+    blob = json.dumps(manifest).encode()
+    with tarfile.open(path, "w") as archive:
+        info = tarfile.TarInfo("manifest.json")
+        info.size = len(blob)
+        archive.addfile(info, io.BytesIO(blob))
+    return path
 
 
 @pytest.fixture
@@ -490,3 +504,55 @@ class TestRegistryMirrorInspect:
         )
         RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
         assert calls == [["skopeo", "inspect", f"docker-archive:{tar}"]]
+
+    def test_inspect_falls_back_to_archive_repo_tag(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """When skopeo reports no Name, inspect() reads the archive's RepoTags."""
+        tar = _write_docker_archive(tmp_path / "etcd.tar", ["local/etcd:build"])
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr=""),
+        )
+        result = RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
+        assert result == "etcd:build"
+
+    def test_inspect_archive_fallback_strips_registry_host(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """The archive-derived name has its registry host stripped like skopeo's."""
+        tar = _write_docker_archive(tmp_path / "coredns.tar", ["ghcr.io/canonical/coredns:build"])
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr=""),
+        )
+        result = RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
+        assert result == "canonical/coredns:build"
+
+    def test_inspect_archive_fallback_no_repotags(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """inspect() returns '' when the archive carries no RepoTags."""
+        tar = _write_docker_archive(tmp_path / "notags.tar", [])
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr=""),
+        )
+        result = RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}")
+        assert result == ""
+
+    def test_inspect_archive_fallback_with_reference_suffix(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A ``docker-archive:path:ref`` reference still locates the archive."""
+        tar = _write_docker_archive(tmp_path / "pause.tar", ["local/pause:build"])
+        monkeypatch.setattr(
+            mirror_mod.shell,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr=""),
+        )
+        result = RegistryMirror(RegistryConfig()).inspect(f"docker-archive:{tar}:local/pause:build")
+        assert result == "pause:build"
