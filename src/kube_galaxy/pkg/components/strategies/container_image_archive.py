@@ -56,6 +56,8 @@ def _download(comp: ComponentBase) -> None:
         mirror_path = mirror.inspect(f"docker-archive:{image_tar}")
         info(f"  Preloading image archive into registry mirror: {image_tar} -> {mirror_path}")
         mirror.preload(f"docker-archive:{image_tar}", mirror_path)
+        if mirror_path:
+            comp.install_path = f"{mirror.registry_address()}/{mirror_path}"
 
     if mirror and mirror_path and image_retag:
         retag_repo, retag_tag = image_retag.rsplit(":", 1)
@@ -63,6 +65,7 @@ def _download(comp: ComponentBase) -> None:
         retag_path = f"{parts[1]}:{retag_tag}" if len(parts) > 1 else image_retag
         info(f"  Retagging image in registry mirror: {mirror_path} -> {retag_path}")
         mirror.retag(mirror_path, retag_path)
+        comp.install_path = f"{mirror.registry_address()}/{retag_path}"
 
 
 _ContainerImageArchiveInstallStrategy = _InstallStrategy(download=_download)

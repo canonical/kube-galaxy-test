@@ -50,6 +50,7 @@ def _make_component(
     base_url: str = "https://github.com/org/repo",
     name: str = "mycomp",
     release: str = "v1.0.0",
+    retag_format: str = "",
     monkeypatch=None,
     tmp_path: Path | None = None,
     arch_info=None,
@@ -57,7 +58,7 @@ def _make_component(
 ) -> ComponentBase:
     repo = RepoInfo(base_url=base_url)
     install = InstallConfig(
-        method=method, source_format=source_format, bin_path=bin_path, repo=repo, retag_format=""
+        method=method, source_format=source_format, bin_path=bin_path, repo=repo, retag_format=retag_format
     )
     config = ComponentConfig(name=name, category="test", release=release, installation=install)
     manifest = _make_manifest()
@@ -825,6 +826,66 @@ class TestContainerImageArchiveDownload:
         comp.download_hook()
         image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         assert image_tar.exists()
+
+    def test_download_sets_install_path_after_preload(self, monkeypatch, tmp_path, arch_info):
+        """install_path is set to mirror address + mirror_path when no retag_format."""
+        mock_mirror = mock.MagicMock()
+        mock_mirror.inspect.return_value = "pause:3.9"
+        mock_mirror.registry_address.return_value = "10.0.0.1:5000"
+        ctx = ClusterContext(registry_mirror=mock_mirror)
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE_ARCHIVE,
+            "https://example.com/pause.tar",
+            name="pause",
+            release="3.9",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            ctx=ctx,
+        )
+        _patch_cia_download(monkeypatch, b"tar-content")
+
+        comp.download_hook()
+
+        assert comp.install_path == "10.0.0.1:5000/pause:3.9"
+
+    def test_download_sets_install_path_to_retag_path(self, monkeypatch, tmp_path, arch_info):
+        """install_path is overwritten with retag path when retag_format is set."""
+        mock_mirror = mock.MagicMock()
+        mock_mirror.inspect.return_value = "pause:build"
+        mock_mirror.registry_address.return_value = "10.0.0.1:5000"
+        ctx = ClusterContext(registry_mirror=mock_mirror)
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE_ARCHIVE,
+            "https://example.com/pause.tar.gz",
+            name="pause",
+            release="1.36.7",
+            retag_format="{{ mirror.base-url }}/pause:3.10.2",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            ctx=ctx,
+        )
+        _patch_cia_download(monkeypatch, gzip.compress(b"tar-content"))
+
+        comp.download_hook()
+
+        mock_mirror.retag.assert_called_once_with("pause:build", "pause:3.10.2")
+        assert comp.install_path == "10.0.0.1:5000/pause:3.10.2"
+
+    def test_download_no_install_path_when_no_mirror(self, monkeypatch, tmp_path, arch_info):
+        """install_path remains None when no registry mirror is configured."""
+        comp = _make_cia_component(
+            "https://example.com/image.tar",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+        )
+        _patch_cia_download(monkeypatch, b"tar-content")
+
+        comp.download_hook()
+
+        assert comp.install_path is None
 
 
 # ===========================================================================
