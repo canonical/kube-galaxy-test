@@ -71,3 +71,6 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "TID", "RUF", "PLC0415"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kube_galaxy"]
+
+[tool.bandit]
+exclude_dirs = [".tox", ".venv", "venv"]
