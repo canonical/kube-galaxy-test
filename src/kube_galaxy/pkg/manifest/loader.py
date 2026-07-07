@@ -161,6 +161,7 @@ def deserialize_manifest(data: dict[str, Any], path: Path) -> Manifest:
             retag_format=install_data.get("retag-format", ""),
             bin_path=install_data.get("bin-path", "./*"),
             repo=_parse_repo(install_data.get("repo"), comp_name),
+            helm_repo=install_data.get("helm-repo", False),
         )
 
         # Parse test block (mirrors install config; absent / false → method: none)

@@ -13,6 +13,7 @@ from .binary_archive import _BinaryArchiveInstallStrategy
 from .container_image import _ContainerImageInstallStrategy
 from .container_image_archive import _ContainerImageArchiveInstallStrategy
 from .container_manifest import _ContainerManifestInstallStrategy
+from .helm import _HelmInstallStrategy
 from .spread import _SpreadTestStrategy
 
 _INSTALL_STRATEGIES: dict[InstallMethod, _InstallStrategy] = {
@@ -21,6 +22,7 @@ _INSTALL_STRATEGIES: dict[InstallMethod, _InstallStrategy] = {
     InstallMethod.CONTAINER_IMAGE_ARCHIVE: _ContainerImageArchiveInstallStrategy,
     InstallMethod.CONTAINER_IMAGE: _ContainerImageInstallStrategy,
     InstallMethod.CONTAINER_MANIFEST: _ContainerManifestInstallStrategy,
+    InstallMethod.HELM: _HelmInstallStrategy,
     InstallMethod.NONE: _InstallStrategy(),
 }
 

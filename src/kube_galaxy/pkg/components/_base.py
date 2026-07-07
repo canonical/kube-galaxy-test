@@ -98,6 +98,7 @@ class ComponentBase:
         self.install_path: str | None = None  # path to root installed bin
         # for InstallMethod ContainerManifest
         self.manifest_path: Path | None = None  # path to downloaded manifest file
+        self.chart_path: Path | None = None  # path to downloaded chart archive (for Helm)
 
         install_method = config.installation.method
         if install_method not in _INSTALL_STRATEGIES:
