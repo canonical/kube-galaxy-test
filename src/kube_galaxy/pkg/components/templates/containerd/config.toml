@@ -1,6 +1,6 @@
 imports = ["/etc/containerd/conf.d/*.toml"]
 oom_score = 0
-version = 2
+version = 3
 
 [cgroup]
   path = ""
@@ -23,30 +23,32 @@ version = 2
 
 [plugins]
 
-  [plugins."io.containerd.grpc.v1.cri"]
+  [plugins."io.containerd.cri.v1.images"]
+    sandbox_image = "{pause_image}"
+
+    [plugins."io.containerd.cri.v1.images".registry]
+      config_path = "/etc/containerd/hosts.d"
+
+  [plugins."io.containerd.cri.v1.runtime"]
     enable_selinux = false
     enable_tls_streaming = false
     max_container_log_line_size = 16384
-    sandbox_image = "{pause_image}"
     stats_collect_period = 10
     stream_server_address = "127.0.0.1"
     stream_server_port = "0"
 
-    [plugins."io.containerd.grpc.v1.cri".cni]
+    [plugins."io.containerd.cri.v1.runtime".cni]
       bin_dir = "/opt/cni/bin"
       conf_dir = "/etc/cni/net.d"
 
-    [plugins."io.containerd.grpc.v1.cri".containerd]
+    [plugins."io.containerd.cri.v1.runtime".containerd]
       default_runtime_name = "runc"
       no_pivot = false
 
-      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+      [plugins."io.containerd.cri.v1.runtime".containerd.runtimes]
 
-        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+        [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc]
           runtime_type = "io.containerd.runc.v2"
 
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+          [plugins."io.containerd.cri.v1.runtime".containerd.runtimes.runc.options]
             SystemdCgroup = true
-
-    [plugins."io.containerd.grpc.v1.cri".registry]
-      config_path = "/etc/containerd/hosts.d"
