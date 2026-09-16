@@ -13,6 +13,7 @@ import requests
 import kube_galaxy.pkg.utils.registry_mirror as mirror_mod
 from kube_galaxy.pkg.literals import SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import RegistryConfig
+from kube_galaxy.pkg.utils.shell import ShellError
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror, _print_dependency_status
 
@@ -328,6 +329,38 @@ class TestRegistryMirrorPreload:
                 f"docker://{_FAKE_IP}:5000/etcd:3.5.0",
             ]
         ]
+
+    def test_preload_retries_transient_failure_then_succeeds(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A transient skopeo failure is retried and does not raise."""
+        attempts: list[int] = []
+
+        def flaky_run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise ShellError(cmd, 1, "connection reset")
+            return _noop_run(cmd)
+
+        monkeypatch.setattr(mirror_mod.shell, "run", flaky_run)
+        monkeypatch.setattr(mirror_mod.time, "sleep", lambda *_a: None)
+        mirror = RegistryMirror(RegistryConfig(port=5000))
+        mirror.preload(f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10", "pause:3.10")
+        assert len(attempts) == 3
+
+    def test_preload_raises_after_exhausting_retries(
+        self, patched_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A persistent skopeo failure is raised after the retry budget is exhausted."""
+
+        def always_fails(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+            raise ShellError(cmd, 1, "connection reset")
+
+        monkeypatch.setattr(mirror_mod.shell, "run", always_fails)
+        monkeypatch.setattr(mirror_mod.time, "sleep", lambda *_a: None)
+        mirror = RegistryMirror(RegistryConfig(port=5000))
+        with pytest.raises(ShellError):
+            mirror.preload(f"docker://{URLs.REGISTRY_K8S_IO}/pause:3.10", "pause:3.10")
 
     def test_preload_oci_archive(
         self, patched_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
