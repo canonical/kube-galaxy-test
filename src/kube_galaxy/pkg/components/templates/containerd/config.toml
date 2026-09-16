@@ -12,6 +12,11 @@ version = 3
 [plugins."io.containerd.cri.v1.images".registry]
   config_path = "/etc/containerd/hosts.d"
 
+# The CRI puller is only used when use_local_image_pull=true.
+# we need to set the hosts when the hosts are pulled using transfer paths.
+[plugins."io.containerd.transfer.v1.local"]
+  config_path = "/etc/containerd/hosts.d"
+
 [plugins."io.containerd.cri.v1.runtime".containerd]
   default_runtime_name = "runc"
 
