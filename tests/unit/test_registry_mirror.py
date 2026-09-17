@@ -13,9 +13,9 @@ import requests
 import kube_galaxy.pkg.utils.registry_mirror as mirror_mod
 from kube_galaxy.pkg.literals import SystemPaths, URLs
 from kube_galaxy.pkg.manifest.models import RegistryConfig
-from kube_galaxy.pkg.utils.shell import ShellError
 from kube_galaxy.pkg.utils.errors import ClusterError
 from kube_galaxy.pkg.utils.registry_mirror import RegistryMirror, _print_dependency_status
+from kube_galaxy.pkg.utils.shell import ShellError
 
 _FAKE_IP = "10.0.0.1"
 

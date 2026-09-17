@@ -308,4 +308,3 @@ class RegistryMirror:
                 )
                 time.sleep(delay)
                 delay *= 2
-

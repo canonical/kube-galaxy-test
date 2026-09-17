@@ -51,8 +51,7 @@ def spread(manifest_path: str) -> None:
                     f"Provider failed and no kubeconfig found at {kube_cfg}"
                 ) from provider_exc
             result = shell_run(
-                ["kubectl", "--kubeconfig", str(kube_cfg), "get", "nodes",
-                 "--request-timeout=15s"],
+                ["kubectl", "--kubeconfig", str(kube_cfg), "get", "nodes", "--request-timeout=15s"],
                 check=False,
             )
             if result.returncode != 0:
