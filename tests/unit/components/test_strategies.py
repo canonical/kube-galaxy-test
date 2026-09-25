@@ -812,6 +812,52 @@ class TestContainerImageArchiveDownload:
         image_tar = comp.component_tmp_dir / "extracted" / "image.tar"
         mock_mirror.preload.assert_called_once_with(f"docker-archive:{image_tar}", "")
 
+    def test_download_installs_from_the_mirror_copy(self, monkeypatch, tmp_path, arch_info):
+        """_download sets install_path, which containerd uses for the pause image."""
+        mock_mirror = mock.MagicMock()
+        mock_mirror.inspect.return_value = "pause:3.9"
+        mock_mirror.registry_address.return_value = "kube-galaxy.orchestrator:5000"
+        ctx = ClusterContext(registry_mirror=mock_mirror)
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE_ARCHIVE,
+            "https://example.com/pause.tar",
+            name="pause",
+            release="3.9",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            ctx=ctx,
+        )
+        _patch_cia_download(monkeypatch, b"tar-content")
+
+        comp.download_hook()
+
+        assert comp.install_path == "kube-galaxy.orchestrator:5000/pause:3.9"
+
+    def test_download_installs_from_the_retagged_copy(self, monkeypatch, tmp_path, arch_info):
+        """A retag moves install_path to the retagged image."""
+        mock_mirror = mock.MagicMock()
+        mock_mirror.inspect.return_value = "canonical/pause:1.36.2"
+        mock_mirror.registry_address.return_value = "kube-galaxy.orchestrator:5000"
+        ctx = ClusterContext(registry_mirror=mock_mirror)
+        comp = _make_component(
+            InstallMethod.CONTAINER_IMAGE_ARCHIVE,
+            "https://example.com/pause.tar",
+            name="pause",
+            release="1.36.2",
+            monkeypatch=monkeypatch,
+            tmp_path=tmp_path,
+            arch_info=arch_info,
+            ctx=ctx,
+        )
+        comp.config.installation.retag_format = "registry.k8s.io/pause:3.10.2"
+        _patch_cia_download(monkeypatch, b"tar-content")
+
+        comp.download_hook()
+
+        mock_mirror.retag.assert_called_once_with("canonical/pause:1.36.2", "pause:3.10.2")
+        assert comp.install_path == "kube-galaxy.orchestrator:5000/pause:3.10.2"
+
     def test_download_skips_mirror_when_no_mirror(self, monkeypatch, tmp_path, arch_info):
         """_download does not call mirror when registry_mirror is None."""
         comp = _make_cia_component(
