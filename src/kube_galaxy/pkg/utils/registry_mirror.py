@@ -277,6 +277,11 @@ class RegistryMirror:
     def _skopeo_copy(self, src: str, dst: str, *, src_tls_verify: bool = True) -> None:
         """Run ``skopeo copy --all`` copying all platforms in one operation.
 
+        Retries on failure with exponential backoff: the DOWNLOAD stage runs
+        up to 10 components' ``skopeo copy`` calls concurrently (see
+        ``PARALLEL_HOOKS``), which can trigger transient upstream registry
+        errors (rate limiting, connection resets) under load.
+
         Args:
             src: Source image transport reference (e.g. ``docker://...``).
             dst: Destination image transport reference.
@@ -287,4 +292,19 @@ class RegistryMirror:
         if not src_tls_verify:
             cmd.append("--src-tls-verify=false")
         cmd += ["--dest-tls-verify=false", src, dst]
-        shell.run(cmd)
+
+        max_attempts = 3
+        delay = 2.0
+        for attempt in range(1, max_attempts + 1):
+            try:
+                shell.run(cmd)
+                return
+            except ShellError as exc:
+                if attempt == max_attempts:
+                    raise
+                warning(
+                    f"skopeo copy {src} -> {dst} failed "
+                    f"(attempt {attempt}/{max_attempts}), retrying in {delay:.0f}s: {exc}"
+                )
+                time.sleep(delay)
+                delay *= 2
