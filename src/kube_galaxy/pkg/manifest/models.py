@@ -31,6 +31,7 @@ class InstallMethod(StrEnum):
     CONTAINER_IMAGE = "container-image"  # Container image from registry
     CONTAINER_IMAGE_ARCHIVE = "container-image-archive"  # Container image in tar archive
     CONTAINER_MANIFEST = "container-manifest"  # Kubernetes YAML manifest file
+    HELM = "helm"  # Helm chart from a chart repository
     NONE = "none"  # No installation, component has no installable artifacts
 
 
@@ -66,6 +67,7 @@ class InstallConfig:
     retag_format: str  # e.g. format string for retagging container images to pull through registry
     bin_path: str  # Default path inside archive where binaries
     repo: RepoInfo = field(default_factory=RepoInfo)  # Repository for this install artefact
+    helm_repo: bool = False  # Use chart repo instead of archive
 
 
 @dataclass
